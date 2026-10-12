@@ -24,6 +24,7 @@ struct DeckView: View {
     let snapshot: OverlaySnapshot
     @ObservedObject var settings: SettingsStore
     @ObservedObject var browser: FolderBrowser
+    @ObservedObject var presentation: OverlayPresentation
     let selectApp: (AppItem) -> Void
     let selectWindow: (WindowItem) -> Void
     let openURL: (URL) -> Void
@@ -45,8 +46,8 @@ struct DeckView: View {
                 recentSection
             }
             HStack {
-                Image(systemName: "option")
-                Text("누른 채 선택 · 놓으면 닫기").font(.caption)
+                Image(systemName: presentation.isPinned ? "pin.fill" : "option")
+                Text(presentation.isPinned ? "고정됨 · × 또는 Esc로 닫기" : "누른 채 선택 · 놓으면 닫기").font(.caption)
                 Spacer()
                 Text("Tile Launcher").font(.caption).foregroundStyle(.tertiary)
             }
@@ -57,34 +58,62 @@ struct DeckView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            if browser.current != nil {
-                Button(action: browser.back) { Image(systemName: "chevron.left").frame(width: 30, height: 34) }
-                    .buttonStyle(.plain).help("뒤로")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(browser.path.count == 1 ? browser.rootName : browser.current!.lastPathComponent)
-                        .font(.system(size: compact ? 18 : 23, weight: .semibold)).lineLimit(1)
-                    Text(browser.path.count == 1 ? "등록한 폴더" : browser.rootName)
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            } else {
-                Icon(url: snapshot.context?.url, size: compact ? 32 : 42)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(snapshot.context?.name ?? "Tile Launcher").font(.system(size: compact ? 18 : 23, weight: .semibold)).lineLimit(1)
-                    Text("지금 하던 일에서, 다음으로").font(.caption).foregroundStyle(.secondary)
-                }
+        ZStack {
+            VStack(spacing: 3) {
+                Text(headerTitle)
+                    .font(.system(size: compact ? 18 : 23, weight: .semibold))
+                    .lineLimit(1).truncationMode(.middle)
+                Text(headerSubtitle).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
             }
-            Spacer()
-            Label("기본", systemImage: "circle.dotted")
-                .font(.caption).padding(.horizontal, 12).padding(.vertical, 7)
-                .background(.quaternary.opacity(0.5), in: Capsule())
-                .help("집중 모드별 프로필은 다음 단계에 추가됩니다.")
-            Button(action: showSettings) { Image(systemName: "slider.horizontal.3").frame(width: 28, height: 28) }
-                .buttonStyle(.plain).help("설정")
-            Button(action: dismiss) { Image(systemName: "xmark").frame(width: 24, height: 28) }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("닫기")
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 138)
+            .allowsHitTesting(false)
+
+            HStack(spacing: 8) {
+                Button {
+                    if presentation.isPinned { dismiss() } else { presentation.pin() }
+                } label: {
+                    Image(systemName: presentation.isPinned ? "xmark" : "pin")
+                        .frame(width: 34, height: 34).contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .help(presentation.isPinned ? "닫기" : "창 고정 · Option을 놓아도 유지")
+                .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
+
+                if browser.current != nil {
+                    Button(action: browser.back) {
+                        Image(systemName: "chevron.left").frame(width: 30, height: 34)
+                    }
+                    .buttonStyle(.plain).help("뒤로")
+                    .accessibilityLabel("이전 폴더로 이동")
+                }
+                Spacer()
+                HStack(spacing: 10) {
+                    Label("기본", systemImage: "circle.dotted").font(.caption)
+                        .help("집중 모드별 프로필은 다음 단계에 추가됩니다.")
+                    Divider().frame(height: 16)
+                    Button(action: showSettings) {
+                        Image(systemName: "slider.horizontal.3").frame(width: 28, height: 30)
+                    }
+                    .buttonStyle(.plain).help("설정")
+                    .accessibilityLabel("설정")
+                }
+                .padding(.horizontal, 10).frame(height: 36)
+                .glassEffect(.regular, in: Capsule())
+            }
         }
         .frame(height: compact ? 40 : 52)
+    }
+
+    private var headerTitle: String {
+        guard let current = browser.current else { return snapshot.context?.name ?? "Tile Launcher" }
+        return browser.path.count == 1 ? browser.rootName : current.lastPathComponent
+    }
+    private var headerSubtitle: String {
+        if browser.current != nil { return browser.path.count == 1 ? "등록한 폴더" : browser.rootName }
+        return snapshot.contextWindowTitle ?? "지금 하던 일에서, 다음으로"
     }
 
     private var registeredSection: some View {
@@ -311,6 +340,9 @@ struct SettingsView: View {
             HStack {
                 Text("등록 앱·폴더").font(.headline)
                 Spacer()
+                Button(settings.importingDock ? "가져오는 중…" : "Dock에서 가져오기", action: settings.importDock)
+                    .disabled(settings.importingDock)
+                    .help("고정된 앱·폴더와 Finder·휴지통을 Dock 순서로 가져옵니다. 기존 항목의 설정은 유지합니다.")
                 Menu {
                     Button("앱 추가…", action: settings.addApplications)
                     Button("폴더 추가…", action: settings.addFolder)
@@ -324,6 +356,10 @@ struct SettingsView: View {
                     }
                 } label: { Label("추가", systemImage: "plus") }
                 .fixedSize()
+            }
+            if let message = settings.dockImportMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             List {
                 ForEach(settings.pins) { pin in

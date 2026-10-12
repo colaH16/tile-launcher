@@ -3,7 +3,7 @@ import DeckCore
 
 final class HoldMonitor {
     var onShow: (() -> Void)?
-    var onHide: (() -> Void)?
+    var onHide: ((OverlayDismissal) -> Void)?
     var onCancel: (() -> Void)?
     var onRelease: (() -> Void)?
     var isShowing = false
@@ -42,11 +42,13 @@ final class HoldMonitor {
             apply(gesture.flags(option: optionDown, otherModifier: other))
         } else if event.type == .keyDown {
             apply(gesture.interrupt())
-            if isShowing || event.keyCode == 53 { onHide?() }
+            if isShowing || event.keyCode == 53 {
+                onHide?(event.keyCode == 53 ? .escape : .interruption)
+            }
         } else if !isShowing {
             apply(gesture.interrupt())
         } else if external {
-            onHide?()
+            onHide?(.outsideClick)
             apply(gesture.interrupt())
         }
     }
@@ -66,11 +68,11 @@ final class HoldMonitor {
             onCancel?()
             timer?.cancel()
             timer = nil
-            if triggered { onHide?() }
+            if triggered { onHide?(.interruption) }
         case .release:
             timer?.cancel()
             timer = nil
-            if triggered { onHide?() }
+            if triggered { onHide?(.release) }
             triggered = false
             onRelease?()
         }

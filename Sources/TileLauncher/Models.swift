@@ -24,12 +24,15 @@ extension PinnedItem {
 }
 struct OverlaySnapshot {
     let context: AppItem?
+    let contextWindowTitle: String?
     let apps: [AppItem]
     let windows: [WindowItem]
     let layout: PanelLayout
     let permission: Bool
 }
 final class SettingsStore: ObservableObject {
+    @Published private(set) var importingDock = false
+    @Published private(set) var dockImportMessage: String?
     @Published var pins: [PinnedItem] { didSet { save() } }
     @Published var automatic: Bool { didSet { save() } }
     @Published var manualCount: Int { didSet { save() } }
@@ -84,6 +87,27 @@ final class SettingsStore: ObservableObject {
     func setOpenMode(_ mode: FolderOpenMode, for id: PinnedItem.ID) {
         guard let index = pins.firstIndex(where: { $0.id == id }) else { return }
         pins[index].setOpenMode(mode)
+    }
+    func importDock() {
+        guard !importingDock else { return }
+        importingDock = true
+        dockImportMessage = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try DockImporter.load() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.importingDock = false
+                switch result {
+                case .success(let imported):
+                    let previousCount = self.pins.count
+                    self.pins = DockImport.merge(imported.items, into: self.pins)
+                    let added = max(0, self.pins.count - previousCount)
+                    self.dockImportMessage = "\(added)개 추가 · Dock 순서로 정리했습니다."
+                        + (imported.skipped > 0 ? " 사용할 수 없거나 지원하지 않는 항목 \(imported.skipped)개는 건너뛰었습니다." : "")
+                case .failure(let error): self.dockImportMessage = error.localizedDescription
+                }
+            }
+        }
     }
 }
 

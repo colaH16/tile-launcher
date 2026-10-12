@@ -4,8 +4,10 @@ import ApplicationServices
 import DeckCore
 
 final class DeckPanel: NSPanel {
+    var onClose: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override func performClose(_ sender: Any?) { onClose?() }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let tracker = WindowTracker()
     let hold = HoldMonitor()
     let loginItem = LoginItemManager()
+    let presentation = OverlayPresentation()
     private var appRecency = Recency<String>()
     private var apps: [AppItem] = []
     private var windows: [WindowItem] = []
@@ -29,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        configureApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "Tile Launcher")
         let menu = NSMenu()
@@ -42,7 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         tracker.onChange = { [weak self] in self?.windows = $0 }
         hold.onShow = { [weak self] in self?.show(held: true) }
-        hold.onHide = { [weak self] in self?.hide() }
+        hold.onHide = { [weak self] reason in
+            guard let self, self.presentation.dismisses(for: reason) else { return }
+            self.hide()
+        }
         hold.onCancel = { [weak self] in self?.pendingAction = nil }
         hold.onRelease = { [weak self] in
             let action = self?.pendingAction
@@ -75,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                             object: nil, queue: .main) { [weak self] _ in
-            self?.hide()
+            if self?.presentation.isPinned != true { self?.hide() }
             self?.refreshWindows()
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
@@ -94,6 +101,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--settings") {
             DispatchQueue.main.async { self.openSettings() }
         }
+    }
+
+    private func configureApplicationMenu() {
+        let menu = NSMenu()
+        let applicationItem = NSMenuItem()
+        let applicationMenu = NSMenu(title: "Tile Launcher")
+        let settingsItem = applicationMenu.addItem(withTitle: "설정…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        applicationMenu.addItem(.separator())
+        applicationMenu.addItem(withTitle: "Tile Launcher 가리기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        applicationMenu.addItem(.separator())
+        applicationMenu.addItem(withTitle: "Tile Launcher 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationItem.submenu = applicationMenu
+        menu.addItem(applicationItem)
+
+        let fileItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "파일")
+        fileMenu.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileItem.submenu = fileMenu
+        menu.addItem(fileItem)
+        NSApp.mainMenu = menu
     }
 
     private func item(_ app: NSRunningApplication) -> AppItem? {
@@ -155,11 +183,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
-        let snapshot = OverlaySnapshot(context: lastContext, apps: Array(apps.prefix(3)),
+        let snapshot = OverlaySnapshot(context: lastContext,
+                                       contextWindowTitle: windows.first { $0.pid == lastContext?.pid }?.title,
+                                       apps: Array(apps.prefix(3)),
                                        windows: Array(windows.prefix(count)), layout: layout, permission: trusted)
         let folderBrowser = FolderBrowser()
         browser = folderBrowser
-        let view = DeckView(snapshot: snapshot, settings: settings, browser: folderBrowser,
+        presentation.reset()
+        let view = DeckView(snapshot: snapshot, settings: settings, browser: folderBrowser, presentation: presentation,
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectWindow: { [weak self] in self?.select(window: $0) },
                             openURL: { [weak self] in self?.select(url: $0) },
@@ -167,7 +198,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             openTrash: { [weak self] in self?.selectTrash() },
                             showSettings: { [weak self] in self?.performAfterRelease { self?.openSettings() } },
                             requestPermission: { [weak self] in self?.performAfterRelease { self?.requestPermission() } },
-                            dismiss: { [weak self] in self?.hide() })
+                            dismiss: { [weak self] in
+                                self?.pendingAction = nil
+                                self?.hide()
+                            })
         let hosting = NSHostingView(rootView: view)
         let glass = NSGlassEffectView()
         glass.style = .regular
@@ -175,6 +209,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         glass.contentView = hosting
         let window = DeckPanel(contentRect: layout.frame, styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered, defer: false)
+        window.onClose = { [weak self] in
+            self?.pendingAction = nil
+            self?.hide()
+        }
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -219,13 +257,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browser?.close()
         browser = nil
         hold.isShowing = false
+        presentation.reset()
     }
     private func performAfterRelease(_ action: @escaping () -> Void) {
-        if heldPresentation && hold.optionDown {
+        if hold.optionDown && (heldPresentation || presentation.isPinned) {
             pendingAction = action
-            hide()
+            if !presentation.isPinned { hide() }
         } else {
-            hide()
+            if !presentation.isPinned { hide() }
             action()
         }
     }

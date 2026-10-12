@@ -14,6 +14,7 @@
 - R19에 따라 세로 높이감은 유지하고 가로를 좁히며 최소·최대 크기를 적용. 면적 약 50%를 강제하기 위해 높이를 늘리지 않음. 구체적인 수치는 최신 요구사항의 확정 여부를 확인함.
 - R20에 따라 오버레이 자체의 종횡비에도 허용 범위를 둠. 32:9·4:3 등 화면 비율을 패널에 그대로 복제하지 않고, 최소/최대 크기 및 화면 경계와 함께 계산함. 구체적인 비율 수치는 미확정.
 - macOS에 자연스러운 외관. Windows 타일의 시각 디자인을 복제하지 않음.
+- 창 제어는 왼쪽, 제목/설명은 중앙, 프로필·설정은 오른쪽 유리 그룹. OS에서 익힌 닫기·뒤로 가기·메뉴·키보드·포커스 동작을 우선함. R32의 핀 → 닫기 전환은 사용자가 요청한 제품 동작임.
 
 OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하더라도 이 의미를 임의로 바꾸지 않습니다.
 
@@ -33,6 +34,8 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 | 화면의 사용 가능 영역 | [NSScreen.visibleFrame](https://developer.apple.com/documentation/appkit/nsscreen/visibleframe) | 현재 UI 설정에서 표시 가능한 영역. 화면 전환·배율·Dock·메뉴 막대 변화 시 새로 조회 |
 | 호출 시 커서 위치 | [NSEvent.mouseLocation](https://developer.apple.com/documentation/appkit/nsevent/mouselocation) | 전역 화면 좌표와 표시 대상 모니터, 다중 모니터 좌표 변환 |
 | 창 표시 | [NSWindow.CollectionBehavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct) | 전체 화면, Spaces, Stage Manager 및 패널 동작 |
+| 창·도구 모음 관례 | [Windows](https://developer.apple.com/design/human-interface-guidelines/windows), [Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars) | 왼쪽 창 제어·탐색, 제목 중심, 네이티브 컨트롤/포커스와 도움말 |
+| Dock 설정 읽기 | [CFPreferencesCopyAppValue](https://developer.apple.com/documentation/corefoundation/cfpreferencescopyappvalue(_:_:)) | 읽기 API와 Dock 저장 스키마의 구분, 저장 순서·폴더 경로·기존 설정 보존 |
 | 접근성 제어 | [AXUIElement](https://developer.apple.com/documentation/applicationservices/axuielement_h) | 메뉴·창 노출, 권한, 시간 제한, 오류 처리 |
 | 이벤트 구독 | [AXObserverAddNotification](https://developer.apple.com/documentation/applicationservices/1462089-axobserveraddnotification) | 지원하지 않는 알림, 등록·해제, 이벤트 누락에 대한 보완 |
 | 집중 모드 | [App Intents — Focus](https://developer.apple.com/documentation/appintents/focus) | 집중 모드 필터·앱 설정 전달·해제·재시작 동작 |
@@ -70,6 +73,11 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 
 ## 필수 회귀 시나리오
 
+- 핀 → 같은 자리 닫기 전환, Option 해제 후 유지, `⌘⇧5`와 캡처 영역 선택 중 유지, 바깥 클릭/앱 전환 후 유지, `×`·Esc 닫기와 다음 호출 초기화. 고정 중 Option을 누른 채 대상을 선택하면 해제 뒤 실행되는지 확인.
+- 실제 Dock의 고정 앱·폴더 순서와 가져온 결과 비교. Finder/통합 휴지통, 한글/공백/퍼센트 인코딩, 옮기거나 삭제한 앱, 분리된 볼륨, 빈 목록, 지원하지 않는 타일, 중복/재실행을 확인. 기존 이름·폴더 방식·Dock 밖 항목을 잃지 않고 Dock 원본이 바뀌지 않아야 함.
+- `persistent-apps`/`persistent-others`와 `_CFURLString` 저장 형식은 CFPreferences 공개 API의 보장 사항이 아님. 새 macOS에서 실제 데이터를 확인하고 변경 시 파서를 갱신함. 가져오기는 버튼을 눌렀을 때만 수행하며 실패 시 수동 추가를 안내함.
+- 최소·최대 패널 및 긴 앱/창 이름에서 중앙 제목과 좌우 버튼이 겹치지 않는지, 폴더 탐색에서도 왼쪽 닫기와 뒤로 가기를 구분할 수 있는지 확인. 오른쪽 캡슐은 네이티브 glassEffect를 사용하며 라이트/다크·투명도 줄이기를 확인.
+- AppKit 메뉴 responder를 통한 `⌘W` 닫기·`⌘,` 설정·`⌘H` 가리기·`⌘Q` 종료가 앱 자신의 창에서 작동하고, 다른 앱에 포커스가 있으면 해당 앱의 입력을 침범하지 않는지 확인.
 - Option 단독 누름/해제, 다른 보조키와의 조합, Option 드래그, 한국어·영어 입력, 빠른 반복 호출. 호출이 기존 작업을 방해하지 않는지 확인.
 - 패널 표시로 원래 앱·창의 문맥이나 선택 상태가 바뀌지 않는지 확인. 메뉴 실행 시 보조키 잔류와 다른 앱으로의 잘못된 실행 방지.
 - `requirements.md`에 기록된 최근 목록의 세 가지 예시. 현재 앱 내부의 창 전환과 서로 다른 앱 사이의 전환 모두 확인.
