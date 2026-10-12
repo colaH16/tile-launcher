@@ -144,3 +144,10 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - 표시 전 `⌥⌘` 조합은 호출하지 않아야 한다. Option 단독으로 표시된 뒤 Command만 추가해도 닫히지 않고, Option을 유지한 `⌘,`로 설정이 즉시 열려야 한다. `⌥X`로 고정 후 Option을 놓아도 유지하고 Esc/`⌘W`는 닫아야 한다. 빠른 반복·한국어/영어 입력기·좌우 Option을 확인한다.
 - 비활성화 NSPanel이 키 입력을 받으면서 원래 앱/창의 스냅샷 문맥을 유지하는지 확인한다. 로컬 모니터가 처리한 키는 nil을 반환하여 중복 전달하지 않는다. 다른 앱으로 포커스를 옮기면 해당 앱의 키 입력을 가로채지 않아야 한다.
 - 2026-10-12 확인한 공식 자료: [앱 종료 요청](https://developer.apple.com/documentation/appkit/nsrunningapplication/terminate()), [launchDate](https://developer.apple.com/documentation/appkit/nsrunningapplication/launchdate), [새 인스턴스 실행](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/createsnewapplicationinstance), [로컬/전역 이벤트 모니터](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html), [비활성화 패널](https://developer.apple.com/documentation/appkit/nswindow/stylemask-swift.struct/nonactivatingpanel). 다음 OS 대응 시 당시 문서를 다시 확인한다.
+
+## R42 · 고정 오버레이 이동
+
+- 고정 전에는 제목을 드래그해도 이동하지 않고, 버튼/⌥X로 고정하면 제목·설명 영역을 잡아 이동할 수 있어야 한다. 이동 후 Option 해제로 닫히지 않고 Esc/⌘W/닫기 버튼과 설정 열기가 유지되는지 확인한다.
+- 실제 타일, 폴더 뒤로, 왼쪽 닫기, 오른쪽 설정 위의 마우스 입력을 드래그 영역이 가로채지 않는지 확인한다. 비활성 상태의 고정 창도 첫 클릭으로 드래그할 수 있어야 한다.
+- 기본/작은 배치, 폴더 안 헤더, 다른 배율·음수 원점의 모니터로 드래그, 화면 가장자리와 Space 전환을 확인한다. 이동 중 화면 크기·배율 재계산을 임의로 추가하지 않고 다음 호출의 커서 중심 배치가 유지되는지 검사한다.
+- [performDrag(with:)](https://developer.apple.com/documentation/appkit/nswindow/performdrag(with:))는 원래 mouse-down 이벤트를 넘기고 Window Server에 이동을 맡긴다. 로컬 SDK 문서상 즉시 반환하며 mouse-up이 오지 않을 수 있으므로 반환/마우스 해제를 드래그 완료로 간주하지 않는다. [isMovable](https://developer.apple.com/documentation/appkit/nswindow/ismovable) 및 최신 [Windows HIG](https://developer.apple.com/design/human-interface-guidelines/windows)를 함께 재확인한다.

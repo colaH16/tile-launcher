@@ -47,7 +47,7 @@ struct DeckView: View {
             }
             HStack {
                 Image(systemName: presentation.isPinned ? "pin.fill" : "option")
-                Text(presentation.isPinned ? "고정됨 · Esc 또는 ⌘W로 닫기" : "놓으면 닫기 · ⌥X 고정 · ⌘, 설정").font(.caption)
+                Text(presentation.isPinned ? "제목을 드래그하여 이동 · Esc 닫기" : "놓으면 닫기 · ⌥X 고정 · ⌘, 설정").font(.caption)
                 Spacer()
                 Text("Tile Launcher").font(.caption).foregroundStyle(.tertiary)
             }
@@ -105,6 +105,12 @@ struct DeckView: View {
             }
         }
         .frame(height: compact ? 40 : 52)
+        .overlay {
+            OverlayDragHandle(enabled: presentation.isPinned)
+                .padding(.leading, 90)
+                .padding(.trailing, 138)
+                .allowsHitTesting(presentation.isPinned)
+        }
     }
 
     private var headerTitle: String {
