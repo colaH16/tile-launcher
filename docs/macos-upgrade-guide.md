@@ -37,6 +37,9 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 | 이벤트 구독 | [AXObserverAddNotification](https://developer.apple.com/documentation/applicationservices/1462089-axobserveraddnotification) | 지원하지 않는 알림, 등록·해제, 이벤트 누락에 대한 보완 |
 | 집중 모드 | [App Intents — Focus](https://developer.apple.com/documentation/appintents/focus) | 집중 모드 필터·앱 설정 전달·해제·재시작 동작 |
 | 배포 제약 | [Protecting user data with App Sandbox](https://developer.apple.com/documentation/security/protecting-user-data-with-app-sandbox) | 앱 간 제어 제한과 App Store 배포 가능성 변화 |
+| 로그인 시 자동 실행 | [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice) | mainApp 등록/해제, 승인 대기·거부·시스템 설정 변경, 앱 이동/서명 갱신 후 상태 |
+| Finder에 폴더 열기 | [NSWorkspace](https://developer.apple.com/documentation/appkit/nsworkspace) | 지정 앱으로 일반 폴더 URL 전달, 전달 실패 처리 |
+| Finder 통합 휴지통 열기 | [OpenConfiguration.appleEvent](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/appleevent) | Finder의 `trash` 객체를 open 이벤트로 전달, Dock과 목록 비교, 추가 권한/전달 실패 여부 |
 | 릴리스 변경 | [Apple Release Notes](https://developer.apple.com/documentation/technologies/release-notes) | AppKit, SwiftUI, App Intents, 접근성·입력 관련 변경 및 알려진 문제 |
 
 ## 디자인 갱신 원칙
@@ -114,7 +117,13 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 ## 2026-10-12 · 첫 빌드에서 생긴 검증 기준
 
 - 최신 기본값은 requirements.md 상단, 실제 통과/미확인 항목은 validation.md를 확인한다. R21에서 세로 스크롤·커서 중심이 선택되었으며 기존 미정 표기는 과거 논의다.
-- 폴더 타일을 추가했다. NSOpenPanel·파일 접근 권한·추가 날짜 메타데이터·패키지 앱/폴더 구별·로컬 휴지통을 업그레이드 시 확인한다. 전체 디스크 접근 권한을 임의로 켜거나 휴지통 범위를 부풀려 설명하지 않는다.
+- 폴더 타일을 추가했다. NSOpenPanel·파일 접근 권한·추가 날짜 메타데이터·패키지 앱/폴더 구별을 업그레이드 시 확인한다. R29부터 휴지통은 Finder 전용이며 오버레이 탐색으로 되돌리지 않는다. 전체 디스크 접근 권한을 임의로 켜거나 Finder의 외장 볼륨 휴지통 표시까지 검증 없이 보장하지 않는다.
 - 등록 항목 순서를 저장하며, 후속 고정 메뉴에도 동일하게 수동 순서 변경을 제공한다.
 - `--render-check` 자체 콘텐츠 이미지는 실제 Glass 배경 합성 검증을 대체하지 않는다. 배경 위 외관은 반드시 직접 확인한다.
 - File Provider가 앱 패키지에 메타데이터를 붙이는 작업 폴더에서는 실행용 출력 경로를 동기화 폴더 밖에 둔다. Xcode 베타 결과와 정식 OS 결과는 계속 구분한다.
+- 로그인 항목 켜기/끄기, 승인 대기, 시스템 설정에서 직접 해제 후 앱 복귀, 실제 로그아웃/로그인, 앱 이동·업데이트 시 경로/서명 변경을 확인한다. 앱 시작 때 자동으로 재등록하여 사용자의 해제를 덮어쓰지 않는다.
+- 앱 반복 열기·동시 시작·복사본·실행 파일 직접 실행에서 한 인스턴스만 유지되는지, 정상 종료와 충돌 후 재실행 가능한지 확인한다. 잠금 파일을 삭제하면 잠금이 분리될 수 있으므로 프로세스 종료 시 파일을 지우지 않는다.
+- 일반 폴더별 여는 방식의 저장/재실행·기존 등록 데이터 마이그레이션, 휴지통의 Finder 고정 안내와 선택 불가, 외장 저장소 연결/해제 후 Finder 휴지통 실행을 확인한다.
+- R31의 휴지통은 경로가 아닌 Finder 애플리케이션의 `trash` 객체다. 새 OS의 `/System/Library/CoreServices/Finder.app/Contents/Resources/Finder.sdef`에서 읽기 전용 `trash` 속성(`trsh`)과 `open` 이벤트(`aevt`/`odoc`)를 재확인한다. 현재 Apple 문서의 `NSWorkspace.OpenConfiguration.appleEvent` 지원과 오류 처리도 확인한다.
+- ‘Bin/휴지통’이라는 창 제목만으로 성공을 판정하지 않는다. Dock에서 연 통합 휴지통과 타일에서 연 창의 목록·개수·경로 막대를 비교한다. 일반 Finder 창이 앞에 있는 경우와 통합 휴지통이 이미 열린 경우를 모두 확인하고, 다른 볼륨 연결/해제 후 다시 비교한다. 삭제나 비우기를 검증 수단으로 사용하지 않는다.
+- 통합 휴지통 요청이 실패할 때 `~/.Trash` 또는 볼륨별 `.Trashes`로 자동 대체하지 않는다. 실패를 표시하며 권한 확대나 직접 수집이 필요해지면 제품 동작 변경으로 검토한다. 현재 개발 빌드 검증을 향후 서명·공증·다른 OS의 동작 보장으로 간주하지 않는다.

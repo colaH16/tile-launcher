@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let settings = SettingsStore()
     let tracker = WindowTracker()
     let hold = HoldMonitor()
+    let loginItem = LoginItemManager()
     private var appRecency = Recency<String>()
     private var apps: [AppItem] = []
     private var windows: [WindowItem] = []
@@ -49,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action?()
         }
         hold.start()
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(reopenNotification(_:)),
+            name: Notification.Name("dev.cola16.TileLauncher.reopen"), object: String(getuid()))
         updateApps()
         checkPermission(force: true)
         let center = NSWorkspace.shared.notificationCenter
@@ -87,6 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionTimer?.tolerance = 1
         if CommandLine.arguments.contains("--show") || CommandLine.arguments.contains("--render-check") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.show(held: false) }
+        }
+        if CommandLine.arguments.contains("--settings") {
+            DispatchQueue.main.async { self.openSettings() }
         }
     }
 
@@ -129,6 +135,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
     @objc func openFromMenu() { show(held: false) }
+    @objc private func reopenNotification(_ notification: Notification) { reopenExistingInterface() }
+    private func reopenExistingInterface() {
+        if let preferences, preferences.isVisible {
+            NSApp.activate()
+            preferences.makeKeyAndOrderFront(nil)
+        } else { show(held: false) }
+    }
     private func show(held: Bool) {
         guard panel?.isVisible != true else { return }
         checkPermission()
@@ -150,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectWindow: { [weak self] in self?.select(window: $0) },
                             openURL: { [weak self] in self?.select(url: $0) },
+                            openInFinder: { [weak self] in self?.selectFolderInFinder($0) },
+                            openTrash: { [weak self] in self?.selectTrash() },
                             showSettings: { [weak self] in self?.performAfterRelease { self?.openSettings() } },
                             requestPermission: { [weak self] in self?.performAfterRelease { self?.requestPermission() } },
                             dismiss: { [weak self] in self?.hide() })
@@ -243,13 +258,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences.makeKeyAndOrderFront(nil)
             return
         }
-        let view = SettingsView(settings: settings, requestPermission: requestPermission)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
+        let view = SettingsView(settings: settings, loginItem: loginItem, requestPermission: requestPermission)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Tile Launcher 설정"
         window.contentView = NSHostingView(rootView: view)
-        window.minSize = NSSize(width: 520, height: 520)
+        window.minSize = NSSize(width: 540, height: 660)
         window.isReleasedWhenClosed = false
         window.center()
         preferences = window
@@ -264,14 +279,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         alert.runModal()
     }
+    private func selectFolderInFinder(_ url: URL) {
+        performAfterRelease { [weak self] in
+            guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
+                self?.error("Finder를 찾지 못했습니다.")
+                return
+            }
+            // Ordinary folder URLs only. Unified Trash uses a Finder object instead.
+            NSWorkspace.shared.open([url], withApplicationAt: finder,
+                                    configuration: NSWorkspace.OpenConfiguration()) { _, failure in
+                if let failure {
+                    DispatchQueue.main.async {
+                        self?.error("Finder에서 폴더를 열지 못했습니다. \(failure.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+    private func selectTrash() {
+        performAfterRelease { [weak self] in
+            guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
+                self?.error("Finder를 찾지 못했습니다.")
+                return
+            }
+            do {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.appleEvent = try FinderTrashRequest.makeOpenEvent()
+                configuration.activates = true
+                NSWorkspace.shared.openApplication(at: finder, configuration: configuration) { _, failure in
+                    if let failure {
+                        DispatchQueue.main.async {
+                            self?.error("Finder의 통합 휴지통을 열지 못했습니다. \(failure.localizedDescription)")
+                        }
+                    }
+                }
+            } catch { self?.error(error.localizedDescription) }
+        }
+    }
     @objc func quit() { NSApp.terminate(nil) }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        reopenExistingInterface()
+        return false
+    }
     func applicationWillTerminate(_ notification: Notification) {
         hold.stop()
         permissionTimer?.invalidate()
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 }
 
+// Acquire before constructing observers, event monitors, or the status item.
+let instanceLock: InstanceLock
+do {
+    let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("dev.cola16.TileLauncher", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    guard let lock = try InstanceLock(url: directory.appendingPathComponent("instance.lock")) else {
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("dev.cola16.TileLauncher.reopen"), object: String(getuid()),
+            userInfo: nil, deliverImmediately: true)
+        exit(0)
+    }
+    instanceLock = lock
+} catch {
+    let alert = NSAlert()
+    alert.messageText = "Tile Launcher를 시작하지 못했습니다."
+    alert.informativeText = "중복 실행 확인에 실패했습니다. \(error.localizedDescription)"
+    alert.runModal()
+    exit(1)
+}
 let application = NSApplication.shared
 let delegate = AppDelegate()
 application.delegate = delegate
-application.run()
+withExtendedLifetime(instanceLock) { application.run() }

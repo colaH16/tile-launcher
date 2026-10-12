@@ -1,8 +1,77 @@
 import XCTest
 import CoreGraphics
+import Carbon
 @testable import DeckCore
 
 final class DeckCoreTests: XCTestCase {
+    func testTrashOpenUsesFindersApplicationPropertyNotAVolumeDirectory() throws {
+        let event = try FinderTrashRequest.makeOpenEvent()
+        XCTAssertEqual(event.eventClass, AEEventClass(kCoreEventClass))
+        XCTAssertEqual(event.eventID, AEEventID(kAEOpenDocuments))
+        let target = try XCTUnwrap(event.attributeDescriptor(forKeyword: AEKeyword(keyAddressAttr)))
+        XCTAssertEqual(target.descriptorType, DescType(typeApplicationBundleID))
+        XCTAssertEqual(String(data: target.data, encoding: .utf8), "com.apple.finder")
+        let object = try XCTUnwrap(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)))
+        XCTAssertEqual(object.descriptorType, DescType(typeObjectSpecifier))
+        XCTAssertEqual(object.forKeyword(AEKeyword(keyAEDesiredClass))?.typeCodeValue, OSType(cProperty))
+        XCTAssertEqual(object.forKeyword(AEKeyword(keyAEContainer))?.descriptorType, DescType(typeNull))
+        XCTAssertEqual(object.forKeyword(AEKeyword(keyAEKeyForm))?.enumCodeValue, OSType(formPropertyID))
+        XCTAssertEqual(object.forKeyword(AEKeyword(keyAEKeyData))?.typeCodeValue, 0x74727368)
+    }
+    func testExistingPinsKeepIdentityAndOrderWhenOpenModeIsMissing() throws {
+        let data = Data("""
+        [{"kind":"app","path":"/Applications/Example.app","bundleID":"example.app","name":"Example"},
+         {"kind":"folder","path":"/tmp/Downloads","name":"다운로드"},
+         {"kind":"trash","path":"/tmp/.Trash","name":"휴지통"}]
+        """.utf8)
+        let pins = try JSONDecoder().decode([PinnedItem].self, from: data)
+        XCTAssertEqual(pins.map(\.id), ["/Applications/Example.app", "/tmp/Downloads", "/tmp/.Trash"])
+        XCTAssertEqual(pins[0].bundleID, "example.app")
+        XCTAssertFalse(pins[0].opensInOverlay)
+        XCTAssertTrue(pins[1].opensInOverlay)
+        XCTAssertEqual(pins[2].openMode, .finder)
+        XCTAssertFalse(pins[2].opensInOverlay)
+    }
+    func testFolderOpenModesSurviveSavingWithoutChangingOtherPins() throws {
+        var pins = [PinnedItem(kind: .folder, path: "/tmp/a", bundleID: nil, name: "a"),
+                    PinnedItem(kind: .folder, path: "/tmp/b", bundleID: nil, name: "b")]
+        pins[0].setOpenMode(.finder)
+        let restored = try JSONDecoder().decode([PinnedItem].self, from: JSONEncoder().encode(pins))
+        XCTAssertEqual(restored, pins)
+        XCTAssertFalse(restored[0].opensInOverlay)
+        XCTAssertTrue(restored[1].opensInOverlay)
+    }
+    func testTrashCannotOptIntoOverlayIncludingStoredSettings() throws {
+        var trash = PinnedItem(kind: .trash, path: "/tmp/.Trash", bundleID: nil, name: "휴지통", openMode: .overlay)
+        trash.setOpenMode(.overlay)
+        XCTAssertEqual(trash.openMode, .finder)
+        let data = Data("""
+        {"kind":"trash","path":"/tmp/.Trash","name":"휴지통","openMode":"overlay"}
+        """.utf8)
+        let restored = try JSONDecoder().decode(PinnedItem.self, from: data)
+        XCTAssertEqual(restored.openMode, .finder)
+        XCTAssertFalse(restored.opensInOverlay)
+    }
+    func testInstanceLockRejectsDuplicateAndAllowsRelaunchAfterOwnerExits() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("instance.lock")
+        var owner = try InstanceLock(url: url)
+        XCTAssertNotNil(owner)
+        XCTAssertNil(try InstanceLock(url: url))
+        withExtendedLifetime(owner) {}
+        owner = nil
+        let next = try InstanceLock(url: url)
+        XCTAssertNotNil(next)
+        XCTAssertNil(try InstanceLock(url: url))
+        withExtendedLifetime(next) {}
+    }
+    func testLockFailureIsNotMistakenForAnExistingInstance() {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("missing/instance.lock")
+        XCTAssertThrowsError(try InstanceLock(url: missing))
+    }
     func testRecencyExamplesKeepAppsAndWindowsSeparate() {
         for (history, expectedApps, expectedWindows) in [
             (["cc2", "se3", "naver", "google"], ["iTerm", "Safari", "Chrome"], ["cc2", "se3", "naver"]),

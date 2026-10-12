@@ -16,13 +16,7 @@ struct WindowItem: Identifiable {
     let title: String
     let minimized: Bool
 }
-struct PinnedItem: Codable, Identifiable, Equatable {
-    var id: String { path }
-    enum Kind: String, Codable { case app, folder, trash }
-    let kind: Kind
-    let path: String
-    let bundleID: String?
-    let name: String
+extension PinnedItem {
     var url: URL {
         bundleID.flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
             ?? URL(fileURLWithPath: path)
@@ -86,6 +80,10 @@ final class SettingsStore: ObservableObject {
         let new = old + offset
         guard pins.indices.contains(new) else { return }
         pins.swapAt(old, new)
+    }
+    func setOpenMode(_ mode: FolderOpenMode, for id: PinnedItem.ID) {
+        guard let index = pins.firstIndex(where: { $0.id == id }) else { return }
+        pins[index].setOpenMode(mode)
     }
 }
 

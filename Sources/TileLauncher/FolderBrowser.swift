@@ -15,6 +15,7 @@ final class FolderBrowser: ObservableObject {
     private var request = UUID()
 
     func open(_ pin: PinnedItem) {
+        guard pin.opensInOverlay else { return }
         rootName = pin.name
         path = [pin.url]
         refresh()

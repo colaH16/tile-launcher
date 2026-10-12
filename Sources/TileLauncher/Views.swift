@@ -27,6 +27,8 @@ struct DeckView: View {
     let selectApp: (AppItem) -> Void
     let selectWindow: (WindowItem) -> Void
     let openURL: (URL) -> Void
+    let openInFinder: (URL) -> Void
+    let openTrash: () -> Void
     let showSettings: () -> Void
     let requestPermission: () -> Void
     let dismiss: () -> Void
@@ -122,7 +124,10 @@ struct DeckView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 10)], spacing: 10) {
                             ForEach(settings.pins) { pin in
                                 Button {
-                                    if pin.kind == .app { openURL(pin.url) } else { browser.open(pin) }
+                                    if pin.kind == .trash { openTrash() }
+                                    else if pin.kind == .app { openURL(pin.url) }
+                                    else if pin.opensInOverlay { browser.open(pin) }
+                                    else { openInFinder(pin.url) }
                                 } label: {
                                     VStack(spacing: 6) {
                                         if pin.kind == .trash {
@@ -131,7 +136,9 @@ struct DeckView: View {
                                         Text(pin.name).font(.caption).lineLimit(1).truncationMode(.middle)
                                     }
                                     .frame(maxWidth: .infinity).frame(height: compact ? 64 : 80)
-                                }.buttonStyle(TileStyle()).help(pin.name)
+                                }.buttonStyle(TileStyle())
+                                    .help(pin.kind == .trash ? "Dock과 같은 통합 휴지통을 Finder에서 엽니다."
+                                          : pin.kind == .app ? pin.name : "\(pin.name) · \(pin.openMode.title)")
                             }
                         }
                     }
@@ -224,7 +231,7 @@ struct DeckView: View {
                 }.labelsHidden().frame(width: 160)
                     .help("추가 날짜가 없는 파일은 생성일로 정렬합니다.")
                 Spacer()
-                Button("Finder에서 열기") { if let url = browser.current { openURL(url) } }
+                Button("Finder에서 열기") { if let url = browser.current { openInFinder(url) } }
                     .buttonStyle(.borderless)
                 Button(action: browser.refresh) { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).help("새로고침")
@@ -265,6 +272,7 @@ struct DeckView: View {
 
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
+    @ObservedObject var loginItem: LoginItemManager
     let requestPermission: () -> Void
     @State private var countText = ""
     @State private var invalidCount = false
@@ -272,6 +280,20 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Tile Launcher").font(.title2.weight(.semibold))
             Text("Option을 0.25초 누르면 커서 근처에 열립니다.").foregroundStyle(.secondary).font(.callout)
+            GroupBox("시작") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("로그인 시 자동 실행", isOn: Binding(
+                        get: { loginItem.registered }, set: { loginItem.setEnabled($0) }))
+                        .disabled(loginItem.changing)
+                    Text(loginItem.statusText).font(.caption).foregroundStyle(.secondary)
+                    if loginItem.needsApproval {
+                        Button("로그인 항목 설정 열기", action: loginItem.openSystemSettings)
+                    }
+                    if let error = loginItem.error {
+                        Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
             GroupBox("최근 창") {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("패널 크기에 맞춰 표시 개수 자동 결정", isOn: $settings.automatic)
@@ -306,11 +328,26 @@ struct SettingsView: View {
             List {
                 ForEach(settings.pins) { pin in
                     HStack {
-                        Icon(url: pin.url, size: 28)
+                        if pin.kind == .trash {
+                            Image(systemName: "trash").font(.system(size: 24)).frame(width: 28, height: 28)
+                        } else { Icon(url: pin.url, size: 28) }
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(pin.name)
-                            Text(pin.kind == .app ? "앱" : "오버레이에서 폴더 탐색")
-                                .font(.caption).foregroundStyle(.secondary)
+                            Text(pin.name).lineLimit(1).truncationMode(.middle)
+                            if pin.kind == .trash {
+                                Text("휴지통은 Finder에서만 열 수 있습니다.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .help("Dock과 같은 통합 휴지통을 엽니다. 외장 저장소와 ‘되돌려 놓기’는 Finder에서 관리합니다.")
+                            } else if pin.kind == .app {
+                                Text("앱").font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Picker("여는 방식", selection: Binding(
+                                    get: { pin.openMode },
+                                    set: { settings.setOpenMode($0, for: pin.id) })) {
+                                    ForEach(FolderOpenMode.allCases) { Text($0.title).tag($0) }
+                                }
+                                .labelsHidden().pickerStyle(.menu).fixedSize()
+                                .accessibilityLabel("\(pin.name) 여는 방식")
+                            }
                         }
                         Spacer()
                         Button { settings.move(pin, by: -1) } label: { Image(systemName: "chevron.up") }
@@ -327,16 +364,20 @@ struct SettingsView: View {
             .overlay {
                 if settings.pins.isEmpty { Text("추가 버튼으로 자주 쓰는 앱과 폴더를 등록하세요.").foregroundStyle(.secondary) }
             }
+            .frame(minHeight: 120)
             HStack {
                 Button("접근성 권한 설정", action: requestPermission)
                 Spacer()
                 Text("개인용 개발 버전 0.1").font(.caption).foregroundStyle(.secondary)
             }
-            Text("휴지통은 현재 사용자의 로컬 휴지통입니다. 읽기 권한이 없으면 Finder에서 열 수 있습니다.")
+            Text("일반 폴더는 여는 방식을 선택할 수 있습니다. 휴지통 보기와 ‘되돌려 놓기’는 Finder에서 이용하세요.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(24)
-        .onAppear { countText = String(settings.manualCount) }
+        .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            loginItem.refresh()
+        }
     }
     private func saveCount() {
         guard let value = Int(countText.trimmingCharacters(in: .whitespaces)), value >= 6 else {
