@@ -29,23 +29,97 @@ struct OverlaySnapshot {
     let windows: [WindowItem]
     let layout: PanelLayout
     let permission: Bool
+    let pins: [PinnedItem]
+    let profileID: String
+    let profileName: String
+    let shortcuts: NumberShortcutAssignment
+    let commands: [MenuCommand]
 }
 final class SettingsStore: ObservableObject {
     @Published private(set) var importingDock = false
     @Published private(set) var dockImportMessage: String?
-    @Published var pins: [PinnedItem] { didSet { save() } }
+    @Published var profiles: [LauncherProfile] { didSet { save() } }
+    @Published var manualProfileID: String { didSet { save() } }
+    @Published var followFocus: Bool { didSet { save() } }
+    @Published var focusProfileID: String?
+    @Published var numberShortcuts: NumberShortcutAssignment { didSet { save() } }
+    @Published var commands: [MenuCommand] { didSet { save() } }
+    var activeProfile: LauncherProfile {
+        let id = followFocus ? (focusProfileID ?? manualProfileID) : manualProfileID
+        return profiles.first { $0.id == id } ?? profiles[0]
+    }
+    var pins: [PinnedItem] {
+        get { activeProfile.items }
+        set { setItems(newValue, profileID: activeProfile.id) }
+    }
+    func setItems(_ items: [PinnedItem], profileID: String) {
+        guard let index = profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        profiles[index].items = items
+    }
+    func selectProfile(_ id: String) {
+        guard profiles.contains(where: { $0.id == id }) else { return }
+        followFocus = false
+        manualProfileID = id
+    }
+    func addProfile(name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let profile = LauncherProfile(name: name, items: pins)
+        profiles.append(profile)
+        selectProfile(profile.id)
+    }
+    func removeActiveProfile() {
+        let id = activeProfile.id
+        guard id != "default", profiles.count > 1 else { return }
+        selectProfile(profiles.first { $0.id != id }!.id)
+        profiles.removeAll { $0.id == id }
+    }
+    func addCommand(_ command: MenuCommand) {
+        guard !commands.contains(where: { $0.appID == command.appID && $0.path == command.path }) else { return }
+        commands.append(command)
+    }
+    func togglePin(_ id: UUID) {
+        guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
+        commands[i].isPinned.toggle()
+    }
+    func recordUse(_ id: UUID) {
+        guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
+        commands[i].useCount = min(Int.max - 1, commands[i].useCount) + 1
+        commands[i].lastUsed = Date()
+    }
+    func moveCommand(_ id: UUID, by offset: Int) {
+        guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
+        guard commands[i].isWide else { return }
+        let peers = commands.indices.filter {
+            commands[$0].appID == commands[i].appID && commands[$0].isPinned == commands[i].isPinned && commands[$0].isWide
+        }
+        guard let old = peers.firstIndex(of: i), peers.indices.contains(old + offset) else { return }
+        commands.swapAt(i, peers[old + offset])
+    }
     @Published var automatic: Bool { didSet { save() } }
     @Published var manualCount: Int { didSet { save() } }
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        pins = defaults.data(forKey: "pinnedItems")
-            .flatMap { try? JSONDecoder().decode([PinnedItem].self, from: $0) } ?? []
+        profiles = LauncherProfile.restore(profiles: defaults.data(forKey: "launcherProfiles"),
+                                           legacyPins: defaults.data(forKey: "pinnedItems"))
+        manualProfileID = defaults.string(forKey: "manualProfileID") ?? "default"
+        followFocus = defaults.object(forKey: "followFocus") as? Bool ?? true
+        numberShortcuts = defaults.string(forKey: "numberShortcuts").flatMap(NumberShortcutAssignment.init(rawValue:)) ?? .registeredFirst
+        commands = defaults.data(forKey: "menuCommands").flatMap { try? JSONDecoder().decode([MenuCommand].self, from: $0) } ?? []
         automatic = defaults.object(forKey: "automaticWindowCount") as? Bool ?? true
         manualCount = max(6, defaults.object(forKey: "manualWindowCount") as? Int ?? 12)
+        save()
     }
     private func save() {
-        if let data = try? JSONEncoder().encode(pins) { defaults.set(data, forKey: "pinnedItems") }
+        if let data = try? JSONEncoder().encode(profiles) { defaults.set(data, forKey: "launcherProfiles") }
+        if let data = try? JSONEncoder().encode(profiles.first { $0.id == "default" }?.items ?? profiles[0].items) {
+            defaults.set(data, forKey: "pinnedItems")
+        }
+        if let data = try? JSONEncoder().encode(commands) { defaults.set(data, forKey: "menuCommands") }
+        defaults.set(manualProfileID, forKey: "manualProfileID")
+        defaults.set(followFocus, forKey: "followFocus")
+        defaults.set(numberShortcuts.rawValue, forKey: "numberShortcuts")
         defaults.set(automatic, forKey: "automaticWindowCount")
         defaults.set(manualCount, forKey: "manualWindowCount")
     }
@@ -92,6 +166,7 @@ final class SettingsStore: ObservableObject {
         guard !importingDock else { return }
         importingDock = true
         dockImportMessage = nil
+        let targetProfileID = activeProfile.id
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try DockImporter.load() }
             DispatchQueue.main.async { [weak self] in
@@ -99,9 +174,10 @@ final class SettingsStore: ObservableObject {
                 self.importingDock = false
                 switch result {
                 case .success(let imported):
-                    let previousCount = self.pins.count
-                    self.pins = DockImport.merge(imported.items, into: self.pins)
-                    let added = max(0, self.pins.count - previousCount)
+                    guard let target = self.profiles.first(where: { $0.id == targetProfileID }) else { return }
+                    let merged = DockImport.merge(imported.items, into: target.items)
+                    self.setItems(merged, profileID: targetProfileID)
+                    let added = max(0, merged.count - target.items.count)
                     self.dockImportMessage = "\(added)개 추가 · Dock 순서로 정리했습니다."
                         + (imported.skipped > 0 ? " 사용할 수 없거나 지원하지 않는 항목 \(imported.skipped)개는 건너뛰었습니다." : "")
                 case .failure(let error): self.dockImportMessage = error.localizedDescription

@@ -9,7 +9,7 @@ private struct HeaderControlsKey: PreferenceKey {
     }
 }
 
-private struct Icon: View {
+struct Icon: View {
     let url: URL?
     var size: CGFloat = 34
     var body: some View {
@@ -33,6 +33,10 @@ struct DeckView: View {
     @ObservedObject var browser: FolderBrowser
     @ObservedObject var presentation: OverlayPresentation
     let selectApp: (AppItem) -> Void
+    let selectPin: (PinnedItem) -> Void
+    let selectMenu: (MenuCommand) -> Void
+    let changeProfile: (String?) -> Void
+    @State private var editedMenus: [MenuCommand]?
     let selectWindow: (WindowItem) -> Void
     let openURL: (URL) -> Void
     let openInFinder: (URL) -> Void
@@ -50,8 +54,8 @@ struct DeckView: View {
                 if browser.current != nil {
                     folderContents
                 } else {
+                    workArea
                     registeredSection.frame(maxHeight: .infinity, alignment: .top)
-                    recentSection
                 }
                 HStack {
                     Image(systemName: presentation.isPinned ? "pin.fill" : "option")
@@ -106,8 +110,17 @@ struct DeckView: View {
                 }
                 Spacer()
                 HStack(spacing: 10) {
-                    Label("기본", systemImage: "circle.dotted").font(.caption)
-                        .help("집중 모드별 프로필은 다음 단계에 추가됩니다.")
+                    Menu {
+                        Button("집중 모드에 따라 자동 선택") { changeProfile(nil) }
+                        Divider()
+                        ForEach(settings.profiles) { profile in
+                            Button(profile.name) { changeProfile(profile.id) }
+                        }
+                    } label: {
+                        Label(snapshot.profileName, systemImage: "circle.dotted")
+                            .font(.caption).lineLimit(1).frame(maxWidth: 90)
+                    }.menuStyle(.borderlessButton).fixedSize()
+                        .help("등록 항목 프로필 선택")
                     Divider().frame(height: 16)
                     Button(action: showSettings) {
                         Image(systemName: "slider.horizontal.3").frame(width: 28, height: 30)
@@ -142,140 +155,180 @@ struct DeckView: View {
         return snapshot.contextWindowTitle ?? "지금 하던 일에서, 다음으로"
     }
 
-    private var registeredSection: some View {
-        HStack(alignment: .top, spacing: 24) {
-            if !compact {
-                VStack(alignment: .leading, spacing: 16) {
-                    sectionTitle("고정 메뉴", symbol: "pin")
-                    Spacer(minLength: 0)
+    private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.frame.width, compact: compact) }
+    private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
+    private var workArea: some View {
+        HStack(alignment: .top, spacing: 22) {
+            if !compact { menuSection.frame(width: geometry.menuWidth) }
+            recentSection.frame(width: geometry.windowWidth)
+        }
+    }
+    private func rows(_ spans: [Int], columns: Int) -> [[TilePlacement]] {
+        let placements = TileArrangement.place(spans: spans, columns: columns)
+        return (0..<(placements.last.map { $0.row + 1 } ?? 0)).map { row in placements.filter { $0.row == row } }
+    }
+    private func tileWidth(_ span: Int) -> CGFloat { geometry.unit * CGFloat(span) + geometry.gap * CGFloat(span - 1) }
+
+    private var menuSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionTitle("메뉴", symbol: "command")
+                Spacer()
+                Button(action: showSettings) { Image(systemName: "plus") }
+                    .buttonStyle(.plain).help("설정에서 앱별 메뉴 추가")
+            }.frame(height: 20)
+            if menuItems.isEmpty {
+                Button(action: showSettings) {
                     VStack(alignment: .leading, spacing: 9) {
-                        Image(systemName: "command").font(.system(size: 28, weight: .light)).foregroundStyle(.tertiary)
-                        Text("자주 쓰는 동작을 이 자리에").font(.callout.weight(.medium))
-                        Text("앱별 메뉴는 다음 단계에 연결할게요.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Divider()
-            }
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    sectionTitle("등록 항목", symbol: "square.grid.2x2")
-                    Spacer()
-                    Button(action: showSettings) { Image(systemName: "plus").font(.callout) }
-                        .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
-                }
-                if settings.pins.isEmpty {
-                    Button(action: showSettings) {
-                        VStack(spacing: 8) {
-                            Image(systemName: "plus.circle").font(.title2)
-                            Text("앱이나 폴더 추가").font(.callout)
-                        }
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }.buttonStyle(.plain)
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 10)], spacing: 10) {
-                            ForEach(settings.pins) { pin in
-                                Button {
-                                    if pin.kind == .trash { openTrash() }
-                                    else if pin.kind == .app { openURL(pin.url) }
-                                    else if pin.opensInOverlay { browser.open(pin) }
-                                    else { openInFinder(pin.url) }
-                                } label: {
-                                    VStack(spacing: 6) {
-                                        if pin.kind == .trash {
-                                            Image(systemName: "trash").font(.system(size: 28)).frame(height: 34)
-                                        } else { Icon(url: pin.url) }
-                                        Text(pin.name).font(.caption).lineLimit(1).truncationMode(.middle)
-                                    }
-                                    .frame(maxWidth: .infinity).frame(height: compact ? 64 : 80)
-                                }.buttonStyle(TileStyle())
-                                    .help(pin.kind == .trash ? "Dock과 같은 통합 휴지통을 Finder에서 엽니다."
-                                          : pin.kind == .app ? pin.name : "\(pin.name) · \(pin.openMode.title)")
+                        Image(systemName: "command").font(.title2)
+                        Text("앱별 메뉴 추가").font(.callout.weight(.medium))
+                        Text("설정 → 메뉴에서 자주 쓰는 동작을 등록하세요.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                }.buttonStyle(TileStyle())
+            } else {
+                let packed = rows(menuItems.map { $0.isWide ? 2 : 1 }, columns: 4)
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: geometry.gap) {
+                        ForEach(packed.indices, id: \.self) { row in
+                            HStack(spacing: geometry.gap) {
+                                ForEach(packed[row], id: \.index) { place in
+                                    menuTile(menuItems[place.index]).frame(width: tileWidth(place.span), height: geometry.unit)
+                                }
+                                Spacer(minLength: 0)
                             }
                         }
                     }
+                }.scrollIndicators(.visible)
+            }
+        }.frame(height: geometry.twoRows + 30)
+    }
+    private func menuTile(_ command: MenuCommand) -> some View {
+        Button { selectMenu(command) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "command").font(.system(size: 20))
+                    Spacer(minLength: 0)
+                    if command.isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                }
+                Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(command.isPinned ? Color.accentColor.opacity(0.13) : .clear,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }.buttonStyle(TileStyle())
+            .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : ""))
+            .contextMenu {
+                Button(command.isPinned ? "고정 해제" : "앞에 고정") {
+                    settings.togglePin(command.id)
+                    editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .frame(minHeight: compact ? 72 : 128)
     }
 
+    private var registeredSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionTitle("등록 항목", symbol: "square.grid.2x2")
+                Text("\(snapshot.pins.count)개").font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+                Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
+                Button(action: showSettings) { Image(systemName: "plus") }
+                    .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
+            }.frame(height: 20)
+            if snapshot.pins.isEmpty {
+                Button("앱이나 폴더 추가", action: showSettings)
+                    .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 54), spacing: 8)], spacing: 8) {
+                        ForEach(Array(snapshot.pins.enumerated()), id: \.element.id) { index, pin in
+                            Button { selectPin(pin) } label: {
+                                VStack(spacing: 5) {
+                                    Group {
+                                        if pin.kind == .trash {
+                                            Image(systemName: "trash").font(.system(size: 28)).frame(width: 32, height: 32)
+                                        } else { Icon(url: pin.url, size: 32) }
+                                    }.overlay(alignment: .topTrailing) {
+                                        numberBadge(index).offset(x: 8, y: -4)
+                                    }
+                                    Text(pin.name).font(.caption2).lineLimit(1).truncationMode(.middle)
+                                }.padding(.top, 6).frame(maxWidth: .infinity).frame(height: 60)
+                                    .background(presentation.selection == "pin:\(pin.id)" ? Color.accentColor.opacity(0.2) : .clear,
+                                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                                .help(pinHelp(pin, index: index))
+                                .accessibilityLabel(pinHelp(pin, index: index))
+                        }
+                    }.padding(.top, 4)
+                }
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    private func pinHelp(_ pin: PinnedItem, index: Int) -> String {
+        let shortcut = NumberShortcutAssignment.digit(for: index).map { " · \(snapshot.shortcuts.registeredPrefix)\($0)" } ?? ""
+        return pin.name + shortcut + (pin.kind == .trash ? " · 통합 휴지통은 Finder에서만 열 수 있습니다." : "")
+    }
+    @ViewBuilder private func numberBadge(_ index: Int) -> some View {
+        if let digit = NumberShortcutAssignment.digit(for: index) {
+            Text(digit).font(.system(size: 10, weight: .medium, design: .rounded)).monospacedDigit()
+                .frame(width: 16, height: 16).background(.regularMaterial, in: Circle())
+                .accessibilityHidden(true)
+        }
+    }
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if compact {
-                HStack(spacing: 12) {
-                    Text("최근 앱").font(.caption).foregroundStyle(.secondary)
-                    ForEach(snapshot.apps) { app in
-                        Button { selectApp(app) } label: { Icon(url: app.url, size: 24) }
-                            .buttonStyle(.plain).help(app.name)
-                    }
-                }
-            }
-            HStack(alignment: .top, spacing: 20) {
-                if !compact {
-                    VStack(alignment: .leading, spacing: 10) {
-                        sectionTitle("최근 앱", symbol: nil)
-                        ForEach(snapshot.apps) { app in
-                            Button { selectApp(app) } label: {
-                                HStack(spacing: 6) {
-                                    Icon(url: app.url, size: 28)
-                                    Text(app.name).font(.caption).lineLimit(1)
-                                }.frame(maxWidth: .infinity, alignment: .leading).frame(height: 44)
-                            }.buttonStyle(.plain).help(app.name)
-                        }
-                    }.frame(width: 100, alignment: .leading)
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
-                        Spacer()
-                        Text("\(snapshot.windows.count)개").font(.caption).foregroundStyle(.tertiary)
-                    }
-                    if !snapshot.permission {
-                        VStack(spacing: 10) {
-                            Text("창을 보여주려면 접근성 권한이 필요해요.").font(.callout)
-                            Button("접근성 허용하기", action: requestPermission).buttonStyle(.borderedProminent)
-                            Text("앱·폴더 등록은 지금도 사용할 수 있어요.").font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity).frame(height: tileHeight * 2 + 10)
-                    } else if snapshot.windows.isEmpty {
-                        Text("열린 창을 확인하고 있어요.\n잠시 후 다시 열어 주세요.")
-                            .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity).frame(height: tileHeight * 2 + 10)
-                    } else {
-                        ScrollView(.vertical) {
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10),
-                                                     count: snapshot.layout.columns), spacing: 10) {
-                                ForEach(snapshot.windows) { window in
-                                    Button { selectWindow(window) } label: {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            HStack(spacing: 6) {
-                                                Icon(url: window.appURL, size: 22)
-                                                Text(window.appName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                                                Spacer(minLength: 0)
-                                                if window.minimized { Image(systemName: "minus.square").font(.caption2) }
-                                            }
-                                            Text(window.title).font(.system(size: 13, weight: .medium))
-                                                .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                                        }
-                                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                                        .frame(height: tileHeight, alignment: .top)
-                                    }
-                                    .buttonStyle(TileStyle())
-                                    .help("\(window.appName) — \(window.title)")
-                                    .accessibilityLabel("\(window.appName), \(window.title)")
+            HStack {
+                sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
+                Spacer()
+                Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
+            }.frame(height: 20)
+            if !snapshot.permission {
+                VStack(spacing: 8) {
+                    Text("창을 보여주려면 접근성 권한이 필요해요.").font(.callout)
+                    Button("접근성 허용하기", action: requestPermission).buttonStyle(.borderedProminent)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if snapshot.windows.isEmpty {
+                Text("열린 창을 확인하고 있어요.\n잠시 후 다시 열어 주세요.")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                let spans = TileArrangement.spans(for: snapshot.windows.map { $0.appURL?.path ?? String($0.pid) })
+                let packed = rows(spans, columns: geometry.windowColumns)
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: geometry.gap) {
+                        ForEach(packed.indices, id: \.self) { row in
+                            HStack(spacing: geometry.gap) {
+                                ForEach(packed[row], id: \.index) { place in
+                                    windowTile(snapshot.windows[place.index], index: place.index, wide: place.span == 2)
+                                        .frame(width: tileWidth(place.span), height: geometry.unit)
                                 }
+                                Spacer(minLength: 0)
                             }
                         }
-                        .frame(height: tileHeight * 2 + 10)
-                        .scrollIndicators(.visible)
                     }
-                }
+                }.scrollIndicators(.visible)
             }
-        }
+        }.frame(height: geometry.twoRows + 30)
+    }
+    private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
+        Button { selectWindow(window) } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    Icon(url: window.appURL, size: 22)
+                    if wide { Text(window.appName).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                    Spacer(minLength: 0)
+                }.padding(.trailing, 12)
+                Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(presentation.selection == "window:\(window.id)" ? Color.accentColor.opacity(0.2) : .clear,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
+        }.buttonStyle(TileStyle())
+            .help("\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : ""))
+            .accessibilityLabel("\(index + 1). \(window.appName), \(window.title)")
     }
 
     private var folderContents: some View {
@@ -322,131 +375,5 @@ struct DeckView: View {
             if let symbol { Image(systemName: symbol).font(.caption) }
             Text(title).font(.system(size: 12, weight: .semibold))
         }.foregroundStyle(.secondary)
-    }
-}
-
-struct SettingsView: View {
-    @ObservedObject var settings: SettingsStore
-    @ObservedObject var loginItem: LoginItemManager
-    let requestPermission: () -> Void
-    @State private var countText = ""
-    @State private var invalidCount = false
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Tile Launcher").font(.title2.weight(.semibold))
-            Text("Option을 0.25초 누르면 커서 근처에 열립니다.").foregroundStyle(.secondary).font(.callout)
-            GroupBox("시작") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("로그인 시 자동 실행", isOn: Binding(
-                        get: { loginItem.registered }, set: { loginItem.setEnabled($0) }))
-                        .disabled(loginItem.changing)
-                    Text(loginItem.statusText).font(.caption).foregroundStyle(.secondary)
-                    if loginItem.needsApproval {
-                        Button("로그인 항목 설정 열기", action: loginItem.openSystemSettings)
-                    }
-                    if let error = loginItem.error {
-                        Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-            }
-            GroupBox("최근 창") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("패널 크기에 맞춰 표시 개수 자동 결정", isOn: $settings.automatic)
-                    HStack {
-                        Text("수동 개수")
-                        TextField("최소 6", text: $countText).frame(width: 100)
-                            .onSubmit(saveCount)
-                        Button("적용", action: saveCount)
-                    }.disabled(settings.automatic)
-                    if invalidCount { Text("6 이상의 정수를 입력해 주세요.").foregroundStyle(.red).font(.caption) }
-                    Text("2줄을 넘는 항목은 최근 창 영역에서 세로로 스크롤합니다.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-            }
-            HStack {
-                Text("등록 앱·폴더").font(.headline)
-                Spacer()
-                Button(settings.importingDock ? "가져오는 중…" : "Dock에서 가져오기", action: settings.importDock)
-                    .disabled(settings.importingDock)
-                    .help("고정된 앱·폴더와 Finder·휴지통을 Dock 순서로 가져옵니다. 기존 항목의 설정은 유지합니다.")
-                Menu {
-                    Button("앱 추가…", action: settings.addApplications)
-                    Button("폴더 추가…", action: settings.addFolder)
-                    Button("다운로드 추가") {
-                        settings.addFolderURL(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0],
-                                              name: "다운로드")
-                    }
-                    Button("휴지통 추가") {
-                        settings.addFolderURL(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"),
-                                              kind: .trash, name: "휴지통")
-                    }
-                } label: { Label("추가", systemImage: "plus") }
-                .fixedSize()
-            }
-            if let message = settings.dockImportMessage {
-                Text(message).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            List {
-                ForEach(settings.pins) { pin in
-                    HStack {
-                        if pin.kind == .trash {
-                            Image(systemName: "trash").font(.system(size: 24)).frame(width: 28, height: 28)
-                        } else { Icon(url: pin.url, size: 28) }
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(pin.name).lineLimit(1).truncationMode(.middle)
-                            if pin.kind == .trash {
-                                Text("휴지통은 Finder에서만 열 수 있습니다.")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                    .help("Dock과 같은 통합 휴지통을 엽니다. 외장 저장소와 ‘되돌려 놓기’는 Finder에서 관리합니다.")
-                            } else if pin.kind == .app {
-                                Text("앱").font(.caption).foregroundStyle(.secondary)
-                            } else {
-                                Picker("여는 방식", selection: Binding(
-                                    get: { pin.openMode },
-                                    set: { settings.setOpenMode($0, for: pin.id) })) {
-                                    ForEach(FolderOpenMode.allCases) { Text($0.title).tag($0) }
-                                }
-                                .labelsHidden().pickerStyle(.menu).fixedSize()
-                                .accessibilityLabel("\(pin.name) 여는 방식")
-                            }
-                        }
-                        Spacer()
-                        Button { settings.move(pin, by: -1) } label: { Image(systemName: "chevron.up") }
-                            .help("앞으로 이동").disabled(settings.pins.first == pin)
-                        Button { settings.move(pin, by: 1) } label: { Image(systemName: "chevron.down") }
-                            .help("뒤로 이동").disabled(settings.pins.last == pin)
-                        Button { settings.pins.removeAll { $0.id == pin.id } } label: { Image(systemName: "minus.circle") }
-                            .help("등록 해제")
-                    }
-                    .buttonStyle(.borderless).padding(.vertical, 4)
-                }
-                .onMove { settings.pins.move(fromOffsets: $0, toOffset: $1) }
-            }
-            .overlay {
-                if settings.pins.isEmpty { Text("추가 버튼으로 자주 쓰는 앱과 폴더를 등록하세요.").foregroundStyle(.secondary) }
-            }
-            .frame(minHeight: 120)
-            HStack {
-                Button("접근성 권한 설정", action: requestPermission)
-                Spacer()
-                Text("개인용 개발 버전 0.1").font(.caption).foregroundStyle(.secondary)
-            }
-            Text("일반 폴더는 여는 방식을 선택할 수 있습니다. 휴지통 보기와 ‘되돌려 놓기’는 Finder에서 이용하세요.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .padding(24)
-        .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            loginItem.refresh()
-        }
-    }
-    private func saveCount() {
-        guard let value = Int(countText.trimmingCharacters(in: .whitespaces)), value >= 6 else {
-            invalidCount = true
-            return
-        }
-        invalidCount = false
-        settings.manualCount = value
     }
 }

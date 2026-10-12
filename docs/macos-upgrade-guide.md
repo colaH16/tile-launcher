@@ -7,7 +7,7 @@
 ## 변하지 않아야 할 제품 의도
 
 - Option 호출, 큰 클릭 영역, 타일형 공간 배치.
-- 현재 앱 메뉴, 집중 모드별 등록 앱, 별도의 최근 앱·최근 창.
+- 현재 앱 메뉴, 집중 모드별 등록 앱·폴더, 모든 앱의 최근 창. R52의 최근 창 한 목록과 연속 앱에 따른 크기 변화를 유지하며 별도 최근 앱은 표시하지 않음.
 - 모든 앱의 창을 개별 항목으로 다루며 최근 창에 더 많은 공간 제공.
 - 최근 창은 최소 6개 용량·2줄 배치, 크기에 따른 자동 개수 및 수동 지정 지원. 고정 최대 개수를 새로 도입하지 않음.
 - 오버레이는 화면 면적의 약 절반을 목표로 하고 화면 밖으로 나가지 않음. 스크롤 방향·커서 기준 위치의 최종 선택은 최신 요구사항과 `interaction-design.md`의 상태를 확인함.
@@ -153,4 +153,16 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - [performDrag(with:)](https://developer.apple.com/documentation/appkit/nswindow/performdrag(with:))는 원래 mouse-down 이벤트를 넘기고 Window Server에 이동을 맡긴다. 로컬 SDK 문서상 즉시 반환하며 mouse-up이 오지 않을 수 있으므로 반환/마우스 해제를 드래그 완료로 간주하지 않는다. [isMovable](https://developer.apple.com/documentation/appkit/nswindow/ismovable) 및 최신 [Windows HIG](https://developer.apple.com/design/human-interface-guidelines/windows)를 함께 재확인한다.
 - 드래그에서 제외할 컨트롤 영역은 고정 너비 추정 대신 SwiftUI anchor preference에서 구한다. NSView의 flipped 좌표계와 hitTest의 상위 뷰 좌표 변환을 함께 검증한다. 폴더 진입으로 뒤로 버튼이 생기거나 사라질 때 영역이 즉시 맞아야 한다.
 - 뒤로 가기·핀/닫기의 원형 글래스, 대비/투명도 줄이기, 첫 클릭, 툴팁, VoiceOver, 네이티브 눌림 상태를 비교한다. 2026-10-12 [Applying Liquid Glass to custom views](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views)의 모양 및 interactive 설정을 확인함. 추후 표준 버튼 스타일/컨테이너로 옮기면 모양과 실제 클릭 영역을 재검증한다.
-- R43·R46 레이아웃은 아직 시안이다. 네이티브 구현 시 앱별 메뉴 ID 중복 제거, 로컬 실행 빈도, 작은/큰 타일과 고정 색/핀 표시, 수동 고정 순서, 열린 동안 자동 재배치 방지, 빈 데이터·권한 오류·긴 메뉴 이름을 검증한다. 고정/자주/최근을 별도 영역으로 다시 나누거나 전체 메뉴 사용 추적을 보장하지 않는다.
+- R43·R46에서 검토한 메뉴는 R52로 네이티브 구현을 승인했다. 업그레이드 시 앱별 메뉴 ID 중복 제거, 로컬 실행 빈도, 작은/큰 타일과 고정 색/핀 표시, 수동 고정 순서, 열린 동안 자동 재배치 방지, 빈 데이터·권한 오류·긴 메뉴 이름을 검증한다. 고정/자주/최근을 별도 영역으로 다시 나누거나 전체 메뉴 사용 추적을 보장하지 않는다.
+
+## R52–R53 · 혼합 타일·숫자·메뉴·Focus 회귀 점검
+
+- Terminal/Terminal/Safari/Terminal, 앱별 창 하나, 같은 앱 창만 많은 경우를 확인한다. 순서를 빈칸 채우기로 바꾸지 않으며 큰 타일도 개별 창을 전환해야 한다. 메뉴와 창 공통 높이, 큰 메뉴 둘의 가로 배치, 긴 제목/한국어 줄바꿈, 등록 아이콘 36개 이상을 확인한다.
+- 자동 개수는 가로형/정사각형 혼합을 실제 첫 두 줄에 순서대로 넣어 계산한다. 최소 여섯 가로형 용량, 수동 6/7/12/큰 값, 빈 목록, 줄 끝 공백, 작은 배치와 비율 경계를 점검한다. 코드의 1.45 목표는 Apple 고정 지침이 아니다.
+- ⌥숫자 등록/⌥⌘숫자 창 기본값과 반대 설정, 1–9/0·키패드·양쪽 Option·한영 입력·키 반복·보조키 해제 순서를 확인한다. 숫자 선택 변경/취소, 고정한 패널, 폴더 진입, 다른 앱 포커스에서 입력 비점유도 검사한다. 열린 동안 자동 MRU/Focus 변경이 번호의 대상을 바꾸면 안 된다.
+- 메뉴는 설정에서만 열거하고 실행 직전 경로/활성/AXPress를 확인한다. 미노출/동적 메뉴, 중복 이름, 앱 종료, 문서 선택, 언어 변경, 응답 시간 초과 후 중복 실행 방지, 실패 통계 미반영, 3회 확대와 핀/순서 저장을 확인한다. 실제 Excel 명령을 대상으로 최종 검증하되 사용자 문서를 임의로 바꾸는 테스트는 피한다.
+- Focus는 `SetFocusFilterIntent`/`AppEntity`/`current`의 당시 SDK 선언과 [Focus 필터 공식 설명](https://developer.apple.com/videos/play/wwdc2022/10121/), [Focus 문서](https://developer.apple.com/documentation/appintents/focus)를 재확인한다. 사용자 구성 필터, 해제, 미설정, 앱 재시작/깨우기, 삭제된 프로필, 수동 선택과 자동 복귀를 실기로 검증한다. 모든 집중 모드 이름을 읽는 기능으로 설명하지 않는다.
+- SwiftPM 릴리스 앱은 `scripts/extract-intents.py`가 Xcode의 `appintentsmetadataprocessor`로 `Contents/Resources/Metadata.appintents`를 패키징한다. Xcode 업데이트 시 `.swiftconstvalues` 경로·프로세서 옵션·추출된 LauncherFocusIntent/프로필 엔터티를 검사한다. 메타데이터 존재만으로 시스템 설정 등록/실제 Focus 전환 성공을 판정하지 않는다.
+- 기존 pinnedItems → 기본 프로필 이전에서 ID·순서·폴더 방식과 사용자 데이터를 보존한다. 앱 복사본이 여러 경로에 있으면 실제 실행 경로/버전과 로그인 항목을 확인하고 검증 중 허용한 접근성 대상과 일치시키며, 권한을 임의로 확대하지 않는다.
+
+- R55: 실행 잠금이 없는 초기 앱을 먼저 띄운 뒤 새 앱을 실행하는 마이그레이션을 회귀 검사한다. 잠금을 획득했다고 다른 앱이 없다고 가정하지 않는다. 같은 최신 빌드 재열기 때도 기록된 소유자 외의 초기 복사본을 정상 종료하는지 확인한다. 과거 바이너리를 나중에 직접 실행하는 상황은 구분해서 기록한다.

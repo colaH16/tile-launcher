@@ -2,6 +2,7 @@ import Foundation
 
 public enum OverlayShortcut: Equatable {
     case pin, settings, close
+    case number(index: Int, command: Bool)
 
     public struct Modifiers: OptionSet {
         public let rawValue: Int
@@ -23,6 +24,13 @@ public enum OverlayShortcut: Equatable {
             if keyCode == 13 { return .close } // Command-W
         }
         if keyCode == 7 && modifiers == .option { return .pin } // Option-X
+        if modifiers == .option || modifiers == [.option, .command] {
+            let numberKeys: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25, 29]
+            let keypadKeys: [UInt16] = [83, 84, 85, 86, 87, 88, 89, 91, 92, 82]
+            if let index = numberKeys.firstIndex(of: keyCode) ?? keypadKeys.firstIndex(of: keyCode) {
+                return .number(index: index, command: modifiers.contains(.command))
+            }
+        }
         return nil
     }
 }

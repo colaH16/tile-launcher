@@ -6,8 +6,7 @@ public struct PanelLayout: Equatable {
     public let compact: Bool
     public let supported: Bool
     public var columns: Int {
-        let available = frame.width - 48 - (compact ? 0 : 120)
-        return max(3, Int((available + 10) / 158))
+        DeckGeometry(width: frame.width, compact: compact).windowColumns / 2
     }
     public var capacity: Int { columns * 2 }
 
@@ -23,7 +22,7 @@ public struct PanelLayout: Equatable {
             let height = min(max(v.height * 0.8, 620), upper)
             let lowerWidth = max(760, height * 1.2)
             let upperWidth = min(1040, v.width, height * 1.5)
-            size = CGSize(width: min(max(height * 1.25, lowerWidth), upperWidth), height: height)
+            size = CGSize(width: min(max(height * 1.45, lowerWidth), upperWidth), height: height)
         } else {
             // In small work areas spacing changes; text is never scaled as an image.
             let ratio: CGFloat = v.height < 520 ? 1.5 : 1.25
@@ -38,7 +37,10 @@ public struct PanelLayout: Equatable {
                     supported: size.width >= 512 && size.height >= 420)
     }
 
-    public func windowLimit(manual: Int?, actual: Int) -> Int {
-        min(actual, manual.map { max(6, $0) } ?? capacity)
+    public func windowLimit(manual: Int?, actual: Int, spans: [Int]? = nil) -> Int {
+        let automatic = spans.map {
+            TileArrangement.place(spans: $0, columns: columns * 2).prefix { $0.row < 2 }.count
+        } ?? capacity
+        return min(actual, manual.map { max(6, $0) } ?? max(6, automatic))
     }
 }

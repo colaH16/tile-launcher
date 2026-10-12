@@ -50,6 +50,10 @@ enum InstanceCoordinator {
         var askedToQuit: [Int32: ProcessIdentity] = [:]
         while true {
             if let lock = try InstanceLock(url: lockURL) {
+                // The earliest development build did not hold an instance lock.
+                // An available lock is therefore not proof that no app copy exists.
+                try terminateLegacyCopies(excluding: [process.pid], before: process,
+                                          asked: &askedToQuit, deadline: deadline)
                 // A successful termination request is not proof of process exit.
                 // NSRunningApplication properties can lag during pre-launch. Read
                 // the kernel identity, as for PID reuse checks, rather than its cache.
@@ -64,6 +68,8 @@ enum InstanceCoordinator {
             if let existing, ProcessIdentity.read(pid: existing.process.pid) == existing.process,
                let app = NSRunningApplication(processIdentifier: existing.process.pid),
                app.bundleIdentifier == bundleID {
+                try terminateLegacyCopies(excluding: [process.pid, existing.process.pid], before: process,
+                                          asked: &askedToQuit, deadline: deadline)
                 if existing.decision(for: candidate) == .keepExisting {
                     // Its run loop/notification observer may still be starting.
                     if !app.isFinishedLaunching { try wait(until: deadline); continue }
@@ -90,6 +96,24 @@ enum InstanceCoordinator {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size <= 4096, let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(InstanceOwner.self, from: data)
+    }
+
+    private static func terminateLegacyCopies(excluding: Set<Int32>, before candidate: ProcessIdentity,
+                                             asked: inout [Int32: ProcessIdentity], deadline: Date) throws {
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            where !excluding.contains(app.processIdentifier) {
+            guard let identity = ProcessIdentity.read(pid: app.processIdentifier),
+                  !identity.started(after: candidate) else { continue }
+            while !app.isFinishedLaunching, ProcessIdentity.read(pid: identity.pid) == identity {
+                try wait(until: deadline)
+            }
+            if ProcessIdentity.read(pid: identity.pid) == identity {
+                try requestTermination(app, asked: &asked)
+            }
+        }
+        while asked.values.contains(where: { ProcessIdentity.read(pid: $0.pid) == $0 }) {
+            try wait(until: deadline)
+        }
     }
 
     private static func requestTermination(_ app: NSRunningApplication, asked: inout [Int32: ProcessIdentity]) throws {

@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let hold = HoldMonitor()
     let loginItem = LoginItemManager()
     let presentation = OverlayPresentation()
+    let menuCatalog = MenuCatalog()
+    private var visibleSnapshot: OverlaySnapshot?
     private var appRecency = Recency<String>()
     private var apps: [AppItem] = []
     private var windows: [WindowItem] = []
@@ -56,10 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.presentation.dismisses(for: reason) else { return }
             self.hide()
         }
-        hold.onCancel = { [weak self] in self?.pendingAction = nil }
+        hold.onCancel = { [weak self] in self?.pendingAction = nil; self?.presentation.selection = nil }
         hold.onRelease = { [weak self] in
             let action = self?.pendingAction
             self?.pendingAction = nil
+            self?.presentation.selection = nil
             action?()
         }
         hold.ownsKeyboard = { [weak self] in self?.panel?.isKeyWindow == true }
@@ -69,11 +72,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .pin: self.presentation.pin()
             case .settings: self.openSettings()
             case .close: self.hide()
+            case .number(let index, let command): self.selectNumber(index, command: command)
             }
         }
         hold.start()
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(reopenNotification(_:)),
             name: InstanceCoordinator.reopenName, object: String(getuid()))
+        observers.append(NotificationCenter.default.addObserver(forName: .launcherFocusChanged, object: nil, queue: .main) { [weak self] note in
+            self?.settings.focusProfileID = note.userInfo?["profileID"] as? String
+        })
+        refreshFocus()
         updateApps()
         checkPermission(force: true)
         let center = NSWorkspace.shared.notificationCenter
@@ -83,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateApps()
                 self?.refreshWindows()
                 self?.checkPermission()
+                if name == NSWorkspace.didWakeNotification { self?.refreshFocus() }
             })
         }
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
@@ -221,16 +230,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.")
             return
         }
-        let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
+        let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count,
+                                       spans: TileArrangement.spans(for: windows.map { $0.appURL?.path ?? String($0.pid) }))
         let snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid }?.title,
                                        apps: Array(apps.prefix(3)),
-                                       windows: Array(windows.prefix(count)), layout: layout, permission: trusted)
+                                       windows: Array(windows.prefix(count)), layout: layout, permission: trusted,
+                                       pins: settings.pins, profileID: settings.activeProfile.id,
+                                       profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
+                                       commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? ""))
+        visibleSnapshot = snapshot
         let folderBrowser = FolderBrowser()
         browser = folderBrowser
         presentation.reset()
         let view = DeckView(snapshot: snapshot, settings: settings, browser: folderBrowser, presentation: presentation,
                             selectApp: { [weak self] in self?.select(app: $0) },
+                            selectPin: { [weak self] in self?.select(pin: $0) },
+                            selectMenu: { [weak self] in self?.select(menu: $0, context: snapshot.context, window: snapshot.windows.first { $0.pid == snapshot.context?.pid }) },
+                            changeProfile: { [weak self] id in self?.changeProfile(id) },
                             selectWindow: { [weak self] in self?.select(window: $0) },
                             openURL: { [weak self] in self?.select(url: $0) },
                             openInFinder: { [weak self] in self?.selectFolderInFinder($0) },
@@ -295,6 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.orderOut(nil)
         panel?.contentView = nil
         panel = nil
+        visibleSnapshot = nil
         browser?.close()
         browser = nil
         hold.isShowing = false
@@ -307,6 +325,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             if !presentation.isPinned { hide() }
             action()
+        }
+    }
+    private func refreshFocus(completion: (() -> Void)? = nil) {
+        Task { @MainActor [weak self] in
+            do { self?.settings.focusProfileID = try await LauncherFocusIntent.current.profile?.id }
+            catch { self?.settings.focusProfileID = nil }
+            completion?()
+        }
+    }
+    private func changeProfile(_ id: String?) {
+        pendingAction = nil
+        if let id {
+            settings.selectProfile(id)
+            redisplayProfile()
+        } else {
+            settings.followFocus = true
+            let originalPanel = panel
+            refreshFocus { [weak self, weak originalPanel] in
+                guard let self, let originalPanel, self.settings.followFocus,
+                      self.panel === originalPanel, originalPanel.isVisible else { return }
+                self.redisplayProfile()
+            }
+        }
+    }
+    private func redisplayProfile() {
+        let pinned = presentation.isPinned
+        let held = heldPresentation
+        pendingAction = nil
+        hide()
+        show(held: held)
+        if pinned { presentation.pin() }
+    }
+    private func selectNumber(_ index: Int, command: Bool) {
+        guard let snapshot = visibleSnapshot, browser?.current == nil else { NSSound.beep(); return }
+        if snapshot.shortcuts.targetsWindows(command: command) {
+            guard snapshot.windows.indices.contains(index) else { NSSound.beep(); return }
+            let window = snapshot.windows[index]
+            presentation.selection = "window:\(window.id)"
+            pendingAction = { [weak self] in self?.select(window: window) }
+        } else {
+            guard snapshot.pins.indices.contains(index) else { NSSound.beep(); return }
+            let pin = snapshot.pins[index]
+            if pin.opensInOverlay {
+                select(pin: pin)
+                return
+            }
+            presentation.selection = "pin:\(pin.id)"
+            pendingAction = { [weak self] in self?.select(pin: pin) }
+        }
+    }
+    private func select(pin: PinnedItem) {
+        if pin.kind == .trash { selectTrash() }
+        else if pin.kind == .app { select(url: pin.url) }
+        else if pin.opensInOverlay { browser?.open(pin) }
+        else { selectFolderInFinder(pin.url) }
+    }
+    private func select(menu: MenuCommand, context: AppItem?, window: WindowItem?) {
+        guard let context else { return }
+        performAfterRelease { [weak self] in
+            guard let self else { return }
+            guard let running = NSRunningApplication(processIdentifier: context.pid), !running.isTerminated else {
+                self.error("메뉴를 사용할 앱이 종료되었습니다.")
+                return
+            }
+            let run = { [weak self] in
+                self?.menuCatalog.execute(menu, in: context) { [weak self] message in
+                    if let message { self?.error(message) } else { self?.settings.recordUse(menu.id) }
+                }
+            }
+            if let window {
+                self.tracker.focus(id: window.id) { [weak self] message in
+                    if let message { self?.error(message) } else { run() }
+                }
+            } else {
+                NSApp.yieldActivation(to: running)
+                if running.activate(options: []) { run() }
+                else { self.error("메뉴를 사용할 앱을 활성화하지 못했습니다.") }
+            }
         }
     }
     private func select(app: AppItem) {
@@ -339,7 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences.makeKeyAndOrderFront(nil)
             return
         }
-        let view = SettingsView(settings: settings, loginItem: loginItem, requestPermission: requestPermission)
+        let view = SettingsView(settings: settings, loginItem: loginItem, preferredApp: lastContext, requestPermission: requestPermission)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
