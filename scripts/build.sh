@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# Keep caches inside the workspace; do not change the machine's xcode-select.
+export CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache"
+export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/ModuleCache"
+swift build --configuration release -debug-info-format none --disable-sandbox \
+    --cache-path .build/cache --config-path .build/config --security-path .build/security
+BINARY_DIR="$(swift build --configuration release --show-bin-path --disable-sandbox \
+    --cache-path .build/cache --config-path .build/config --security-path .build/security)"
+OUTPUT_DIR="${TILE_LAUNCHER_OUTPUT_DIR:-$HOME/Library/Developer/TileLauncher/build}"
+BUNDLE="$OUTPUT_DIR/Tile Launcher.app"
+mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
+cp "$BINARY_DIR/TileLauncher" "$BUNDLE/Contents/MacOS/TileLauncher"
+cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
+# Finder metadata on copied local build products is not part of the app signature.
+xattr -cr "$BUNDLE"
+codesign --force --sign - "$BUNDLE"
+codesign --verify --deep --strict "$BUNDLE"
+printf '%s\n' "$BUNDLE"

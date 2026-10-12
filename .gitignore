@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+build/
+.DS_Store
+
+# Paused publication copy; not part of the native app repository.
+site/
