@@ -8,6 +8,7 @@ final class HoldMonitor {
     var onRelease: (() -> Void)?
     var onShortcut: ((OverlayShortcut) -> Void)?
     var ownsKeyboard: (() -> Bool)?
+    var canTriggerHold: (() -> Bool)?
     var isShowing = false
     private var gesture = HoldGesture()
     private var timer: DispatchWorkItem?
@@ -78,9 +79,11 @@ final class HoldMonitor {
         switch effect {
         case .none: break
         case .arm:
+            guard canTriggerHold?() != false else { return }
             timer?.cancel()
             let work = DispatchWorkItem { [weak self] in
-                guard let self, self.optionDown, NSEvent.pressedMouseButtons == 0 else { return }
+                guard let self, self.optionDown, self.canTriggerHold?() != false,
+                      NSEvent.pressedMouseButtons == 0 else { return }
                 self.triggered = true
                 self.onShow?()
             }

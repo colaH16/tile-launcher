@@ -3,7 +3,7 @@ import CryptoKit
 import DeckCore
 
 enum InstanceCoordinator {
-    static let bundleID = "dev.cola16.TileLauncher"
+    static let bundleID = AppIdentity.bundleID
     static let reopenName = Notification.Name("\(bundleID).reopen")
 
     static func build(at bundle: URL) throws -> AppBuild {

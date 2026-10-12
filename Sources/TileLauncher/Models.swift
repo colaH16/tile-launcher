@@ -2,13 +2,13 @@ import AppKit
 import SwiftUI
 import DeckCore
 
-struct AppItem: Identifiable {
+struct AppItem: Identifiable, Equatable {
     let id: String
     let pid: pid_t
     let name: String
     let url: URL?
 }
-struct WindowItem: Identifiable {
+struct WindowItem: Identifiable, Equatable {
     let id: UUID
     let pid: pid_t
     let appName: String
@@ -24,7 +24,7 @@ extension PinnedItem {
             ?? URL(fileURLWithPath: path)
     }
 }
-struct OverlaySnapshot {
+struct OverlaySnapshot: Equatable {
     let context: AppItem?
     let contextWindowTitle: String?
     let apps: [AppItem]
@@ -36,6 +36,22 @@ struct OverlaySnapshot {
     let profileName: String
     let shortcuts: NumberShortcutAssignment
     let commands: [MenuCommand]
+}
+final class OverlayContent: ObservableObject {
+    @Published var snapshot: OverlaySnapshot
+    init(_ snapshot: OverlaySnapshot) { self.snapshot = snapshot }
+    func refresh(context: AppItem?, apps: [AppItem], windows: [WindowItem],
+                 trusted: Bool, commands: [MenuCommand], manualCount: Int?) {
+        let old = snapshot
+        let count = old.layout.windowLimit(manual: manualCount, actual: windows.count)
+        let next = OverlaySnapshot(context: context,
+                                   contextWindowTitle: windows.first { $0.pid == context?.pid }?.title,
+                                   apps: Array(apps.prefix(3)), windows: Array(windows.prefix(count)),
+                                   layout: old.layout, permission: trusted, pins: old.pins,
+                                   profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
+                                   commands: MenuCommand.ordered(commands, appID: context?.id ?? ""))
+        if next != old { snapshot = next }
+    }
 }
 final class SettingsStore: ObservableObject {
     @Published private(set) var importingDock = false
@@ -104,6 +120,8 @@ final class SettingsStore: ObservableObject {
         commands.swapAt(i, peers[old + offset])
     }
     @Published var automatic: Bool { didSet { save() } }
+    @Published var optionTriggerEnabled: Bool { didSet { save() } }
+    @Published var theme: DeckTheme { didSet { save() } }
     @Published var manualCount: Int { didSet { save() } }
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
@@ -115,6 +133,9 @@ final class SettingsStore: ObservableObject {
         numberShortcuts = defaults.string(forKey: "numberShortcuts").flatMap(NumberShortcutAssignment.init(rawValue:)) ?? .registeredFirst
         commands = defaults.data(forKey: "menuCommands").flatMap { try? JSONDecoder().decode([MenuCommand].self, from: $0) } ?? []
         automatic = defaults.object(forKey: "automaticWindowCount") as? Bool ?? true
+        optionTriggerEnabled = defaults.object(forKey: "optionTriggerEnabled") as? Bool ?? true
+        theme = defaults.string(forKey: "appearanceTheme").flatMap(DeckTheme.init(rawValue:))
+            ?? .glass
         manualCount = max(6, defaults.object(forKey: "manualWindowCount") as? Int ?? 12)
         save()
     }
@@ -128,6 +149,8 @@ final class SettingsStore: ObservableObject {
         defaults.set(followFocus, forKey: "followFocus")
         defaults.set(numberShortcuts.rawValue, forKey: "numberShortcuts")
         defaults.set(automatic, forKey: "automaticWindowCount")
+        defaults.set(optionTriggerEnabled, forKey: "optionTriggerEnabled")
+        defaults.set(theme.rawValue, forKey: "appearanceTheme")
         defaults.set(manualCount, forKey: "manualWindowCount")
     }
     func addApplications() {

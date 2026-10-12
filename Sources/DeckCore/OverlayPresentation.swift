@@ -8,7 +8,7 @@ public final class OverlayPresentation: ObservableObject {
     @Published public private(set) var isPinned = false
     @Published public var selection: String?
     @Published public var profile: LauncherProfile?
-    // Only the desktop tint changes while pinned; tile identities/order stay frozen.
+    // Desktop tint can update even when selection temporarily freezes tile order.
     @Published public var windowDesktops: [UUID: WindowDesktop] = [:]
     public init() {}
     public func pin() { isPinned = true }

@@ -12,7 +12,7 @@ public struct RegisteredGridGeometry {
     }
     public func shelfHeight(count: Int, maximumRows: Int) -> CGFloat {
         let rows = min(maximumRows, max(1, (max(0, count) + columns - 1) / columns))
-        return CGFloat(rows) * side + CGFloat(rows - 1) * gap + 34
+        return CGFloat(rows) * side + CGFloat(rows - 1) * gap + 40
     }
 }
 
@@ -25,14 +25,14 @@ public struct DeckContentLayout {
     public let gap: CGFloat
 
     public init(width: CGFloat, availableHeight: CGFloat, registeredCount: Int, compact: Bool) {
-        gap = compact ? 8 : 14
+        gap = compact ? 4 : 14
         let geometry = DeckGeometry(width: width, compact: compact)
         let grid = RegisteredGridGeometry(width: width)
         let oneRegisteredRow = grid.shelfHeight(count: 1, maximumRows: 1)
         let roomForWork = max(0, availableHeight - gap - oneRegisteredRow)
         workHeight = min(geometry.viewport(rows: 3.3) + 30, roomForWork)
         let room = max(0, availableHeight - workHeight - gap)
-        let rowBudget = max(1, Int((room - 34 + grid.gap) / (grid.side + grid.gap)))
+        let rowBudget = max(1, Int((room - 40 + grid.gap) / (grid.side + grid.gap)))
         registeredHeight = min(room, grid.shelfHeight(count: registeredCount,
                                                        maximumRows: min(rowBudget, compact ? 2 : 3)))
         workTopInset = 0

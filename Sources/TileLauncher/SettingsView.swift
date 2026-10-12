@@ -24,10 +24,20 @@ struct SettingsView: View {
     private var general: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Tile Launcher").font(.title2.weight(.semibold))
+                Text(AppIdentity.name).font(.title2.weight(.semibold))
                 Text("Option을 0.25초 누르면 커서 근처에 열립니다.").font(.callout).foregroundStyle(.secondary)
+                GroupBox("모양") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("테마", selection: $settings.theme) {
+                            ForEach(DeckTheme.allCases) { Text($0.title).tag($0) }
+                        }.pickerStyle(.radioGroup)
+                        Text("유리·파스텔: 둥근 타일, 노랑·파랑 강조\n클래식·직각: 완전 불투명 타일, 초록·파랑 강조\n배경과 상단 버튼은 두 테마 모두 Liquid Glass를 사용합니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                }
                 GroupBox("시작") {
                     VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Option을 길게 눌러 오버레이 열기", isOn: $settings.optionTriggerEnabled)
                         Toggle("로그인 시 자동 실행", isOn: Binding(get: { loginItem.registered }, set: { loginItem.setEnabled($0) }))
                             .disabled(loginItem.changing)
                         Text(loginItem.statusText).font(.caption).foregroundStyle(.secondary)

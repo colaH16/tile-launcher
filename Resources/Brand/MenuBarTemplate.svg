@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+  <title>Tile Launcher menu bar template</title>
+  <g fill="#000">
+    <path d="M2 6H8V10H14V16H2Z"/>
+    <rect x="10" y="2" width="6" height="6"/>
+  </g>
+</svg>

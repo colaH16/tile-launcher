@@ -28,7 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let loginItem = LoginItemManager()
     let presentation = OverlayPresentation()
     let menuCatalog = MenuCatalog()
-    private var visibleSnapshot: OverlaySnapshot?
+    private var visibleContent: OverlayContent?
+    private var visibleSnapshot: OverlaySnapshot? { visibleContent?.snapshot }
+    private var pinnedRefresh: DispatchWorkItem?
     private var appRecency = Recency<String>()
     private var apps: [AppItem] = []
     private var windows: [WindowItem] = []
@@ -50,9 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         configureApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "Tile Launcher")
+        statusItem.button?.image = BrandMark.menuBarImage()
+        statusItem.button?.toolTip = AppIdentity.name
         let menu = NSMenu()
-        menu.addItem(withTitle: "Tile Launcher 열기", action: #selector(openFromMenu), keyEquivalent: "")
+        menu.addItem(withTitle: "\(AppIdentity.name) 열기", action: #selector(openFromMenu), keyEquivalent: "")
         menu.addItem(withTitle: "설정…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: "접근성 권한 요청…", action: #selector(requestPermission), keyEquivalent: "")
         menu.addItem(.separator())
@@ -67,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let states = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
                 if self.presentation.windowDesktops != states { self.presentation.windowDesktops = states }
             }
+            self.schedulePinnedRefresh()
         }
         hold.onShow = { [weak self] in self?.show(held: true) }
         hold.onHide = { [weak self] reason in
@@ -79,7 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.pendingAction = nil
             self?.presentation.selection = nil
             action?()
+            self?.schedulePinnedRefresh()
         }
+        hold.canTriggerHold = { [weak self] in self?.settings.optionTriggerEnabled == true }
         hold.ownsKeyboard = { [weak self] in self?.panel?.isKeyWindow == true }
         hold.onShortcut = { [weak self] shortcut in
             guard let self else { return }
@@ -131,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateApps()
             self.checkPermission()
             self.tracker.activate(item)
+            self.schedulePinnedRefresh()
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                             object: nil, queue: .main) { [weak self] _ in
@@ -158,13 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureApplicationMenu() {
         let menu = NSMenu()
         let applicationItem = NSMenuItem()
-        let applicationMenu = NSMenu(title: "Tile Launcher")
+        let applicationMenu = NSMenu(title: AppIdentity.name)
         let settingsItem = applicationMenu.addItem(withTitle: "설정…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(withTitle: "Tile Launcher 가리기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        applicationMenu.addItem(withTitle: "\(AppIdentity.name) 가리기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(withTitle: "Tile Launcher 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationMenu.addItem(withTitle: "\(AppIdentity.name) 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         applicationItem.submenu = applicationMenu
         menu.addItem(applicationItem)
 
@@ -267,17 +274,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        pins: settings.pins, profileID: settings.activeProfile.id,
                                        profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
                                        commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? ""))
-        visibleSnapshot = snapshot
+        let content = OverlayContent(snapshot)
+        visibleContent = content
         let folderBrowser = FolderBrowser()
         browser = folderBrowser
         presentation.reset()
         presentation.profile = settings.activeProfile
         profileScroll.reset()
         presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
-        let view = DeckView(snapshot: snapshot, settings: settings, browser: folderBrowser, presentation: presentation,
+        let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation,
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },
-                            selectMenu: { [weak self] in self?.select(menu: $0, context: snapshot.context, window: snapshot.windows.first { $0.pid == snapshot.context?.pid }) },
+                            selectMenu: { [weak self] command, context, window in self?.select(menu: command, context: context, window: window) },
                             changeProfile: { [weak self] id in self?.changeProfile(id) },
                             cycleProfile: { [weak self] step in self?.cycleProfile(step) },
                             selectWindow: { [weak self] in self?.select(window: $0) },
@@ -351,12 +359,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // app keyboard ownership, including the macOS command/menu route.
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
+        schedulePinnedRefresh()
+    }
+    private func schedulePinnedRefresh() {
+        guard panel?.isVisible == true, presentation.isPinned else { return }
+        pinnedRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshPinnedContent() }
+        pinnedRefresh = work
+        // Coalesce activation + AX focus/title notifications without scanning menus.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+    private func refreshPinnedContent() {
+        pinnedRefresh = nil
+        guard panel?.isVisible == true else { return }
+        let mouseDown = NSEvent.pressedMouseButtons != 0
+        guard PinnedRefreshPolicy.allows(isPinned: presentation.isPinned, optionDown: hold.optionDown,
+                                        hasSelection: presentation.selection != nil,
+                                        hasPendingAction: pendingAction != nil, mouseDown: mouseDown) else {
+            // Native window dragging may not deliver mouse-up. Retry only while
+            // a known refresh is deferred by that gesture, never poll app contents.
+            if mouseDown && presentation.isPinned && !hold.optionDown { schedulePinnedRefresh() }
+            return
+        }
+        visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
+                                commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount)
     }
     private func hide() {
+        pinnedRefresh?.cancel()
+        pinnedRefresh = nil
         panel?.orderOut(nil)
         panel?.contentView = nil
         panel = nil
-        visibleSnapshot = nil
+        visibleContent = nil
         browser?.close()
         browser = nil
         hold.isShowing = false
@@ -439,7 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { selectFolderInFinder(pin.url) }
     }
     private func select(menu: MenuCommand, context: AppItem?, window: WindowItem?) {
-        guard let context else { return }
+        guard let context, context.id == menu.appID else { return }
         performAfterRelease { [weak self] in
             guard let self else { return }
             guard let running = NSRunningApplication(processIdentifier: context.pid), !running.isTerminated else {
@@ -448,7 +482,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let run = { [weak self] in
                 self?.menuCatalog.execute(menu, in: context) { [weak self] message in
-                    if let message { self?.error(message) } else { self?.settings.recordUse(menu.id) }
+                    if let message { self?.error(message) } else {
+                        self?.settings.recordUse(menu.id)
+                        self?.schedulePinnedRefresh()
+                    }
                 }
             }
             if let window {
@@ -496,7 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "Tile Launcher 설정"
+        window.title = "\(AppIdentity.name) 설정"
         window.contentView = NSHostingView(rootView: view)
         window.minSize = NSSize(width: 540, height: 660)
         window.isReleasedWhenClosed = false
@@ -507,7 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func error(_ message: String) {
         let alert = NSAlert()
-        alert.messageText = "Tile Launcher"
+        alert.messageText = AppIdentity.name
         alert.informativeText = message
         alert.addButton(withTitle: "확인")
         NSApp.activate()
@@ -573,7 +610,7 @@ do {
     instanceLock = lock
 } catch {
     let alert = NSAlert()
-    alert.messageText = "Tile Launcher를 시작하지 못했습니다."
+    alert.messageText = "\(AppIdentity.name)를 시작하지 못했습니다."
     alert.informativeText = "중복 실행 확인에 실패했습니다. \(error.localizedDescription)"
     alert.runModal()
     exit(1)

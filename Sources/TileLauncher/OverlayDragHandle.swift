@@ -9,7 +9,7 @@ struct OverlayDragHandle: NSViewRepresentable {
 
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ view: DragView, context: Context) {
-        view.excludedRects = excludedRects
+        if view.excludedRects != excludedRects { view.excludedRects = excludedRects }
         view.enabled = enabled
     }
 
@@ -25,7 +25,7 @@ struct OverlayDragHandle: NSViewRepresentable {
         }
 
         var enabled = false {
-            didSet { updateWindow() }
+            didSet { if oldValue != enabled { updateWindow() } }
         }
 
         override func viewDidMoveToWindow() {

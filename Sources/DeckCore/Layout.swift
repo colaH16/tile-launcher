@@ -44,7 +44,7 @@ public struct PanelLayout: Equatable {
             .shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
         // Reserve native caption/icon line metrics plus rounding so a shelf row
         // never disappears for a one-point shortage at the viewport boundary.
-        let desired = geometry.viewport(rows: 3.3) + 30 + shelf + (compact ? 8 : 14) + (compact ? 130 : 158)
+        let desired = geometry.viewport(rows: 3.3) + 30 + shelf + (compact ? 4 : 14) + (compact ? 130 : 158)
         let minimum = compact ? 420 : max(620, frame.width / 1.5)
         let height = min(frame.height, max(minimum, desired.rounded(.up)))
         return Self(frame: CGRect(x: frame.minX, y: frame.midY - height / 2, width: frame.width, height: height),

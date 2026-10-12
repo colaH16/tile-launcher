@@ -13,6 +13,7 @@ BUNDLE="$OUTPUT_DIR/Tile Launcher.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BINARY_DIR/TileLauncher" "$BUNDLE/Contents/MacOS/TileLauncher"
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
+cp Resources/AppIcon.icns "$BUNDLE/Contents/Resources/AppIcon.icns"
 python3 scripts/extract-intents.py "$BUNDLE"
 # Identical compiled builds compare equal; source changes are distinguishable even
 # before the next public version bump. Compute before ad-hoc signing modifies Mach-O.

@@ -27,13 +27,21 @@ private struct RegisteredTileStyle: ButtonStyle {
         let configuration: ButtonStyleConfiguration
         let selected: Bool
         @Environment(\.colorSchemeContrast) private var contrast
+        @Environment(\.colorScheme) private var scheme
+        @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+        @Environment(\.deckTheme) private var theme
         @State private var hovering = false
-        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 12, style: .continuous) }
+        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 12, style: .continuous) }
         var body: some View {
+            let palette = DeckPalette(tone: .neutral, dark: scheme == .dark, theme: theme)
             configuration.label
+                .foregroundStyle(palette.ink, palette.secondary)
                 .contentShape(shape)
-                .background(selected || configuration.isPressed ? Color.accentColor.opacity(0.22)
-                            : Color.primary.opacity(hovering ? 0.11 : 0.055), in: shape)
+                .background(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96), in: shape)
+                .overlay {
+                    shape.fill(Color.accentColor.opacity(selected || configuration.isPressed ? 0.18 : hovering ? 0.07 : 0))
+                        .allowsHitTesting(false)
+                }
                 .overlay {
                     shape.strokeBorder(selected ? Color.accentColor.opacity(0.65)
                                        : Color.primary.opacity(contrast == .increased ? 0.5 : hovering ? 0.22 : 0.12),
@@ -45,22 +53,36 @@ private struct RegisteredTileStyle: ButtonStyle {
     }
 }
 private struct TileStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    var tone: DeckTileTone = .neutral
+    var selected = false
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.deckTheme) private var theme
     func makeBody(configuration: Configuration) -> some View {
+        let palette = DeckPalette(tone: tone, dark: scheme == .dark, theme: theme)
+        let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 14, style: .continuous)
         configuration.label
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .background(configuration.isPressed ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.045),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .foregroundStyle(palette.ink, palette.secondary)
+            .contentShape(shape)
+            .background(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96), in: shape)
+            .overlay {
+                shape.strokeBorder(selected || configuration.isPressed ? Color.accentColor
+                                   : palette.ink.opacity(contrast == .increased ? 0.55 : 0.08),
+                                   lineWidth: selected || configuration.isPressed ? 2 : 1)
+                    .allowsHitTesting(false)
+            }
     }
 }
 struct DeckView: View {
-    let snapshot: OverlaySnapshot
+    @ObservedObject var content: OverlayContent
+    private var snapshot: OverlaySnapshot { content.snapshot }
     @ObservedObject var settings: SettingsStore
     @ObservedObject var browser: FolderBrowser
     @ObservedObject var presentation: OverlayPresentation
     let selectApp: (AppItem) -> Void
     let selectPin: (PinnedItem) -> Void
-    let selectMenu: (MenuCommand) -> Void
+    let selectMenu: (MenuCommand, AppItem?, WindowItem?) -> Void
     let changeProfile: (String?) -> Void
     let cycleProfile: (Int) -> Void
     @State private var editedMenus: [MenuCommand]?
@@ -75,6 +97,8 @@ struct DeckView: View {
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
     private var profileName: String { presentation.profile?.name ?? snapshot.profileName }
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var deckScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,6 +134,12 @@ struct DeckView: View {
             .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.deckTheme, settings.theme)
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.72))
+        }
+        .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
     }
 
     private var header: some View {
@@ -122,7 +152,7 @@ struct DeckView: View {
                     .lineLimit(1).truncationMode(.middle)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 138)
+            .padding(.horizontal, 104)
             .allowsHitTesting(false)
 
             HStack(spacing: 8) {
@@ -150,29 +180,12 @@ struct DeckView: View {
                     .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
                 }
                 Spacer()
-                HStack(spacing: 10) {
-                    Menu {
-                        Button("집중 모드에 따라 자동 선택") { changeProfile(nil) }
-                        Divider()
-                        ForEach(settings.profiles) { profile in
-                            Button(profile.name) { changeProfile(profile.id) }
-                        }
-                    } label: {
-                        Label(profileName, systemImage: "circle.dotted")
-                            .font(.caption).lineLimit(1).frame(maxWidth: 90)
-                    }.menuStyle(.borderlessButton).fixedSize()
-                        .help("옆으로 쓸기 또는 ⌥A/S 이전 · ⌥D/F 다음 · 닫으면 자동 복귀")
-                        .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
-                        .accessibilityAction(named: Text("다음 프로필")) { cycleProfile(1) }
-                    Divider().frame(height: 16)
-                    Button(action: showSettings) {
-                        Image(systemName: "slider.horizontal.3").frame(width: 28, height: 30)
-                    }
-                    .buttonStyle(.plain).help("설정 · ⌘, 또는 ⌥,")
-                    .accessibilityLabel("설정")
+                Button(action: showSettings) {
+                    Image(systemName: "slider.horizontal.3").frame(width: 34, height: 34).contentShape(Circle())
                 }
-                .padding(.horizontal, 10).frame(height: 36)
-                .glassEffect(.regular, in: Capsule())
+                .buttonStyle(.plain).help("설정 · ⌘, 또는 ⌥,")
+                .accessibilityLabel("설정")
+                .glassEffect(.regular.interactive(), in: Circle())
                 .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
             }
         }
@@ -190,7 +203,7 @@ struct DeckView: View {
     }
 
     private var headerTitle: String {
-        guard let current = browser.current else { return snapshot.context?.name ?? "Tile Launcher" }
+        guard let current = browser.current else { return snapshot.context?.name ?? AppIdentity.name }
         return browser.path.count == 1 ? browser.rootName : current.lastPathComponent
     }
     private var headerSubtitle: String {
@@ -247,7 +260,7 @@ struct DeckView: View {
         }.frame(height: height)
     }
     private func menuTile(_ command: MenuCommand) -> some View {
-        Button { selectMenu(command) } label: {
+        Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Image(systemName: "command").font(.system(size: 20))
@@ -257,9 +270,7 @@ struct DeckView: View {
                 Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(command.isPinned ? Color.accentColor.opacity(0.13) : .clear,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }.buttonStyle(TileStyle())
+        }.buttonStyle(TileStyle(tone: command.isPinned ? .pinnedMenu : .neutral))
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : ""))
             .contextMenu {
                 Button(command.isPinned ? "고정 해제" : "앞에 고정") {
@@ -274,12 +285,13 @@ struct DeckView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
+                profilePicker
                 Text("\(registeredItems.count)개").font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
                 Button(action: showSettings) { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
-            }.frame(height: 20)
+            }.frame(height: 26)
             if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가", action: showSettings)
                     .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -308,6 +320,24 @@ struct DeckView: View {
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+    private var profilePicker: some View {
+        Menu {
+            Button("집중 모드에 따라 자동 선택") { changeProfile(nil) }
+            Divider()
+            ForEach(settings.profiles) { profile in
+                Button(profile.name) { changeProfile(profile.id) }
+            }
+        } label: {
+            Label(profileName, systemImage: "circle.dotted")
+                .font(.caption).lineLimit(1).frame(maxWidth: 110)
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .padding(.horizontal, 8).frame(height: 26)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .help("프로필 선택 · ⌥A/S 이전 · ⌥D/F 다음 · 키/휠 임시 전환은 닫으면 복귀")
+        .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
+        .accessibilityAction(named: Text("다음 프로필")) { cycleProfile(1) }
+    }
     private func pinHelp(_ pin: PinnedItem, index: Int) -> String {
         let shortcut = NumberShortcutAssignment.digit(for: index).map { " · \(snapshot.shortcuts.registeredPrefix)\($0)" } ?? ""
         return pin.name + shortcut + (pin.kind == .trash ? " · 통합 휴지통은 Finder에서만 열 수 있습니다." : "")
@@ -315,7 +345,8 @@ struct DeckView: View {
     @ViewBuilder private func numberBadge(_ index: Int) -> some View {
         if let digit = NumberShortcutAssignment.digit(for: index) {
             Text(digit).font(.system(size: 10, weight: .medium, design: .rounded)).monospacedDigit()
-                .frame(width: 16, height: 16).background(.regularMaterial, in: Circle())
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .frame(width: 16, height: 16).background(Color(nsColor: .controlBackgroundColor), in: Circle())
                 .accessibilityHidden(true)
         }
     }
@@ -324,7 +355,7 @@ struct DeckView: View {
             HStack {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
-                Circle().fill(Color.accentColor.opacity(0.65)).frame(width: 5, height: 5)
+                Circle().fill(Color.blue).frame(width: 5, height: 5)
                 Text("현재 데스크탑").font(.caption2).foregroundStyle(.secondary)
                 Spacer(minLength: 4)
                 Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
@@ -353,27 +384,27 @@ struct DeckView: View {
                             }
                         }
                     }
-                }.scrollIndicators(.visible)
+                }.scrollIndicators(.visible).id(snapshot.windows.map(\.id))
             }
         }.frame(height: height)
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
         let desktop = presentation.windowDesktops[window.id] ?? .unknown
+        let palette = DeckPalette(tone: desktop == .current ? .currentDesktop : .neutral,
+                                  dark: deckScheme == .dark, theme: settings.theme)
         return Button { selectWindow(window) } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Icon(url: window.appURL, size: 22)
-                    if wide { Text(window.appName).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                    if wide { Text(window.appName).font(.caption2).foregroundStyle(palette.secondary).lineLimit(1) }
                     Spacer(minLength: 0)
                 }.padding(.trailing, 12)
                 Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(presentation.selection == "window:\(window.id)" ? Color.accentColor.opacity(0.3)
-                            : desktop == .current ? Color.accentColor.opacity(0.13) : .clear,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
-        }.buttonStyle(TileStyle())
+        }.buttonStyle(TileStyle(tone: desktop == .current ? .currentDesktop : .neutral,
+                                selected: presentation.selection == "window:\(window.id)"))
             .help("\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
                 + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
             .accessibilityLabel("\(index + 1). \(window.appName), \(window.title)" + (desktop == .current ? ", 현재 데스크탑" : desktop == .other ? ", 다른 데스크탑" : ""))
