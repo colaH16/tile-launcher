@@ -1,5 +1,21 @@
 import CoreGraphics
 
+/// Shared by the grid and its bottom shelf so a complete last row isn't clipped.
+public struct RegisteredGridGeometry {
+    public let columns: Int
+    public let side: CGFloat
+    public let gap: CGFloat = 8
+    public init(width: CGFloat) {
+        let content = max(1, width - 48)
+        columns = max(1, Int((content + gap) / (60 + gap)))
+        side = (content - CGFloat(columns - 1) * gap) / CGFloat(columns)
+    }
+    public func shelfHeight(count: Int, maximumRows: Int) -> CGFloat {
+        let rows = min(maximumRows, max(1, (max(0, count) + columns - 1) / columns))
+        return CGFloat(rows) * side + CGFloat(rows - 1) * gap + 34
+    }
+}
+
 /// Allocate the registered shelf from the bottom, then position the two-row
 /// work area 30% into its remaining vertical slack. Tile proportions stay fixed.
 public struct DeckContentLayout {
@@ -12,9 +28,8 @@ public struct DeckContentLayout {
         gap = compact ? 10 : 18
         let geometry = DeckGeometry(width: width, compact: compact)
         workHeight = geometry.twoRows + 30
-        let columns = max(1, Int((max(1, width - 48) + 8) / 62))
-        let rows = max(1, (max(0, registeredCount) + columns - 1) / columns)
-        let desired = CGFloat(min(rows, compact ? 2 : 3)) * 68 + 26
+        let desired = RegisteredGridGeometry(width: width)
+            .shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
         let room = max(0, availableHeight - workHeight - gap)
         registeredHeight = min(desired, room)
         workTopInset = max(0, availableHeight - registeredHeight - gap - workHeight) * 0.3

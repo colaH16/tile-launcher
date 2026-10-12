@@ -36,6 +36,16 @@ final class HoldMonitor {
         gesture = HoldGesture()
     }
     /// A true result consumes a local event; global events are never modified.
+    /// Also used by NSPanel's key-equivalent route, which AppKit may use before keyDown.
+    func handleOverlayShortcut(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, isShowing, ownsKeyboard?() == true,
+              let shortcut = OverlayShortcut.resolve(keyCode: event.keyCode, modifiers: modifiers(event)) else { return false }
+        if !event.isARepeat {
+            onCancel?()
+            onShortcut?(shortcut)
+        }
+        return true
+    }
     private func handle(_ event: NSEvent, external: Bool) -> Bool {
         if event.type == .flagsChanged {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -43,14 +53,7 @@ final class HoldMonitor {
             let other = !flags.intersection([.command, .control, .shift, .function]).isEmpty
             apply(gesture.flags(option: optionDown, otherModifier: other, overlayVisible: isShowing))
         } else if event.type == .keyDown {
-            if !external, isShowing, ownsKeyboard?() == true,
-               let shortcut = OverlayShortcut.resolve(keyCode: event.keyCode, modifiers: modifiers(event)) {
-                if !event.isARepeat {
-                    onCancel?()
-                    onShortcut?(shortcut)
-                }
-                return true
-            }
+            if !external, handleOverlayShortcut(event) { return true }
             apply(gesture.interrupt())
             if isShowing || event.keyCode == 53 {
                 onHide?(event.keyCode == 53 ? .escape : .interruption)

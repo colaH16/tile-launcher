@@ -63,10 +63,10 @@ final class SettingsStore: ObservableObject {
         followFocus = false
         manualProfileID = id
     }
-    func addProfile(name: String) {
+    func addProfile(name: String, copyingCurrent: Bool) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        let profile = LauncherProfile(name: name, items: pins)
+        let profile = LauncherProfile(name: name, items: copyingCurrent ? pins : [])
         profiles.append(profile)
         selectProfile(profile.id)
     }

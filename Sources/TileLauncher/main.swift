@@ -5,9 +5,14 @@ import DeckCore
 
 final class DeckPanel: NSPanel {
     var onClose: (() -> Void)?
+    var onKeyEquivalent: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func performClose(_ sender: Any?) { onClose?() }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if isKeyWindow, onKeyEquivalent?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -76,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hold.onShortcut = { [weak self] shortcut in
             guard let self else { return }
             switch shortcut {
-            case .pin: self.presentation.pin()
+            case .pin: self.pinOverlay()
             case .settings: self.openSettings()
             case .close: self.hide()
             case .number(let index, let command): self.selectNumber(index, command: command)
@@ -261,6 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             openTrash: { [weak self] in self?.selectTrash() },
                             showSettings: { [weak self] in self?.performAfterRelease { self?.openSettings() } },
                             requestPermission: { [weak self] in self?.performAfterRelease { self?.requestPermission() } },
+                            pinOverlay: { [weak self] in self?.pinOverlay() },
                             dismiss: { [weak self] in
                                 self?.pendingAction = nil
                                 self?.hide()
@@ -276,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.pendingAction = nil
             self?.hide()
         }
+        window.onKeyEquivalent = { [weak self] in self?.hold.handleOverlayShortcut($0) ?? false }
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -314,6 +321,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         refreshWindows()
+    }
+    private func pinOverlay() {
+        guard let panel, panel.isVisible else { return }
+        pendingAction = nil
+        presentation.selection = nil
+        presentation.pin()
+        // A held panel leaves the source app active. Pinning opts into normal
+        // app keyboard ownership, including the macOS command/menu route.
+        NSApp.activate()
+        panel.makeKeyAndOrderFront(nil)
     }
     private func hide() {
         panel?.orderOut(nil)
@@ -362,7 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingAction = nil
         hide()
         show(held: held)
-        if pinned { presentation.pin() }
+        if pinned { pinOverlay() }
     }
     private func selectNumber(_ index: Int, command: Bool) {
         guard let snapshot = visibleSnapshot, browser?.current == nil else { NSSound.beep(); return }

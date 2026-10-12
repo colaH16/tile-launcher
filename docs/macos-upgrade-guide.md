@@ -178,3 +178,12 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - CG 제목은 화면 녹화 허용 없이 없을 수 있다([Apple DTS 설명](https://developer.apple.com/forums/thread/794253)). AX 제목을 우선하며 모르면 대체 제목을 쓰고 추가 권한을 유도하지 않는다. 창 제목·개인 앱 목록·스크린샷은 저장소에 넣지 않는다.
 - 창 선택 시에만 대상 Space 이동을 요청한다. 창 자체를 다른 Space로 이동하거나 Mission Control 설정을 바꾸지 않는다. 이동 후 같은 창 ID의 AX를 다시 찾아 선택하며 실패 시 다른 창을 대신 선택하지 않는다. Space 전환/AX 재조회는 비동기이므로 반환값만으로 사용자에게 보이는 전환 성공을 판정하지 않는다.
 - 고정 오버레이에서 Space 이동 후 모든 현재 창의 배경색이 갱신되면서 타일 순서·크기·번호는 유지되는지 확인한다. 현재 창 하나만 강조하지 않는다. 자동 모드 전체 목록과 수동 최대 개수, 두 줄 밖 스크롤을 실기로 확인한다.
+
+## R58–R60 · 빈 프로필·고정 후 기본 명령·작은 등록 타일
+
+- 빈 프로필 추가는 등록 항목 0개로 시작하고 현재 구성 복제는 항목/순서/폴더 방식을 보존해야 한다. 두 동작 모두 새 ID로 생성·선택되며 원본은 바뀌지 않아야 한다. 공백 이름 거부, 저장/재실행, 복제본 편집의 독립성, 수동 선택과 Focus 전환을 검사한다. 설정 최소 폭에서 이름 입력란과 두 버튼이 잘리지 않는지 직접 확인한다.
+- Option을 누르는 일반 패널은 원래 앱 문맥을 유지한다. 핀 버튼/⌥X로 고정하는 순간에는 앱 활성화와 key window를 요청한다. 상태 값만 고정으로 바꾸지 않는다. 비활성화 패널의 styleMask를 실행 중 임의 전환하지 않고 당시 AppKit 동작/공식 문서를 확인한다.
+- Command 조합은 일반 keyDown 모니터와 별도의 key-equivalent 경로로 처리될 수 있다. NSPanel.performKeyEquivalent와 로컬 이벤트 모니터가 같은 단축키 판단을 사용하며 처리한 명령은 한 번만 실행해야 한다. 실제 Option 유지→오버레이→⌥X→Option 해제→⌘W, 다시 호출/고정→⌘,를 확인한다. 핀 버튼으로 고정한 경우와 Option을 계속 누른 조합도 검사한다.
+- 다른 앱을 클릭한 뒤에는 해당 앱의 ⌘W/⌘,를 가로채지 않아야 한다. 키 창 여부, 키 반복 억제, 숫자로 대기 중인 선택의 취소, 메뉴/프로필 변경 후 다시 고정하는 경로를 확인한다. 합성 NSEvent 및 단위 테스트와 실제 키보드 검증을 구분한다.
+- 등록 타일의 최소 60pt 정사각형·32pt 아이콘·8pt 간격·12pt 연속 곡선은 현재 앱의 조정값이며 Apple 규격이 아니다. 512–1,040pt 폭/열 수 전환점에서 그리드와 선반 높이가 같은 기하를 사용하는지, 0/1/14/35/200개와 긴 이름·숫자 배지가 잘리지 않는지 확인한다. 다크/라이트·대비 증가·투명도 줄이기·포커스/VoiceOver를 검증하고 개별 타일마다 불필요한 유리 합성이나 블러를 추가하지 않는다.
+- 2026-10-12 참고한 Apple 공식 자료: [키 이벤트와 key equivalents](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/HandlingKeyEvents/HandlingKeyEvents.html), [앱 활성화 요청](https://developer.apple.com/documentation/appkit/nsapplication/activate()), [key window](https://developer.apple.com/documentation/appkit/nsapplication/keywindow). 이벤트 설명은 보관 문서이므로 다음 업그레이드 시 최신 SDK 선언·공식 자료와 실제 동작을 함께 재확인한다.

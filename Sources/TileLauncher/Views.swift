@@ -18,6 +18,32 @@ struct Icon: View {
             .accessibilityHidden(true)
     }
 }
+private struct RegisteredTileStyle: ButtonStyle {
+    let selected: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        Surface(configuration: configuration, selected: selected)
+    }
+    private struct Surface: View {
+        let configuration: ButtonStyleConfiguration
+        let selected: Bool
+        @Environment(\.colorSchemeContrast) private var contrast
+        @State private var hovering = false
+        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 12, style: .continuous) }
+        var body: some View {
+            configuration.label
+                .contentShape(shape)
+                .background(selected || configuration.isPressed ? Color.accentColor.opacity(0.22)
+                            : Color.primary.opacity(hovering ? 0.11 : 0.055), in: shape)
+                .overlay {
+                    shape.strokeBorder(selected ? Color.accentColor.opacity(0.65)
+                                       : Color.primary.opacity(contrast == .increased ? 0.5 : hovering ? 0.22 : 0.12),
+                                       lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .onHover { hovering = $0 }
+        }
+    }
+}
 private struct TileStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
@@ -43,6 +69,7 @@ struct DeckView: View {
     let openTrash: () -> Void
     let showSettings: () -> Void
     let requestPermission: () -> Void
+    let pinOverlay: () -> Void
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
 
@@ -93,7 +120,7 @@ struct DeckView: View {
 
             HStack(spacing: 8) {
                 Button {
-                    if presentation.isPinned { dismiss() } else { presentation.pin() }
+                    if presentation.isPinned { dismiss() } else { pinOverlay() }
                 } label: {
                     Image(systemName: presentation.isPinned ? "xmark" : "pin")
                         .frame(width: 34, height: 34).contentShape(Circle())
@@ -234,7 +261,8 @@ struct DeckView: View {
     }
 
     private var registeredSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let grid = RegisteredGridGeometry(width: snapshot.layout.frame.width)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
                 Text("\(snapshot.pins.count)개").font(.caption2).foregroundStyle(.tertiary)
@@ -248,23 +276,21 @@ struct DeckView: View {
                     .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 54), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(grid.side), spacing: grid.gap), count: grid.columns),
+                              spacing: grid.gap) {
                         ForEach(Array(snapshot.pins.enumerated()), id: \.element.id) { index, pin in
                             Button { selectPin(pin) } label: {
-                                VStack(spacing: 5) {
+                                VStack(spacing: 4) {
                                     Group {
                                         if pin.kind == .trash {
                                             Image(systemName: "trash").font(.system(size: 28)).frame(width: 32, height: 32)
                                         } else { Icon(url: pin.url, size: 32) }
-                                    }.overlay(alignment: .topTrailing) {
-                                        numberBadge(index).offset(x: 8, y: -4)
                                     }
-                                    Text(pin.name).font(.caption2).lineLimit(1).truncationMode(.middle)
-                                }.padding(.top, 6).frame(maxWidth: .infinity).frame(height: 60)
-                                    .background(presentation.selection == "pin:\(pin.id)" ? Color.accentColor.opacity(0.2) : .clear,
-                                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                                    Text(pin.name).font(.system(size: 10, weight: .medium))
+                                        .lineLimit(1).truncationMode(.middle)
+                                }.padding(6).frame(width: grid.side, height: grid.side)
+                                    .overlay(alignment: .topTrailing) { numberBadge(index).padding(3) }
+                            }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)"))
                                 .help(pinHelp(pin, index: index))
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }

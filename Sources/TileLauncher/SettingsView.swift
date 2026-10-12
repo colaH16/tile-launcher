@@ -77,7 +77,15 @@ struct SettingsView: View {
                     }
                     HStack {
                         TextField("새 프로필 이름", text: $profileName)
-                        Button("현재 구성을 복제") { settings.addProfile(name: profileName); profileName = "" }
+                        Button("빈 프로필 추가") {
+                            settings.addProfile(name: profileName, copyingCurrent: false)
+                            profileName = ""
+                        }
+                        .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("현재 구성을 복제") {
+                            settings.addProfile(name: profileName, copyingCurrent: true)
+                            profileName = ""
+                        }
                             .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     Toggle("집중 모드 필터에 따라 프로필 자동 선택", isOn: $settings.followFocus)

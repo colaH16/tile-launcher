@@ -4,13 +4,22 @@ import CoreGraphics
 
 final class DesktopLayoutTests: XCTestCase {
     func testBottomShelfFitsActualRowsAndCapsOnlyItsViewport() {
-        let one = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 16, compact: false)
+        let one = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 14, compact: false)
         let three = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 36, compact: false)
         let many = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 200, compact: false)
-        XCTAssertEqual(one.registeredHeight, 94)
-        XCTAssertEqual(three.registeredHeight, 230)
+        XCTAssertEqual(one.registeredHeight, 97.42857, accuracy: 0.001)
+        XCTAssertEqual(three.registeredHeight, 240.28571, accuracy: 0.001)
         XCTAssertEqual(many.registeredHeight, three.registeredHeight)
         XCTAssertGreaterThan(one.workTopInset, three.workTopInset)
+    }
+    func testRegisteredSquaresKeepDenseRowsWithinPanelAndReserveExactHeight() {
+        for width: CGFloat in [512, 640, 760, 900, 1040] {
+            let grid = RegisteredGridGeometry(width: width)
+            XCTAssertGreaterThanOrEqual(grid.side, 60)
+            XCTAssertLessThan(grid.side, 72)
+            XCTAssertEqual(CGFloat(grid.columns) * grid.side + CGFloat(grid.columns - 1) * grid.gap, width - 48, accuracy: 0.01)
+            XCTAssertEqual(grid.shelfHeight(count: grid.columns + 1, maximumRows: 3), grid.side * 2 + grid.gap + 34)
+        }
     }
     func testWorkAreaUsesThirtyPercentOfSlackWithoutStretchingTiles() {
         let content = DeckContentLayout(width: 900, availableHeight: 520, registeredCount: 36, compact: false)
