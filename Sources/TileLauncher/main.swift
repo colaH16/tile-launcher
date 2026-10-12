@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingAction: (() -> Void)?
     private var heldPresentation = false
     private var browser: FolderBrowser?
+    private var scrollMonitor: Any?
+    private var profileScroll = ProfileScrollGesture()
+    private var profileChangeRevision = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -84,10 +87,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .pin: self.pinOverlay()
             case .settings: self.openSettings()
             case .close: self.hide()
+            case .profile(let step): self.cycleProfile(step)
             case .number(let index, let command): self.selectNumber(index, command: command)
             }
         }
         hold.start()
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let panel = self.panel, panel.isVisible, event.window === panel,
+                  self.settings.profiles.count > 1 else { return event }
+            let result = self.profileScroll.scroll(x: Double(event.scrollingDeltaX), y: Double(event.scrollingDeltaY),
+                precise: event.hasPreciseScrollingDeltas, inverted: event.isDirectionInvertedFromDevice,
+                time: event.timestamp, began: event.phase.contains(.began),
+                ended: !event.phase.intersection([.ended, .cancelled]).isEmpty,
+                phased: !event.phase.isEmpty, momentum: !event.momentumPhase.isEmpty,
+                cancelled: event.phase.contains(.cancelled))
+            if let step = result.step { self.cycleProfile(step) }
+            return result.consume ? nil : event
+        }
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(reopenNotification(_:)),
             name: InstanceCoordinator.reopenName, object: String(getuid()))
         observers.append(NotificationCenter.default.addObserver(forName: .launcherFocusChanged, object: nil, queue: .main) { [weak self] note in
@@ -238,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
             ?? NSScreen.main else { return }
         let layout = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point)
+            .fittingContent(registeredCount: settings.profiles.map { $0.items.count }.max() ?? 0)
         guard layout.supported else {
             error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.")
             return
@@ -254,12 +271,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let folderBrowser = FolderBrowser()
         browser = folderBrowser
         presentation.reset()
+        presentation.profile = settings.activeProfile
+        profileScroll.reset()
         presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
         let view = DeckView(snapshot: snapshot, settings: settings, browser: folderBrowser, presentation: presentation,
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },
                             selectMenu: { [weak self] in self?.select(menu: $0, context: snapshot.context, window: snapshot.windows.first { $0.pid == snapshot.context?.pid }) },
                             changeProfile: { [weak self] id in self?.changeProfile(id) },
+                            cycleProfile: { [weak self] step in self?.cycleProfile(step) },
                             selectWindow: { [weak self] in self?.select(window: $0) },
                             openURL: { [weak self] in self?.select(url: $0) },
                             openInFinder: { [weak self] in self?.selectFolderInFinder($0) },
@@ -341,6 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browser = nil
         hold.isShowing = false
         presentation.reset()
+        profileScroll.reset()
     }
     private func performAfterRelease(_ action: @escaping () -> Void) {
         if hold.optionDown && (heldPresentation || presentation.isPinned) {
@@ -366,20 +387,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             settings.followFocus = true
             let originalPanel = panel
+            let revision = profileChangeRevision
             refreshFocus { [weak self, weak originalPanel] in
                 guard let self, let originalPanel, self.settings.followFocus,
+                      self.profileChangeRevision == revision,
                       self.panel === originalPanel, originalPanel.isVisible else { return }
                 self.redisplayProfile()
             }
         }
     }
     private func redisplayProfile() {
-        let pinned = presentation.isPinned
-        let held = heldPresentation
+        displayProfile(settings.activeProfile)
+    }
+    private func displayProfile(_ profile: LauncherProfile) {
+        guard panel?.isVisible == true else { return }
         pendingAction = nil
-        hide()
-        show(held: held)
-        if pinned { pinOverlay() }
+        presentation.selection = nil
+        browser?.close()
+        profileChangeRevision += 1
+        presentation.profile = profile
+    }
+    private func cycleProfile(_ step: Int) {
+        guard let currentID = presentation.profile?.id ?? visibleSnapshot?.profileID,
+              let next = ProfileNavigation.target(in: settings.profiles, currentID: currentID, step: step) else { return }
+        // This is a presentation override, never a change to Focus or saved manual selection.
+        displayProfile(next)
     }
     private func selectNumber(_ index: Int, command: Bool) {
         guard let snapshot = visibleSnapshot, browser?.current == nil else { NSSound.beep(); return }
@@ -389,8 +421,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentation.selection = "window:\(window.id)"
             pendingAction = { [weak self] in self?.select(window: window) }
         } else {
-            guard snapshot.pins.indices.contains(index) else { NSSound.beep(); return }
-            let pin = snapshot.pins[index]
+            let pins = presentation.profile?.items ?? snapshot.pins
+            guard pins.indices.contains(index) else { NSSound.beep(); return }
+            let pin = pins[index]
             if pin.opensInOverlay {
                 select(pin: pin)
                 return
@@ -523,6 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
     func applicationWillTerminate(_ notification: Notification) {
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         hold.stop()
         permissionTimer?.invalidate()
         DistributedNotificationCenter.default().removeObserver(self)

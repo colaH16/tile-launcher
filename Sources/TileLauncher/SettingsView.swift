@@ -40,9 +40,10 @@ struct SettingsView: View {
                         Picker("기본 조합", selection: $settings.numberShortcuts) {
                             ForEach(NumberShortcutAssignment.allCases) { Text($0.title).tag($0) }
                         }.pickerStyle(.radioGroup)
-                        Text("오버레이를 연 뒤 1–9, 0으로 첫 10개 중 하나를 고르고 Option을 놓으면 실행합니다. 0은 10번째입니다. 열린 동안 숫자와 대상은 바뀌지 않습니다.")
+                        Text("오버레이를 연 뒤 1–9, 0으로 첫 10개 중 하나를 고르고 Option을 놓으면 실행합니다. 0은 10번째입니다. 직접 프로필을 넘기면 등록 항목 번호도 해당 목록으로 바뀝니다.")
                             .font(.caption).foregroundStyle(.secondary)
-                        Text("⌥X 고정 · ⌘, 설정 · Esc 또는 ⌘W 닫기").font(.caption)
+                        Text("⌥X 고정 · ⌘, / ⌥, 설정 · Esc / ⌘W / ⌥W 닫기").font(.caption)
+                        Text("⌥A 또는 ⌥S: 이전 프로필 · ⌥D 또는 ⌥F: 다음 프로필").font(.caption)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
                 GroupBox("최근 창") {
@@ -54,7 +55,7 @@ struct SettingsView: View {
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("앱이 바뀌는 곳은 가로형, 같은 앱이 연속되면 정사각형입니다. 다른 데스크탑의 창도 포함하며 현재 데스크탑은 배경색으로 구분합니다. 2줄을 넘는 항목은 세로로 스크롤합니다.")
+                        Text("앱이 바뀌는 곳은 가로형, 같은 앱이 연속되면 정사각형입니다. 현재 데스크탑은 배경색으로 구분합니다. 최대 3.3줄로 다음 줄의 일부까지 보여주며 아래로 스크롤할 수 있습니다. 작은 화면에서는 표시 영역을 줄입니다.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
@@ -89,6 +90,26 @@ struct SettingsView: View {
                             .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     Toggle("집중 모드 필터에 따라 프로필 자동 선택", isOn: $settings.followFocus)
+                    DisclosureGroup("프로필 순서") {
+                        ScrollView {
+                            VStack(spacing: 8) {
+                                ForEach(settings.profiles) { profile in
+                                    HStack {
+                                        Text(profile.name).lineLimit(1)
+                                        Spacer()
+                                        Button { settings.moveProfile(profile.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                                            .disabled(settings.profiles.first?.id == profile.id)
+                                            .help("\(profile.name) 앞으로 이동").accessibilityLabel("\(profile.name) 앞으로 이동")
+                                        Button { settings.moveProfile(profile.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                                            .disabled(settings.profiles.last?.id == profile.id)
+                                            .help("\(profile.name) 뒤로 이동").accessibilityLabel("\(profile.name) 뒤로 이동")
+                                    }
+                                }
+                            }.padding(4)
+                        }.frame(height: min(112, CGFloat(settings.profiles.count) * 30))
+                    }
+                    Text("왼쪽으로 쓸면 다음, 오른쪽으로 쓸면 이전 프로필입니다. 이 순서대로 순환하며, 오버레이를 닫으면 임시 선택은 해제됩니다.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Text("시스템 설정 → 집중 모드 → 앱 필터에서 Tile Launcher와 프로필을 연결하세요. 필터가 없거나 해제되면 수동으로 선택한 구성으로 돌아갑니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(8)

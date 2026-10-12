@@ -33,6 +33,9 @@ public struct DeckGeometry {
     public let windowColumns: Int
     public let gap: CGFloat = 8
     public var twoRows: CGFloat { unit * 2 + gap }
+    public func viewport(rows: CGFloat) -> CGFloat {
+        unit * rows + gap * max(0, ceil(rows) - 1)
+    }
     public init(width: CGFloat, compact: Bool) {
         let content = max(1, width - 48)
         if compact {

@@ -37,7 +37,21 @@ public struct PanelLayout: Equatable {
                     supported: size.width >= 512 && size.height >= 420)
     }
 
-    /// The two-row viewport never truncates automatic history.
+    /// Trim unused vertical space within the existing size/aspect limits.
+    public func fittingContent(registeredCount: Int) -> Self {
+        let geometry = DeckGeometry(width: frame.width, compact: compact)
+        let shelf = RegisteredGridGeometry(width: frame.width)
+            .shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
+        // Reserve native caption/icon line metrics plus rounding so a shelf row
+        // never disappears for a one-point shortage at the viewport boundary.
+        let desired = geometry.viewport(rows: 3.3) + 30 + shelf + (compact ? 8 : 14) + (compact ? 130 : 158)
+        let minimum = compact ? 420 : max(620, frame.width / 1.5)
+        let height = min(frame.height, max(minimum, desired.rounded(.up)))
+        return Self(frame: CGRect(x: frame.minX, y: frame.midY - height / 2, width: frame.width, height: height),
+                    compact: compact, supported: supported)
+    }
+
+    /// The viewport never truncates automatic history.
     public func windowLimit(manual: Int?, actual: Int) -> Int {
         min(actual, manual.map { max(6, $0) } ?? actual)
     }

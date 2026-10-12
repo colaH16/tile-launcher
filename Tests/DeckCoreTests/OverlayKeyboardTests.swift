@@ -18,24 +18,32 @@ final class OverlayKeyboardTests: XCTestCase {
         XCTAssertEqual(gesture.flags(option: false, otherModifier: false, overlayVisible: true), .release)
     }
     func testSettingsAndCloseAcceptOptionStillHeld() {
-        for modifiers: OverlayShortcut.Modifiers in [.command, [.option, .command]] {
+        for modifiers: OverlayShortcut.Modifiers in [.option, .command, [.option, .command]] {
             XCTAssertEqual(OverlayShortcut.resolve(keyCode: 43, modifiers: modifiers), .settings)
             XCTAssertEqual(OverlayShortcut.resolve(keyCode: 13, modifiers: modifiers), .close)
         }
         XCTAssertEqual(OverlayShortcut.resolve(keyCode: 53, modifiers: .option), .close)
         XCTAssertNil(OverlayShortcut.resolve(keyCode: 43, modifiers: [.command, .shift]))
-        XCTAssertNil(OverlayShortcut.resolve(keyCode: 43, modifiers: .option))
+        XCTAssertNil(OverlayShortcut.resolve(keyCode: 43, modifiers: []))
     }
     func testPinOnlyUsesOptionXLeavingSpaceAndOtherCombinationsAlone() {
         XCTAssertEqual(OverlayShortcut.resolve(keyCode: 7, modifiers: .option), .pin)
         XCTAssertNil(OverlayShortcut.resolve(keyCode: 7, modifiers: []))
         XCTAssertNil(OverlayShortcut.resolve(keyCode: 7, modifiers: [.option, .command]))
         XCTAssertNil(OverlayShortcut.resolve(keyCode: 49, modifiers: .option))
-        XCTAssertNil(OverlayShortcut.resolve(keyCode: 0, modifiers: .option))
+        XCTAssertNil(OverlayShortcut.resolve(keyCode: 0, modifiers: [.option, .command]))
         let presentation = OverlayPresentation()
         presentation.pin()
         presentation.pin()
         XCTAssertFalse(presentation.dismisses(for: .release))
         XCTAssertTrue(presentation.dismisses(for: .escape))
+    }
+    func testLeftHandProfileKeysOnlyConsumeOptionAlone() {
+        for key: UInt16 in [0, 1, 2, 3] {
+            XCTAssertEqual(OverlayShortcut.resolve(keyCode: key, modifiers: .option), .profile(step: key < 2 ? -1 : 1))
+            for modifiers: OverlayShortcut.Modifiers in [[], .command, [.option, .command], [.option, .shift], [.option, .control]] {
+                XCTAssertNil(OverlayShortcut.resolve(keyCode: key, modifiers: modifiers))
+            }
+        }
     }
 }

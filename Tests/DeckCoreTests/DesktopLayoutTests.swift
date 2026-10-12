@@ -10,7 +10,8 @@ final class DesktopLayoutTests: XCTestCase {
         XCTAssertEqual(one.registeredHeight, 97.42857, accuracy: 0.001)
         XCTAssertEqual(three.registeredHeight, 240.28571, accuracy: 0.001)
         XCTAssertEqual(many.registeredHeight, three.registeredHeight)
-        XCTAssertGreaterThan(one.workTopInset, three.workTopInset)
+        XCTAssertEqual(one.workTopInset, 0)
+        XCTAssertEqual(three.workTopInset, 0)
     }
     func testRegisteredSquaresKeepDenseRowsWithinPanelAndReserveExactHeight() {
         for width: CGFloat in [512, 640, 760, 900, 1040] {
@@ -21,21 +22,38 @@ final class DesktopLayoutTests: XCTestCase {
             XCTAssertEqual(grid.shelfHeight(count: grid.columns + 1, maximumRows: 3), grid.side * 2 + grid.gap + 34)
         }
     }
-    func testWorkAreaUsesThirtyPercentOfSlackWithoutStretchingTiles() {
+    func testWorkAreaShowsThreeRowsAndThirtyPercentOfFourth() {
         let content = DeckContentLayout(width: 900, availableHeight: 520, registeredCount: 36, compact: false)
-        let slack = 520 - content.workHeight - content.registeredHeight - content.gap
-        XCTAssertGreaterThan(slack, 0)
-        XCTAssertEqual(content.workTopInset, slack * 0.3, accuracy: 0.01)
-        XCTAssertEqual(content.workHeight, DeckGeometry(width: 900, compact: false).twoRows + 30)
+        let geometry = DeckGeometry(width: 900, compact: false)
+        XCTAssertEqual(content.workTopInset, 0)
+        XCTAssertEqual(content.workHeight, geometry.unit * 3.3 + geometry.gap * 3 + 30, accuracy: 0.001)
+        XCTAssertEqual(content.registeredHeight, RegisteredGridGeometry(width: 900).shelfHeight(count: 24, maximumRows: 2))
         XCTAssertLessThan(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, 520)
     }
     func testSupportedSmallPanelKeepsTwoWindowRowsAndOneRegisteredRow() {
-        for (width, bodyHeight, compact): (CGFloat, CGFloat, Bool) in [(512, 290, true), (760, 460, false), (1040, 560, false)] {
+        for (width, bodyHeight, compact): (CGFloat, CGFloat, Bool) in [(512, 298, true), (760, 470, false), (1040, 560, false)] {
             let content = DeckContentLayout(width: width, availableHeight: bodyHeight, registeredCount: 100, compact: compact)
             XCTAssertGreaterThanOrEqual(content.registeredHeight, 94)
+            XCTAssertGreaterThanOrEqual(content.workHeight, DeckGeometry(width: width, compact: compact).twoRows + 30)
             XCTAssertGreaterThanOrEqual(content.workTopInset, 0)
             XCTAssertLessThanOrEqual(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, bodyHeight)
         }
+    }
+    func testContentFittingShrinksWithinScreenAndAspectBounds() {
+        let screen = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        let original = PanelLayout.calculate(visibleFrame: screen, cursor: CGPoint(x: -100, y: 100))
+        for count in [0, 14, 35, 200] {
+            let fitted = original.fittingContent(registeredCount: count)
+            XCTAssertLessThanOrEqual(fitted.frame.height, original.frame.height)
+            XCTAssertTrue(original.frame.contains(fitted.frame))
+            XCTAssertLessThanOrEqual(fitted.frame.width / fitted.frame.height, 1.5)
+            XCTAssertGreaterThanOrEqual(fitted.frame.height, 620)
+        }
+        XCTAssertLessThan(original.fittingContent(registeredCount: 35).frame.height, original.frame.height)
+        let fitted = original.fittingContent(registeredCount: 35)
+        let body = DeckContentLayout(width: fitted.frame.width, availableHeight: fitted.frame.height - 154,
+                                     registeredCount: 35, compact: false)
+        XCTAssertEqual(body.registeredHeight, RegisteredGridGeometry(width: fitted.frame.width).shelfHeight(count: 35, maximumRows: 3))
     }
     func testHiddenAndMinimizedWindowsAreStillCurrentWhenMembershipMatches() {
         XCTAssertEqual(WindowDesktop.resolve(windowSpaces: [4], activeSpaces: [4], onScreen: false), .current)

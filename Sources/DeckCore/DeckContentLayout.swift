@@ -16,8 +16,8 @@ public struct RegisteredGridGeometry {
     }
 }
 
-/// Allocate the registered shelf from the bottom, then position the two-row
-/// work area 30% into its remaining vertical slack. Tile proportions stay fixed.
+/// Show three complete rows and a peek at the fourth. Reserve complete
+/// registered rows, falling back only when the display is too small.
 public struct DeckContentLayout {
     public let registeredHeight: CGFloat
     public let workHeight: CGFloat
@@ -25,14 +25,17 @@ public struct DeckContentLayout {
     public let gap: CGFloat
 
     public init(width: CGFloat, availableHeight: CGFloat, registeredCount: Int, compact: Bool) {
-        gap = compact ? 10 : 18
+        gap = compact ? 8 : 14
         let geometry = DeckGeometry(width: width, compact: compact)
-        workHeight = geometry.twoRows + 30
-        let desired = RegisteredGridGeometry(width: width)
-            .shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
+        let grid = RegisteredGridGeometry(width: width)
+        let oneRegisteredRow = grid.shelfHeight(count: 1, maximumRows: 1)
+        let roomForWork = max(0, availableHeight - gap - oneRegisteredRow)
+        workHeight = min(geometry.viewport(rows: 3.3) + 30, roomForWork)
         let room = max(0, availableHeight - workHeight - gap)
-        registeredHeight = min(desired, room)
-        workTopInset = max(0, availableHeight - registeredHeight - gap - workHeight) * 0.3
+        let rowBudget = max(1, Int((room - 34 + grid.gap) / (grid.side + grid.gap)))
+        registeredHeight = min(room, grid.shelfHeight(count: registeredCount,
+                                                       maximumRows: min(rowBudget, compact ? 2 : 3)))
+        workTopInset = 0
     }
 }
 

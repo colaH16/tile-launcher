@@ -62,6 +62,7 @@ struct DeckView: View {
     let selectPin: (PinnedItem) -> Void
     let selectMenu: (MenuCommand) -> Void
     let changeProfile: (String?) -> Void
+    let cycleProfile: (Int) -> Void
     @State private var editedMenus: [MenuCommand]?
     let selectWindow: (WindowItem) -> Void
     let openURL: (URL) -> Void
@@ -72,6 +73,8 @@ struct DeckView: View {
     let pinOverlay: () -> Void
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
+    private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
+    private var profileName: String { presentation.profile?.name ?? snapshot.profileName }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -83,9 +86,9 @@ struct DeckView: View {
                     GeometryReader { area in
                         let content = DeckContentLayout(width: snapshot.layout.frame.width,
                                                         availableHeight: area.size.height,
-                                                        registeredCount: snapshot.pins.count, compact: compact)
+                                                        registeredCount: registeredItems.count, compact: compact)
                         VStack(spacing: 0) {
-                            workArea.padding(.top, content.workTopInset)
+                            workArea(height: content.workHeight)
                             Spacer(minLength: content.gap)
                             registeredSection.frame(height: content.registeredHeight)
                         }
@@ -93,10 +96,14 @@ struct DeckView: View {
                 }
                 HStack {
                     Image(systemName: presentation.isPinned ? "pin.fill" : "option")
-                    Text(presentation.isPinned ? "상단의 빈 곳을 드래그하여 이동 · Esc 닫기" : "놓으면 닫기 · ⌥X 고정 · ⌘, 설정").font(.caption)
+                    Text(compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
+                         : presentation.isPinned ? "상단 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정")
+                        .font(.caption).lineLimit(1)
                     Spacer()
-                    Text("Tile Launcher").font(.caption).foregroundStyle(.tertiary)
+                    Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
+                        .font(.caption).lineLimit(1).foregroundStyle(.secondary)
                 }
+                .frame(height: 18)
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 24)
@@ -127,7 +134,7 @@ struct DeckView: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: Circle())
-                .help(presentation.isPinned ? "닫기 · Esc 또는 ⌘W" : "창 고정 · ⌥X · Option을 놓아도 유지")
+                .help(presentation.isPinned ? "닫기 · Esc · ⌘W · ⌥W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
                 .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
 
@@ -151,15 +158,17 @@ struct DeckView: View {
                             Button(profile.name) { changeProfile(profile.id) }
                         }
                     } label: {
-                        Label(snapshot.profileName, systemImage: "circle.dotted")
+                        Label(profileName, systemImage: "circle.dotted")
                             .font(.caption).lineLimit(1).frame(maxWidth: 90)
                     }.menuStyle(.borderlessButton).fixedSize()
-                        .help("등록 항목 프로필 선택")
+                        .help("옆으로 쓸기 또는 ⌥A/S 이전 · ⌥D/F 다음 · 닫으면 자동 복귀")
+                        .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
+                        .accessibilityAction(named: Text("다음 프로필")) { cycleProfile(1) }
                     Divider().frame(height: 16)
                     Button(action: showSettings) {
                         Image(systemName: "slider.horizontal.3").frame(width: 28, height: 30)
                     }
-                    .buttonStyle(.plain).help("설정 · ⌘,")
+                    .buttonStyle(.plain).help("설정 · ⌘, 또는 ⌥,")
                     .accessibilityLabel("설정")
                 }
                 .padding(.horizontal, 10).frame(height: 36)
@@ -191,10 +200,10 @@ struct DeckView: View {
 
     private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.frame.width, compact: compact) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
-    private var workArea: some View {
+    private func workArea(height: CGFloat) -> some View {
         HStack(alignment: .top, spacing: 22) {
-            if !compact { menuSection.frame(width: geometry.menuWidth) }
-            recentSection.frame(width: geometry.windowWidth)
+            if !compact { menuSection(height: height).frame(width: geometry.menuWidth) }
+            recentSection(height: height).frame(width: geometry.windowWidth)
         }
     }
     private func rows(_ spans: [Int], columns: Int) -> [[TilePlacement]] {
@@ -203,7 +212,7 @@ struct DeckView: View {
     }
     private func tileWidth(_ span: Int) -> CGFloat { geometry.unit * CGFloat(span) + geometry.gap * CGFloat(span - 1) }
 
-    private var menuSection: some View {
+    private func menuSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionTitle("메뉴", symbol: "command")
@@ -235,7 +244,7 @@ struct DeckView: View {
                     }
                 }.scrollIndicators(.visible)
             }
-        }.frame(height: geometry.twoRows + 30)
+        }.frame(height: height)
     }
     private func menuTile(_ command: MenuCommand) -> some View {
         Button { selectMenu(command) } label: {
@@ -265,20 +274,20 @@ struct DeckView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
-                Text("\(snapshot.pins.count)개").font(.caption2).foregroundStyle(.tertiary)
+                Text("\(registeredItems.count)개").font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
                 Button(action: showSettings) { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
             }.frame(height: 20)
-            if snapshot.pins.isEmpty {
+            if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가", action: showSettings)
                     .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(grid.side), spacing: grid.gap), count: grid.columns),
                               spacing: grid.gap) {
-                        ForEach(Array(snapshot.pins.enumerated()), id: \.element.id) { index, pin in
+                        ForEach(Array(registeredItems.enumerated()), id: \.element.id) { index, pin in
                             Button { selectPin(pin) } label: {
                                 VStack(spacing: 4) {
                                     Group {
@@ -295,7 +304,7 @@ struct DeckView: View {
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }
                     }.padding(.top, 4)
-                }
+                }.id(presentation.profile?.id ?? snapshot.profileID)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -310,7 +319,7 @@ struct DeckView: View {
                 .accessibilityHidden(true)
         }
     }
-    private var recentSection: some View {
+    private func recentSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
@@ -346,7 +355,7 @@ struct DeckView: View {
                     }
                 }.scrollIndicators(.visible)
             }
-        }.frame(height: geometry.twoRows + 30)
+        }.frame(height: height)
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
         let desktop = presentation.windowDesktops[window.id] ?? .unknown

@@ -2,6 +2,7 @@ import Foundation
 
 public enum OverlayShortcut: Equatable {
     case pin, settings, close
+    case profile(step: Int)
     case number(index: Int, command: Bool)
 
     public struct Modifiers: OptionSet {
@@ -23,7 +24,16 @@ public enum OverlayShortcut: Equatable {
             if keyCode == 43 { return .settings } // Command-comma; Option may still be held.
             if keyCode == 13 { return .close } // Command-W
         }
-        if keyCode == 7 && modifiers == .option { return .pin } // Option-X
+        if modifiers == .option {
+            switch keyCode {
+            case 7: return .pin // X
+            case 13: return .close // W
+            case 43: return .settings // comma
+            case 0, 1: return .profile(step: -1) // A, S
+            case 2, 3: return .profile(step: 1) // D, F
+            default: break
+            }
+        }
         if modifiers == .option || modifiers == [.option, .command] {
             let numberKeys: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25, 29]
             let keypadKeys: [UInt16] = [83, 84, 85, 86, 87, 88, 89, 91, 92, 82]

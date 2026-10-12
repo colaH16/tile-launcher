@@ -76,6 +76,11 @@ final class SettingsStore: ObservableObject {
         selectProfile(profiles.first { $0.id != id }!.id)
         profiles.removeAll { $0.id == id }
     }
+    func moveProfile(_ id: String, by offset: Int) {
+        guard let index = profiles.firstIndex(where: { $0.id == id }),
+              profiles.indices.contains(index + offset) else { return }
+        profiles.swapAt(index, index + offset)
+    }
     func addCommand(_ command: MenuCommand) {
         guard !commands.contains(where: { $0.appID == command.appID && $0.path == command.path }) else { return }
         commands.append(command)
