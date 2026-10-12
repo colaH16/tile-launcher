@@ -145,9 +145,12 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - 비활성화 NSPanel이 키 입력을 받으면서 원래 앱/창의 스냅샷 문맥을 유지하는지 확인한다. 로컬 모니터가 처리한 키는 nil을 반환하여 중복 전달하지 않는다. 다른 앱으로 포커스를 옮기면 해당 앱의 키 입력을 가로채지 않아야 한다.
 - 2026-10-12 확인한 공식 자료: [앱 종료 요청](https://developer.apple.com/documentation/appkit/nsrunningapplication/terminate()), [launchDate](https://developer.apple.com/documentation/appkit/nsrunningapplication/launchdate), [새 인스턴스 실행](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/createsnewapplicationinstance), [로컬/전역 이벤트 모니터](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html), [비활성화 패널](https://developer.apple.com/documentation/appkit/nswindow/stylemask-swift.struct/nonactivatingpanel). 다음 OS 대응 시 당시 문서를 다시 확인한다.
 
-## R42 · 고정 오버레이 이동
+## R42·R44·R45 · 고정 오버레이 이동과 헤더 컨트롤
 
-- 고정 전에는 제목을 드래그해도 이동하지 않고, 버튼/⌥X로 고정하면 제목·설명 영역을 잡아 이동할 수 있어야 한다. 이동 후 Option 해제로 닫히지 않고 Esc/⌘W/닫기 버튼과 설정 열기가 유지되는지 확인한다.
+- 고정 전에는 헤더를 드래그해도 이동하지 않고, 버튼/⌥X로 고정하면 제목·설명과 상단의 모든 여백을 잡아 이동할 수 있어야 한다(R44). 위쪽·왼쪽·오른쪽 가장자리, 버튼 사이, 폴더 진입/복귀 전후를 확인한다. 이동 후 Option 해제로 닫히지 않고 Esc/⌘W/닫기 버튼과 설정 열기가 유지되는지 확인한다.
 - 실제 타일, 폴더 뒤로, 왼쪽 닫기, 오른쪽 설정 위의 마우스 입력을 드래그 영역이 가로채지 않는지 확인한다. 비활성 상태의 고정 창도 첫 클릭으로 드래그할 수 있어야 한다.
 - 기본/작은 배치, 폴더 안 헤더, 다른 배율·음수 원점의 모니터로 드래그, 화면 가장자리와 Space 전환을 확인한다. 이동 중 화면 크기·배율 재계산을 임의로 추가하지 않고 다음 호출의 커서 중심 배치가 유지되는지 검사한다.
 - [performDrag(with:)](https://developer.apple.com/documentation/appkit/nswindow/performdrag(with:))는 원래 mouse-down 이벤트를 넘기고 Window Server에 이동을 맡긴다. 로컬 SDK 문서상 즉시 반환하며 mouse-up이 오지 않을 수 있으므로 반환/마우스 해제를 드래그 완료로 간주하지 않는다. [isMovable](https://developer.apple.com/documentation/appkit/nswindow/ismovable) 및 최신 [Windows HIG](https://developer.apple.com/design/human-interface-guidelines/windows)를 함께 재확인한다.
+- 드래그에서 제외할 컨트롤 영역은 고정 너비 추정 대신 SwiftUI anchor preference에서 구한다. NSView의 flipped 좌표계와 hitTest의 상위 뷰 좌표 변환을 함께 검증한다. 폴더 진입으로 뒤로 버튼이 생기거나 사라질 때 영역이 즉시 맞아야 한다.
+- 뒤로 가기·핀/닫기의 원형 글래스, 대비/투명도 줄이기, 첫 클릭, 툴팁, VoiceOver, 네이티브 눌림 상태를 비교한다. 2026-10-12 [Applying Liquid Glass to custom views](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views)의 모양 및 interactive 설정을 확인함. 추후 표준 버튼 스타일/컨테이너로 옮기면 모양과 실제 클릭 영역을 재검증한다.
+- R43·R46 레이아웃은 아직 시안이다. 네이티브 구현 시 앱별 메뉴 ID 중복 제거, 로컬 실행 빈도, 작은/큰 타일과 고정 색/핀 표시, 수동 고정 순서, 열린 동안 자동 재배치 방지, 빈 데이터·권한 오류·긴 메뉴 이름을 검증한다. 고정/자주/최근을 별도 영역으로 다시 나누거나 전체 메뉴 사용 추적을 보장하지 않는다.

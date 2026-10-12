@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 import DeckCore
 
+private struct HeaderControlsKey: PreferenceKey {
+    static var defaultValue: [Anchor<CGRect>] { [] }
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 private struct Icon: View {
     let url: URL?
     var size: CGFloat = 34
@@ -37,23 +44,26 @@ struct DeckView: View {
     private var tileHeight: CGFloat { compact ? 66 : 82 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 18) {
+        VStack(spacing: 0) {
             header
-            if browser.current != nil {
-                folderContents
-            } else {
-                registeredSection.frame(maxHeight: .infinity, alignment: .top)
-                recentSection
+            VStack(alignment: .leading, spacing: compact ? 10 : 18) {
+                if browser.current != nil {
+                    folderContents
+                } else {
+                    registeredSection.frame(maxHeight: .infinity, alignment: .top)
+                    recentSection
+                }
+                HStack {
+                    Image(systemName: presentation.isPinned ? "pin.fill" : "option")
+                    Text(presentation.isPinned ? "상단의 빈 곳을 드래그하여 이동 · Esc 닫기" : "놓으면 닫기 · ⌥X 고정 · ⌘, 설정").font(.caption)
+                    Spacer()
+                    Text("Tile Launcher").font(.caption).foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(.secondary)
             }
-            HStack {
-                Image(systemName: presentation.isPinned ? "pin.fill" : "option")
-                Text(presentation.isPinned ? "제목을 드래그하여 이동 · Esc 닫기" : "놓으면 닫기 · ⌥X 고정 · ⌘, 설정").font(.caption)
-                Spacer()
-                Text("Tile Launcher").font(.caption).foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(.secondary)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -81,13 +91,18 @@ struct DeckView: View {
                 .glassEffect(.regular.interactive(), in: Circle())
                 .help(presentation.isPinned ? "닫기 · Esc 또는 ⌘W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
+                .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
 
                 if browser.current != nil {
                     Button(action: browser.back) {
-                        Image(systemName: "chevron.left").frame(width: 30, height: 34)
+                        Image(systemName: "chevron.left")
+                            .frame(width: 34, height: 34).contentShape(Circle())
                     }
-                    .buttonStyle(.plain).help("뒤로")
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .help("뒤로")
                     .accessibilityLabel("이전 폴더로 이동")
+                    .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
                 }
                 Spacer()
                 HStack(spacing: 10) {
@@ -102,14 +117,19 @@ struct DeckView: View {
                 }
                 .padding(.horizontal, 10).frame(height: 36)
                 .glassEffect(.regular, in: Capsule())
+                .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
             }
         }
         .frame(height: compact ? 40 : 52)
-        .overlay {
-            OverlayDragHandle(enabled: presentation.isPinned)
-                .padding(.leading, 90)
-                .padding(.trailing, 138)
-                .allowsHitTesting(presentation.isPinned)
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+        .padding(.bottom, compact ? 10 : 18)
+        .overlayPreferenceValue(HeaderControlsKey.self) { controls in
+            GeometryReader { geometry in
+                OverlayDragHandle(enabled: presentation.isPinned,
+                                  excludedRects: controls.map { geometry[$0] })
+                    .allowsHitTesting(presentation.isPinned)
+            }
         }
     }
 
