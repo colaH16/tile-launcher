@@ -13,6 +13,10 @@ BUNDLE="$OUTPUT_DIR/Tile Launcher.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BINARY_DIR/TileLauncher" "$BUNDLE/Contents/MacOS/TileLauncher"
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
+# Identical compiled builds compare equal; source changes are distinguishable even
+# before the next public version bump. Compute before ad-hoc signing modifies Mach-O.
+BUILD_ID="$(shasum -a 256 "$BINARY_DIR/TileLauncher" | cut -d ' ' -f 1)"
+/usr/libexec/PlistBuddy -c "Add :TileLauncherBuildID string $BUILD_ID" "$BUNDLE/Contents/Info.plist"
 # Finder metadata on copied local build products is not part of the app signature.
 xattr -cr "$BUNDLE"
 codesign --force --sign - "$BUNDLE"

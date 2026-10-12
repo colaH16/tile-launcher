@@ -6,6 +6,8 @@ final class HoldMonitor {
     var onHide: ((OverlayDismissal) -> Void)?
     var onCancel: (() -> Void)?
     var onRelease: (() -> Void)?
+    var onShortcut: ((OverlayShortcut) -> Void)?
+    var ownsKeyboard: (() -> Bool)?
     var isShowing = false
     private var gesture = HoldGesture()
     private var timer: DispatchWorkItem?
@@ -17,10 +19,9 @@ final class HoldMonitor {
     func start() {
         stop()
         let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
-        global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] in self?.handle($0, external: true) }
+        global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] in _ = self?.handle($0, external: true) }
         local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            self?.handle(event, external: false)
-            return event
+            self?.handle(event, external: false) == true ? nil : event
         }
     }
     func stop() {
@@ -34,13 +35,22 @@ final class HoldMonitor {
         optionDown = false
         gesture = HoldGesture()
     }
-    private func handle(_ event: NSEvent, external: Bool) {
+    /// A true result consumes a local event; global events are never modified.
+    private func handle(_ event: NSEvent, external: Bool) -> Bool {
         if event.type == .flagsChanged {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             optionDown = flags.contains(.option)
             let other = !flags.intersection([.command, .control, .shift, .function]).isEmpty
-            apply(gesture.flags(option: optionDown, otherModifier: other))
+            apply(gesture.flags(option: optionDown, otherModifier: other, overlayVisible: isShowing))
         } else if event.type == .keyDown {
+            if !external, isShowing, ownsKeyboard?() == true,
+               let shortcut = OverlayShortcut.resolve(keyCode: event.keyCode, modifiers: modifiers(event)) {
+                if !event.isARepeat {
+                    onCancel?()
+                    onShortcut?(shortcut)
+                }
+                return true
+            }
             apply(gesture.interrupt())
             if isShowing || event.keyCode == 53 {
                 onHide?(event.keyCode == 53 ? .escape : .interruption)
@@ -51,6 +61,15 @@ final class HoldMonitor {
             onHide?(.outsideClick)
             apply(gesture.interrupt())
         }
+        return false
+    }
+    private func modifiers(_ event: NSEvent) -> OverlayShortcut.Modifiers {
+        var result: OverlayShortcut.Modifiers = []
+        for (native, core): (NSEvent.ModifierFlags, OverlayShortcut.Modifiers) in [
+            (.option, .option), (.command, .command), (.shift, .shift),
+            (.control, .control), (.function, .function)
+        ] where event.modifierFlags.contains(native) { result.insert(core) }
+        return result
     }
     private func apply(_ effect: HoldGesture.Effect) {
         switch effect {

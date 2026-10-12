@@ -11,6 +11,12 @@ final class DeckPanel: NSPanel {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let runningBuild: AppBuild
+    private var replacementRequested = false
+    init(build: AppBuild) {
+        runningBuild = build
+        super.init()
+    }
     let settings = SettingsStore()
     let tracker = WindowTracker()
     let hold = HoldMonitor()
@@ -56,9 +62,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.pendingAction = nil
             action?()
         }
+        hold.ownsKeyboard = { [weak self] in self?.panel?.isKeyWindow == true }
+        hold.onShortcut = { [weak self] shortcut in
+            guard let self else { return }
+            switch shortcut {
+            case .pin: self.presentation.pin()
+            case .settings: self.openSettings()
+            case .close: self.hide()
+            }
+        }
         hold.start()
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(reopenNotification(_:)),
-            name: Notification.Name("dev.cola16.TileLauncher.reopen"), object: String(getuid()))
+            name: InstanceCoordinator.reopenName, object: String(getuid()))
         updateApps()
         checkPermission(force: true)
         let center = NSWorkspace.shared.notificationCenter
@@ -163,8 +178,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
     @objc func openFromMenu() { show(held: false) }
-    @objc private func reopenNotification(_ notification: Notification) { reopenExistingInterface() }
-    private func reopenExistingInterface() {
+    @objc private func reopenNotification(_ notification: Notification) {
+        reopenExistingInterface(settings: notification.userInfo?["settings"] as? Bool == true, checkForUpdate: false)
+    }
+    private func reopenExistingInterface(settings: Bool = false, checkForUpdate: Bool = true) {
+        // Finder/open may reuse this process even after the app at the same path
+        // was rebuilt. Start a new instance so the normal handoff policy can run.
+        if checkForUpdate, let diskBuild = try? InstanceCoordinator.build(at: Bundle.main.bundleURL),
+           diskBuild != runningBuild {
+            guard !replacementRequested else { return }
+            replacementRequested = true
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            configuration.arguments = [settings ? "--settings" : "--show"]
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { [weak self] _, failure in
+                DispatchQueue.main.async {
+                    if let failure {
+                        self?.replacementRequested = false
+                        self?.error("새 빌드를 열지 못했습니다. \(failure.localizedDescription)")
+                    }
+                }
+            }
+            // Permit another attempt if the replacement could not complete its startup.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.replacementRequested = false }
+            return
+        }
+        if settings { openSettings(); return }
         if let preferences, preferences.isVisible {
             NSApp.activate()
             preferences.makeKeyAndOrderFront(nil)
@@ -230,10 +269,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hosting.bottomAnchor.constraint(equalTo: glass.bottomAnchor)
         ])
         window.setFrame(layout.frame, display: false)
-        window.orderFrontRegardless()
         panel = window
         heldPresentation = held
         hold.isShowing = true
+        // Receive local shortcuts without activating the launcher or changing the
+        // captured app context. Global monitors cannot consume another app's keys.
+        window.makeKeyAndOrderFront(nil)
         if let index = CommandLine.arguments.firstIndex(of: "--render-check"),
            CommandLine.arguments.indices.contains(index + 1) {
             let path = CommandLine.arguments[index + 1]
@@ -291,6 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     @objc func openSettings() {
+        pendingAction = nil
         hide()
         if let preferences {
             NSApp.activate()
@@ -367,18 +409,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// Acquire before constructing observers, event monitors, or the status item.
+// Register with AppKit, then acquire before constructing monitors or the status item.
+let application = NSApplication.shared
 let instanceLock: InstanceLock
+let runningBuild: AppBuild
 do {
-    let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("dev.cola16.TileLauncher", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    guard let lock = try InstanceLock(url: directory.appendingPathComponent("instance.lock")) else {
-        DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name("dev.cola16.TileLauncher.reopen"), object: String(getuid()),
-            userInfo: nil, deliverImmediately: true)
-        exit(0)
-    }
+    runningBuild = try InstanceCoordinator.build(at: Bundle.main.bundleURL)
+    guard let lock = try InstanceCoordinator.acquire(build: runningBuild) else { exit(0) }
     instanceLock = lock
 } catch {
     let alert = NSAlert()
@@ -387,7 +424,6 @@ do {
     alert.runModal()
     exit(1)
 }
-let application = NSApplication.shared
-let delegate = AppDelegate()
+let delegate = AppDelegate(build: runningBuild)
 application.delegate = delegate
 withExtendedLifetime(instanceLock) { application.run() }

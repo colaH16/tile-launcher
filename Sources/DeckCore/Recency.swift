@@ -25,7 +25,7 @@ public struct HoldGesture {
     private var optionDown = false
     private var cancelled = false
     public init() {}
-    public mutating func flags(option: Bool, otherModifier: Bool) -> Effect {
+    public mutating func flags(option: Bool, otherModifier: Bool, overlayVisible: Bool = false) -> Effect {
         if !option {
             let wasDown = optionDown
             optionDown = false
@@ -34,10 +34,11 @@ public struct HoldGesture {
         }
         if !optionDown {
             optionDown = true
+            if overlayVisible { cancelled = true; return .none }
             cancelled = otherModifier
             return otherModifier ? .cancel : .arm
         }
-        if otherModifier && !cancelled {
+        if otherModifier && !cancelled && !overlayVisible {
             cancelled = true
             return .cancel
         }

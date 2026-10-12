@@ -47,7 +47,7 @@ struct DeckView: View {
             }
             HStack {
                 Image(systemName: presentation.isPinned ? "pin.fill" : "option")
-                Text(presentation.isPinned ? "고정됨 · × 또는 Esc로 닫기" : "누른 채 선택 · 놓으면 닫기").font(.caption)
+                Text(presentation.isPinned ? "고정됨 · Esc 또는 ⌘W로 닫기" : "놓으면 닫기 · ⌥X 고정 · ⌘, 설정").font(.caption)
                 Spacer()
                 Text("Tile Launcher").font(.caption).foregroundStyle(.tertiary)
             }
@@ -79,7 +79,7 @@ struct DeckView: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: Circle())
-                .help(presentation.isPinned ? "닫기" : "창 고정 · Option을 놓아도 유지")
+                .help(presentation.isPinned ? "닫기 · Esc 또는 ⌘W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
 
                 if browser.current != nil {
@@ -97,7 +97,7 @@ struct DeckView: View {
                     Button(action: showSettings) {
                         Image(systemName: "slider.horizontal.3").frame(width: 28, height: 30)
                     }
-                    .buttonStyle(.plain).help("설정")
+                    .buttonStyle(.plain).help("설정 · ⌘,")
                     .accessibilityLabel("설정")
                 }
                 .padding(.horizontal, 10).frame(height: 36)

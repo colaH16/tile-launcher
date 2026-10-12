@@ -135,3 +135,12 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - R31의 휴지통은 경로가 아닌 Finder 애플리케이션의 `trash` 객체다. 새 OS의 `/System/Library/CoreServices/Finder.app/Contents/Resources/Finder.sdef`에서 읽기 전용 `trash` 속성(`trsh`)과 `open` 이벤트(`aevt`/`odoc`)를 재확인한다. 현재 Apple 문서의 `NSWorkspace.OpenConfiguration.appleEvent` 지원과 오류 처리도 확인한다.
 - ‘Bin/휴지통’이라는 창 제목만으로 성공을 판정하지 않는다. Dock에서 연 통합 휴지통과 타일에서 연 창의 목록·개수·경로 막대를 비교한다. 일반 Finder 창이 앞에 있는 경우와 통합 휴지통이 이미 열린 경우를 모두 확인하고, 다른 볼륨 연결/해제 후 다시 비교한다. 삭제나 비우기를 검증 수단으로 사용하지 않는다.
 - 통합 휴지통 요청이 실패할 때 `~/.Trash` 또는 볼륨별 `.Trashes`로 자동 대체하지 않는다. 실패를 표시하며 권한 확대나 직접 수집이 필요해지면 제품 동작 변경으로 검토한다. 현재 개발 빌드 검증을 향후 서명·공증·다른 OS의 동작 보장으로 간주하지 않는다.
+
+## R38–R39 · 앱 교체와 오버레이 키 입력 회귀 점검
+
+- 같은 빌드 재실행은 기존 PID 유지, 다른 빌드 재실행은 기존 PID 종료와 새 PID 생존을 함께 확인한다. 버전 숫자가 낮은 앱을 나중에 실행해도 전환되어야 한다. 복사본·동시 실행·로그인 시작과 수동 시작의 경합도 확인한다.
+- 기존 프로세스가 시작한 뒤 같은 경로의 앱 패키지를 교체하고 Finder에서 다시 연다. 런타임 버전은 시작 시 기록된 값으로 유지되고, 새 빌드가 한 번만 시작되어야 한다. 종료 거부·시간 초과·손상된 소유자 기록·충돌 후 재실행도 확인한다. 잠금 파일 자체를 지우지 않는다.
+- `NSRunningApplication.terminate()`의 true는 종료 완료가 아니다. 실제 종료와 잠금 해제를 확인한다. R40에서 앱 시작 단계의 `isTerminated` 반영 지연을 재현했으므로 종료 대기를 그 속성만으로 판단하지 않는다. `launchDate`는 LaunchServices 경유 실행에서만 제공되므로 직접 실행도 지원하려면 커널의 PID/시작 시각 확인 경로를 검증한다. 새 SDK의 libproc 공개 헤더와 배포 환경에서 컴파일/실행을 확인한다.
+- 표시 전 `⌥⌘` 조합은 호출하지 않아야 한다. Option 단독으로 표시된 뒤 Command만 추가해도 닫히지 않고, Option을 유지한 `⌘,`로 설정이 즉시 열려야 한다. `⌥X`로 고정 후 Option을 놓아도 유지하고 Esc/`⌘W`는 닫아야 한다. 빠른 반복·한국어/영어 입력기·좌우 Option을 확인한다.
+- 비활성화 NSPanel이 키 입력을 받으면서 원래 앱/창의 스냅샷 문맥을 유지하는지 확인한다. 로컬 모니터가 처리한 키는 nil을 반환하여 중복 전달하지 않는다. 다른 앱으로 포커스를 옮기면 해당 앱의 키 입력을 가로채지 않아야 한다.
+- 2026-10-12 확인한 공식 자료: [앱 종료 요청](https://developer.apple.com/documentation/appkit/nsrunningapplication/terminate()), [launchDate](https://developer.apple.com/documentation/appkit/nsrunningapplication/launchdate), [새 인스턴스 실행](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/createsnewapplicationinstance), [로컬/전역 이벤트 모니터](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html), [비활성화 패널](https://developer.apple.com/documentation/appkit/nswindow/stylemask-swift.struct/nonactivatingpanel). 다음 OS 대응 시 당시 문서를 다시 확인한다.
