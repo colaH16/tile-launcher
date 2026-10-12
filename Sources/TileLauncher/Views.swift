@@ -45,7 +45,6 @@ struct DeckView: View {
     let requestPermission: () -> Void
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
-    private var tileHeight: CGFloat { compact ? 66 : 82 }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,8 +53,16 @@ struct DeckView: View {
                 if browser.current != nil {
                     folderContents
                 } else {
-                    workArea
-                    registeredSection.frame(maxHeight: .infinity, alignment: .top)
+                    GeometryReader { area in
+                        let content = DeckContentLayout(width: snapshot.layout.frame.width,
+                                                        availableHeight: area.size.height,
+                                                        registeredCount: snapshot.pins.count, compact: compact)
+                        VStack(spacing: 0) {
+                            workArea.padding(.top, content.workTopInset)
+                            Spacer(minLength: content.gap)
+                            registeredSection.frame(height: content.registeredHeight)
+                        }
+                    }
                 }
                 HStack {
                     Image(systemName: presentation.isPinned ? "pin.fill" : "option")
@@ -281,7 +288,10 @@ struct DeckView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
-                Spacer()
+                Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
+                Circle().fill(Color.accentColor.opacity(0.65)).frame(width: 5, height: 5)
+                Text("현재 데스크탑").font(.caption2).foregroundStyle(.secondary)
+                Spacer(minLength: 4)
                 Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
             }.frame(height: 20)
             if !snapshot.permission {
@@ -313,7 +323,8 @@ struct DeckView: View {
         }.frame(height: geometry.twoRows + 30)
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
-        Button { selectWindow(window) } label: {
+        let desktop = presentation.windowDesktops[window.id] ?? .unknown
+        return Button { selectWindow(window) } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Icon(url: window.appURL, size: 22)
@@ -323,12 +334,14 @@ struct DeckView: View {
                 Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(presentation.selection == "window:\(window.id)" ? Color.accentColor.opacity(0.2) : .clear,
+                .background(presentation.selection == "window:\(window.id)" ? Color.accentColor.opacity(0.3)
+                            : desktop == .current ? Color.accentColor.opacity(0.13) : .clear,
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
         }.buttonStyle(TileStyle())
-            .help("\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : ""))
-            .accessibilityLabel("\(index + 1). \(window.appName), \(window.title)")
+            .help("\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
+                + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
+            .accessibilityLabel("\(index + 1). \(window.appName), \(window.title)" + (desktop == .current ? ", 현재 데스크탑" : desktop == .other ? ", 다른 데스크탑" : ""))
     }
 
     private var folderContents: some View {

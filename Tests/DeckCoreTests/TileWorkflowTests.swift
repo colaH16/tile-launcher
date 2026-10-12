@@ -24,15 +24,15 @@ final class TileWorkflowTests: XCTestCase {
         recent.touch("se3")
         XCTAssertEqual(TileArrangement.spans(for: recent.sorted(captured).map { owner[$0]! }), [2, 2, 2, 1])
     }
-    func testAutoCountFillsTwoRowsAndManualHasNoFixedCeiling() {
+    func testAutoKeepsAllRowsForScrollingAndManualHasNoFixedCeiling() {
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 1000, height: 720), cursor: .zero)
         let columns = layout.columns * 2
         let spans = Array(repeating: [2, 1], count: 20).flatMap { $0 }
-        let count = layout.windowLimit(manual: nil, actual: spans.count, spans: spans)
+        let count = layout.windowLimit(manual: nil, actual: spans.count)
         let positions = TileArrangement.place(spans: spans, columns: columns)
-        XCTAssertGreaterThanOrEqual(count, 6)
-        XCTAssertTrue(positions.prefix(count).allSatisfy { $0.row < 2 })
-        XCTAssertGreaterThanOrEqual(positions[count].row, 2)
+        XCTAssertEqual(count, spans.count)
+        XCTAssertGreaterThanOrEqual(positions.prefix { $0.row < 2 }.count, 6)
+        XCTAssertGreaterThan(positions.last!.row, 1)
         XCTAssertEqual(layout.windowLimit(manual: Int.max, actual: 45), 45)
     }
     func testSquareModuleAndWideTilesShareDimensionsAcrossSupportedWidths() {

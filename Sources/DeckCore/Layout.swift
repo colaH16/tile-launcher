@@ -37,10 +37,8 @@ public struct PanelLayout: Equatable {
                     supported: size.width >= 512 && size.height >= 420)
     }
 
-    public func windowLimit(manual: Int?, actual: Int, spans: [Int]? = nil) -> Int {
-        let automatic = spans.map {
-            TileArrangement.place(spans: $0, columns: columns * 2).prefix { $0.row < 2 }.count
-        } ?? capacity
-        return min(actual, manual.map { max(6, $0) } ?? max(6, automatic))
+    /// The two-row viewport never truncates automatic history.
+    public func windowLimit(manual: Int?, actual: Int) -> Int {
+        min(actual, manual.map { max(6, $0) } ?? actual)
     }
 }

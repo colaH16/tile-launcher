@@ -15,6 +15,8 @@ struct WindowItem: Identifiable {
     let appURL: URL?
     let title: String
     let minimized: Bool
+    var windowID: CGWindowID? = nil
+    var desktop: WindowDesktop = .unknown
 }
 extension PinnedItem {
     var url: URL {

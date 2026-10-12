@@ -134,7 +134,7 @@ final class DeckCoreTests: XCTestCase {
     }
     func testCountUsesCapacityAndDoesNotAllocateManualMaximum() {
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 1400, height: 900), cursor: .zero)
-        XCTAssertEqual(layout.windowLimit(manual: nil, actual: 100), layout.capacity)
+        XCTAssertEqual(layout.windowLimit(manual: nil, actual: 100), 100)
         XCTAssertEqual(layout.windowLimit(manual: Int.max, actual: 7), 7)
         XCTAssertEqual(layout.windowLimit(manual: 1, actual: 10), 6)
         XCTAssertEqual(layout.windowLimit(manual: 12, actual: 0), 0)

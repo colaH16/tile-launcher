@@ -52,7 +52,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in menu.items { item.target = self }
         statusItem.menu = menu
 
-        tracker.onChange = { [weak self] in self?.windows = $0 }
+        tracker.onChange = { [weak self] windows in
+            guard let self else { return }
+            self.windows = windows
+            if self.panel?.isVisible == true {
+                let states = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
+                if self.presentation.windowDesktops != states { self.presentation.windowDesktops = states }
+            }
+        }
         hold.onShow = { [weak self] in self?.show(held: true) }
         hold.onHide = { [weak self] reason in
             guard let self, self.presentation.dismisses(for: reason) else { return }
@@ -230,8 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.")
             return
         }
-        let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count,
-                                       spans: TileArrangement.spans(for: windows.map { $0.appURL?.path ?? String($0.pid) }))
+        let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
         let snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid }?.title,
                                        apps: Array(apps.prefix(3)),
@@ -243,6 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let folderBrowser = FolderBrowser()
         browser = folderBrowser
         presentation.reset()
+        presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
         let view = DeckView(snapshot: snapshot, settings: settings, browser: folderBrowser, presentation: presentation,
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },

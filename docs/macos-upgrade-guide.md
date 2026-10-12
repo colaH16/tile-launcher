@@ -158,7 +158,7 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 ## R52–R53 · 혼합 타일·숫자·메뉴·Focus 회귀 점검
 
 - Terminal/Terminal/Safari/Terminal, 앱별 창 하나, 같은 앱 창만 많은 경우를 확인한다. 순서를 빈칸 채우기로 바꾸지 않으며 큰 타일도 개별 창을 전환해야 한다. 메뉴와 창 공통 높이, 큰 메뉴 둘의 가로 배치, 긴 제목/한국어 줄바꿈, 등록 아이콘 36개 이상을 확인한다.
-- 자동 개수는 가로형/정사각형 혼합을 실제 첫 두 줄에 순서대로 넣어 계산한다. 최소 여섯 가로형 용량, 수동 6/7/12/큰 값, 빈 목록, 줄 끝 공백, 작은 배치와 비율 경계를 점검한다. 코드의 1.45 목표는 Apple 고정 지침이 아니다.
+- 자동 배치는 가로형/정사각형 혼합을 두 줄 뷰포트에 담고 나머지는 스크롤한다(R57). 목록을 첫 두 줄에서 잘라내지 않는다. 최소 여섯 가로형 용량, 수동 6/7/12/큰 값, 빈 목록, 줄 끝 공백, 작은 배치와 비율 경계를 점검한다. 코드의 1.45 목표는 Apple 고정 지침이 아니다.
 - ⌥숫자 등록/⌥⌘숫자 창 기본값과 반대 설정, 1–9/0·키패드·양쪽 Option·한영 입력·키 반복·보조키 해제 순서를 확인한다. 숫자 선택 변경/취소, 고정한 패널, 폴더 진입, 다른 앱 포커스에서 입력 비점유도 검사한다. 열린 동안 자동 MRU/Focus 변경이 번호의 대상을 바꾸면 안 된다.
 - 메뉴는 설정에서만 열거하고 실행 직전 경로/활성/AXPress를 확인한다. 미노출/동적 메뉴, 중복 이름, 앱 종료, 문서 선택, 언어 변경, 응답 시간 초과 후 중복 실행 방지, 실패 통계 미반영, 3회 확대와 핀/순서 저장을 확인한다. 실제 Excel 명령을 대상으로 최종 검증하되 사용자 문서를 임의로 바꾸는 테스트는 피한다.
 - Focus는 `SetFocusFilterIntent`/`AppEntity`/`current`의 당시 SDK 선언과 [Focus 필터 공식 설명](https://developer.apple.com/videos/play/wwdc2022/10121/), [Focus 문서](https://developer.apple.com/documentation/appintents/focus)를 재확인한다. 사용자 구성 필터, 해제, 미설정, 앱 재시작/깨우기, 삭제된 프로필, 수동 선택과 자동 복귀를 실기로 검증한다. 모든 집중 모드 이름을 읽는 기능으로 설명하지 않는다.
@@ -166,3 +166,15 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - 기존 pinnedItems → 기본 프로필 이전에서 ID·순서·폴더 방식과 사용자 데이터를 보존한다. 앱 복사본이 여러 경로에 있으면 실제 실행 경로/버전과 로그인 항목을 확인하고 검증 중 허용한 접근성 대상과 일치시키며, 권한을 임의로 확대하지 않는다.
 
 - R55: 실행 잠금이 없는 초기 앱을 먼저 띄운 뒤 새 앱을 실행하는 마이그레이션을 회귀 검사한다. 잠금을 획득했다고 다른 앱이 없다고 가정하지 않는다. 같은 최신 빌드 재열기 때도 기록된 소유자 외의 초기 복사본을 정상 종료하는지 확인한다. 과거 바이너리를 나중에 직접 실행하는 상황은 구분해서 기록한다.
+
+## R56–R57 · 하단 선반과 여러 데스크탑
+
+- 등록 0/1/16/36/200개, 512×420 및 정상 최소/최대 패널에서 확인한다. 선반은 푸터 위에 붙고 넘치는 등록 항목만 스크롤한다. 메뉴/최근 창의 높이와 비율을 유지하며 여백 30%는 조정 가능한 앱 규칙이다. 화면 경계 보정과 포인터 아래 타일의 의도치 않은 실행을 함께 점검한다.
+- 공개 [AXWindows](https://developer.apple.com/documentation/applicationservices/kaxwindowsattribute)와 [CGWindowListCopyWindowInfo](https://developer.apple.com/documentation/coregraphics/cgwindowlistcopywindowinfo) 문서/SDK 선언을 다시 확인한다. AX의 일시 누락이나 시간 초과를 창 닫힘으로 해석하지 않는다. CG 정보는 .optionAll/.excludeDesktopElements를 사용하며 화면 이미지를 캡처하지 않는다.
+- DesktopWindows.swift의 내부 함수는 **공개 지원 계약이 아니다**. CGSMainConnectionID/_CGSDefaultConnection, CGSCopyManagedDisplaySpaces, CGSCopySpacesForWindows, CGSManagedDisplaySetCurrentSpace, _AXUIElementGetWindow의 존재뿐 아니라 ABI·소유권·반환 구조·권한과 실제 동작을 새 OS에서 확인한다. 런타임 심볼 확인만으로 호환 보장을 선언하지 않는다.
+- 구현 참고 1차 자료: [Mozilla Cocoa 구현](https://searchfox.org/firefox-main/source/widget/cocoa/nsCocoaWindow.mm), [CGS Space 선언](https://github.com/NUIKit/CGSInternal/blob/master/CGSSpace.h), [AX 창 ID 연결 구현](https://github.com/sentialx/node-window-manager/blob/master/lib/macos.mm). 이 자료는 Apple의 지원 약속이 아니다. App Store 배포를 검토할 때 내부 API 사용 여부를 별도로 해결한다.
+- 내부 API가 없거나 Space 배열이 비면 화면에 있다는 확실한 공개 정보만 현재로 판단한다. 화면 밖이라는 이유만으로 다른 데스크탑이라 하지 않는다(최소화/가리기 포함). 다중 모니터·각 모니터 별도 Space·모든 데스크탑 배정·전체 화면·Stage Manager를 각각 검사한다.
+- 다른 Space에서 앱을 연 뒤 런처를 시작하는 경우와, 런처 시작 후 Space를 오가는 경우를 둘 다 검사한다. 캐시된 AX와 새 CG 창의 ID/PID를 정확히 연결하고 제목 변경·동명/같은 위치 창·종료/재실행·닫힘 알림 지연을 확인한다. 앱 내부 레이어 0 보조 창이 잘못 포함되지 않는지도 검사한다.
+- CG 제목은 화면 녹화 허용 없이 없을 수 있다([Apple DTS 설명](https://developer.apple.com/forums/thread/794253)). AX 제목을 우선하며 모르면 대체 제목을 쓰고 추가 권한을 유도하지 않는다. 창 제목·개인 앱 목록·스크린샷은 저장소에 넣지 않는다.
+- 창 선택 시에만 대상 Space 이동을 요청한다. 창 자체를 다른 Space로 이동하거나 Mission Control 설정을 바꾸지 않는다. 이동 후 같은 창 ID의 AX를 다시 찾아 선택하며 실패 시 다른 창을 대신 선택하지 않는다. Space 전환/AX 재조회는 비동기이므로 반환값만으로 사용자에게 보이는 전환 성공을 판정하지 않는다.
+- 고정 오버레이에서 Space 이동 후 모든 현재 창의 배경색이 갱신되면서 타일 순서·크기·번호는 유지되는지 확인한다. 현재 창 하나만 강조하지 않는다. 자동 모드 전체 목록과 수동 최대 개수, 두 줄 밖 스크롤을 실기로 확인한다.

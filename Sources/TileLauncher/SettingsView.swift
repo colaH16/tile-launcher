@@ -47,14 +47,14 @@ struct SettingsView: View {
                 }
                 GroupBox("최근 창") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Toggle("패널 크기에 맞춰 표시 개수 자동 결정", isOn: $settings.automatic)
+                        Toggle("패널 크기에 맞춰 자동 배치 · 전체 창 포함", isOn: $settings.automatic)
                         HStack {
-                            Text("수동 개수")
+                            Text("수동 최대 개수")
                             TextField("최소 6", text: $countText).frame(width: 100).onSubmit(saveCount)
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("앱이 바뀌는 곳은 가로형, 같은 앱이 연속되면 정사각형입니다. 2줄을 넘는 항목은 세로로 스크롤합니다.")
+                        Text("앱이 바뀌는 곳은 가로형, 같은 앱이 연속되면 정사각형입니다. 다른 데스크탑의 창도 포함하며 현재 데스크탑은 배경색으로 구분합니다. 2줄을 넘는 항목은 세로로 스크롤합니다.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
