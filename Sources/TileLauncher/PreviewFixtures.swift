@@ -30,6 +30,8 @@ final class PreviewFixture: ObservableObject {
             MenuCommand(appID: app.id, appName: app.name, path: ["이동", "폴더로 이동…"], isPinned: false),
             MenuCommand(appID: app.id, appName: app.name, path: ["보기", "확대"], isPinned: false)
         ]
+        for _ in 0..<3 { commands[0].recordUse(at: Date()) }
+        for _ in 0..<2 { commands[0].recordUse(at: Date(), observed: true) }
         for _ in 0..<4 { commands[2].recordUse(at: Date()) }
         commands[3].recordUse(at: Date())
         settings.commands = commands

@@ -265,11 +265,17 @@ struct DeckView: View {
     }
     private func menuTile(_ command: MenuCommand) -> some View {
         Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .top) {
                     Image(systemName: "command").font(.system(size: 20))
-                    Spacer(minLength: 0)
-                    if command.isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Image(systemName: "pin.fill").font(.caption2)
+                            .opacity(command.isPinned ? 1 : 0)
+                        Text("\(command.totalUseCount.formatted(.number.notation(.compactName)))회")
+                            .font(.system(size: 9, weight: .medium)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                    }.foregroundStyle(.secondary).accessibilityHidden(true)
                 }
                 Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
