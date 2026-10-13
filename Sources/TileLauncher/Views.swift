@@ -281,6 +281,10 @@ struct DeckView: View {
                     settings.togglePin(command.id)
                     editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID)
                 }
+                Button("목록에서 삭제하고 자동 수집 제외") {
+                    settings.removeCommand(command)
+                    editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID)
+                }
             }
     }
 

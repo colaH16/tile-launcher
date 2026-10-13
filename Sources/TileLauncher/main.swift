@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let loginItem = LoginItemManager()
     let presentation = OverlayPresentation()
     let menuCatalog = MenuCatalog()
+    private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var visibleContent: OverlayContent?
     private var visibleSnapshot: OverlaySnapshot? { visibleContent?.snapshot }
     private var pinnedRefresh: DispatchWorkItem?
@@ -117,6 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         refreshFocus()
         updateApps()
+        menuUsage.onCapture = { [weak self] in self?.schedulePinnedRefresh() }
+        menuUsage.start()
         checkPermission(force: true)
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
@@ -211,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let value = AXIsProcessTrusted()
         guard force || value != trusted else { return }
         trusted = value
+        menuUsage.refresh()
         if !value { windows = [] }
         hold.start()
         refreshWindows()
@@ -481,6 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             let run = { [weak self] in
+                self?.menuUsage.suppressLauncherAction(menu)
                 self?.menuCatalog.execute(menu, in: context) { [weak self] message in
                     if let message { self?.error(message) } else {
                         self?.settings.recordUse(menu.id)
@@ -595,6 +600,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         hold.stop()
+        menuUsage.stop()
         permissionTimer?.invalidate()
         DistributedNotificationCenter.default().removeObserver(self)
     }

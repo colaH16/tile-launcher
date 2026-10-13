@@ -181,10 +181,23 @@ struct MenuSettingsView: View {
     private var appNames: [(id: String, name: String)] {
         var names = Dictionary(settings.commands.map { ($0.appID, $0.appName) }, uniquingKeysWith: { first, _ in first })
         applications.forEach { names[$0.id] = $0.name }
+        for id in settings.menuCapture.excludedApps where names[id] == nil {
+            names[id] = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id
+        }
         return names.map { (id: $0.key, name: $0.value) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 12) {
+            GroupBox("자동 메뉴 수집 · 실험 기능") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("모든 앱의 메뉴 막대에서 선택한 메뉴 수집", isOn: $settings.menuCapture.enabled)
+                    Text("메뉴 클릭과 열린 메뉴·Help 검색의 Enter 선택을 기록합니다. 단축키로 바로 실행한 동작, 리본·우클릭 메뉴는 제외합니다. 복사·붙여넣기도 메뉴에서 선택했다면 수집합니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("앱이 메뉴 정보를 제공하지 않으면 일부 선택이 누락될 수 있습니다. 검색어·입력 문자는 저장하지 않습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
             HStack {
                 Picker("앱", selection: $selectedID) {
                     if selectedID.isEmpty { Text("앱 선택").tag("") }
@@ -192,9 +205,26 @@ struct MenuSettingsView: View {
                 }
                 Button("앱 목록 새로고침", action: refreshApps)
             }
-            Text("최근·자주 사용은 Tile Launcher에서 성공한 실행만 기록합니다. Finder 등 다른 앱에서 직접 누른 메뉴는 자동으로 추가되지 않습니다.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("메뉴를 등록한 뒤 고정을 해제하면 최근 실행 순으로 표시됩니다. 3회 이상 실행하면 가로형으로 커지고, 고정 메뉴는 항상 맨 앞에 표시됩니다.")
+            if !selectedID.isEmpty {
+                Toggle("이 앱의 자동 수집 중단", isOn: Binding(get: {
+                    settings.menuCapture.excludedApps.contains(selectedID)
+                }, set: { excluded in
+                    if excluded { settings.menuCapture.excludedApps.insert(selectedID) }
+                    else { settings.menuCapture.excludedApps.remove(selectedID) }
+                }))
+                Text(!settings.menuCapture.enabled ? "전체 자동 수집이 꺼져 있습니다."
+                     : settings.menuCapture.excludedApps.contains(selectedID) ? "이 앱의 수집을 중단했습니다."
+                     : settings.menuCaptureStatus[selectedID] ?? "이 앱을 사용할 때 메뉴 수집 지원 여부를 확인합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("자동 수집 목록 비우기") { settings.clearCapturedMenus(appID: selectedID) }
+                        .help("이 앱의 고정하지 않은 자동 수집 메뉴만 지웁니다. 다음 메뉴 선택은 다시 수집합니다.")
+                    Button("숨긴 메뉴 다시 수집") {
+                        settings.menuCapture.excludedMenus = settings.menuCapture.excludedMenus.filter { $0.appID != selectedID }
+                    }.disabled(!settings.menuCapture.excludedMenus.contains { $0.appID == selectedID })
+                }
+            }
+            Text("자동 수집 메뉴는 최근 선택 순으로 표시됩니다. 런처 실행과 메뉴 선택을 합쳐 3회 이상이면 가로형으로 커지고, 고정 메뉴는 맨 앞에 표시됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             List {
                 ForEach(MenuCommand.ordered(settings.commands, appID: selectedID)) { command in
@@ -202,6 +232,9 @@ struct MenuSettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(command.title)
                             Text(command.path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary)
+                            if command.observedCount > 0 {
+                                Text("메뉴에서 선택 \(command.observedCount)회").font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         Button { settings.togglePin(command.id) } label: {
@@ -211,10 +244,10 @@ struct MenuSettingsView: View {
                             .disabled(!command.isWide).help("고정·자주 사용 그룹 안에서 앞으로 이동")
                         Button { settings.moveCommand(command.id, by: 1) } label: { Image(systemName: "chevron.down") }
                             .disabled(!command.isWide).help("고정·자주 사용 그룹 안에서 뒤로 이동")
-                        Button { settings.commands.removeAll { $0.id == command.id } } label: { Image(systemName: "minus.circle") }.help("메뉴 등록 해제")
+                        Button { settings.removeCommand(command) } label: { Image(systemName: "minus.circle") }.help("목록에서 삭제하고 자동 수집에서도 제외")
                     }.buttonStyle(.borderless)
                 }
-            }.frame(minHeight: 130)
+            }.frame(height: 180)
             Divider()
             HStack {
                 Text("메뉴 추가").font(.headline)
@@ -236,7 +269,7 @@ struct MenuSettingsView: View {
                         }.disabled(added)
                     }
                 }
-            }.frame(minHeight: 120)
+            }.frame(height: 160)
             DisclosureGroup("메뉴 경로 직접 입력") {
                 HStack {
                     TextField("예: 파일 > 내보내기 > PDF로 내보내기…", text: $manualPath)
@@ -248,7 +281,8 @@ struct MenuSettingsView: View {
                     }.disabled(selectedApp == nil || !manualPath.contains(">"))
                 }.padding(.top, 6)
             }
-        }.padding(16).onAppear(perform: refreshApps)
+        }.padding(16)
+        }.onAppear(perform: refreshApps)
             .onChange(of: selectedID) { _, _ in catalog.clear() }
     }
     private func refreshApps() {

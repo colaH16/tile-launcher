@@ -75,6 +75,27 @@ final class PreviewFixture: ObservableObject {
             throw NSError(domain: "TileLauncher.Preview", code: 4)
         }
         print("SettingsStore: section colors, theme switch, single-section reset and existing data preservation passed.")
+        let captured = CapturedMenu(appID: "preview.editor", appName: "문서 편집기", path: ["편집", "복사"],
+                                    shortcut: "c", commandModifier: true)
+        settings.recordCapturedMenu(captured)
+        let menusRestored = SettingsStore(defaults: defaults)
+        guard let copy = menusRestored.commands.first(where: { $0.path == captured.identity.path }),
+              copy.isAutomatic, !copy.isPinned, copy.observedCount == 1 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 5)
+        }
+        menusRestored.removeCommand(copy)
+        menusRestored.recordCapturedMenu(captured)
+        guard !menusRestored.commands.contains(where: { $0.id == copy.id || $0.path == copy.path }) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 6)
+        }
+        menusRestored.menuCapture.excludedApps.insert("preview.editor")
+        menusRestored.menuCapture.excludedMenus = []
+        menusRestored.recordCapturedMenu(captured)
+        menusRestored.menuCapture.enabled = false
+        let paused = SettingsStore(defaults: defaults)
+        guard !paused.menuCapture.enabled, paused.menuCapture.excludedApps.contains("preview.editor"),
+              paused.profiles == originalProfiles else { throw NSError(domain: "TileLauncher.Preview", code: 7) }
+        print("SettingsStore: automatic Copy capture, deletion exclusion, app pause and global pause persistence passed.")
     }
 }
 

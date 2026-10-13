@@ -62,6 +62,8 @@ final class SettingsStore: ObservableObject {
     @Published var focusProfileID: String?
     @Published var numberShortcuts: NumberShortcutAssignment { didSet { save() } }
     @Published var commands: [MenuCommand] { didSet { save() } }
+    @Published var menuCapture: MenuCapturePreferences { didSet { save() } }
+    @Published var menuCaptureStatus: [String: String] = [:]
     var activeProfile: LauncherProfile {
         let id = followFocus ? (focusProfileID ?? manualProfileID) : manualProfileID
         return profiles.first { $0.id == id } ?? profiles[0]
@@ -98,8 +100,20 @@ final class SettingsStore: ObservableObject {
         profiles.swapAt(index, index + offset)
     }
     func addCommand(_ command: MenuCommand) {
+        menuCapture.excludedMenus.remove(MenuIdentity(appID: command.appID, path: command.path))
         guard !commands.contains(where: { $0.appID == command.appID && $0.path == command.path }) else { return }
         commands.append(command)
+    }
+    func recordCapturedMenu(_ menu: CapturedMenu) {
+        guard MenuCapturePolicy.allows(menu, preferences: menuCapture) else { return }
+        commands = MenuCaptureHistory.record(menu, in: commands, at: Date())
+    }
+    func removeCommand(_ command: MenuCommand) {
+        menuCapture.excludedMenus.insert(MenuIdentity(appID: command.appID, path: command.path))
+        commands.removeAll { $0.id == command.id }
+    }
+    func clearCapturedMenus(appID: String) {
+        commands.removeAll { $0.appID == appID && $0.isAutomatic && !$0.isPinned }
     }
     func togglePin(_ id: UUID) {
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
@@ -133,6 +147,7 @@ final class SettingsStore: ObservableObject {
         followFocus = defaults.object(forKey: "followFocus") as? Bool ?? true
         numberShortcuts = defaults.string(forKey: "numberShortcuts").flatMap(NumberShortcutAssignment.init(rawValue:)) ?? .registeredFirst
         commands = defaults.data(forKey: "menuCommands").flatMap { try? JSONDecoder().decode([MenuCommand].self, from: $0) } ?? []
+        menuCapture = MenuCapturePreferences.restore(defaults.data(forKey: "menuCapturePreferences"))
         automatic = defaults.object(forKey: "automaticWindowCount") as? Bool ?? true
         optionTriggerEnabled = defaults.object(forKey: "optionTriggerEnabled") as? Bool ?? true
         theme = defaults.string(forKey: "appearanceTheme").flatMap(DeckTheme.init(rawValue:))
@@ -147,6 +162,7 @@ final class SettingsStore: ObservableObject {
             defaults.set(data, forKey: "pinnedItems")
         }
         if let data = try? JSONEncoder().encode(commands) { defaults.set(data, forKey: "menuCommands") }
+        if let data = try? JSONEncoder().encode(menuCapture) { defaults.set(data, forKey: "menuCapturePreferences") }
         defaults.set(manualProfileID, forKey: "manualProfileID")
         defaults.set(followFocus, forKey: "followFocus")
         defaults.set(numberShortcuts.rawValue, forKey: "numberShortcuts")
