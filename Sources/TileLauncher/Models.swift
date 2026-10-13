@@ -145,6 +145,7 @@ final class SettingsStore: ObservableObject {
     }
     @Published var automatic: Bool { didSet { save() } }
     @Published var optionTriggerEnabled: Bool { didSet { save() } }
+    @Published var optionReopen: OptionReopenPreferences { didSet { save() } }
     @Published var theme: DeckTheme { didSet { save() } }
     @Published var tileColors: TileColors { didSet { save() } }
     @Published var manualCount: Int { didSet { save() } }
@@ -161,6 +162,7 @@ final class SettingsStore: ObservableObject {
         menuCapture = MenuCapturePreferences.restore(defaults.data(forKey: "menuCapturePreferences"))
         automatic = defaults.object(forKey: "automaticWindowCount") as? Bool ?? true
         optionTriggerEnabled = defaults.object(forKey: "optionTriggerEnabled") as? Bool ?? true
+        optionReopen = OptionReopenPreferences.restore(defaults.data(forKey: "optionReopenPreferences"))
         theme = defaults.string(forKey: "appearanceTheme").flatMap(DeckTheme.init(rawValue:))
             ?? .glass
         tileColors = TileColors.restore(defaults.data(forKey: "tileColors"))
@@ -180,6 +182,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(numberShortcuts.rawValue, forKey: "numberShortcuts")
         defaults.set(automatic, forKey: "automaticWindowCount")
         defaults.set(optionTriggerEnabled, forKey: "optionTriggerEnabled")
+        if let data = try? JSONEncoder().encode(optionReopen) { defaults.set(data, forKey: "optionReopenPreferences") }
         defaults.set(theme.rawValue, forKey: "appearanceTheme")
         if let data = try? JSONEncoder().encode(tileColors) { defaults.set(data, forKey: "tileColors") }
         defaults.set(manualCount, forKey: "manualWindowCount")

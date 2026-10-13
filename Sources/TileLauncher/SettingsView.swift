@@ -37,6 +37,7 @@ struct SettingsView: View {
                         if let error = loginItem.error { Text(error).font(.caption).foregroundStyle(.red) }
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
+                OptionReopenSettings(settings: settings)
                 GroupBox("숫자 단축키") {
                     VStack(alignment: .leading, spacing: 10) {
                         Picker("기본 조합", selection: $settings.numberShortcuts) {

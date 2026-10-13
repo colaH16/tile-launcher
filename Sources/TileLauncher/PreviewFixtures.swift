@@ -100,6 +100,10 @@ final class PreviewFixture: ObservableObject {
         print("OverlayContent: stable snapshot equality and date-based frequency refresh passed.")
         let originalProfiles = settings.profiles
         let originalCommands = settings.commands
+        guard settings.optionReopen == OptionReopenPreferences() else {
+            throw NSError(domain: "TileLauncher.Preview", code: 45)
+        }
+        settings.optionReopen = .init(enabled: false, interval: 1.2)
         settings.tileColors.menus = TileColor(0xCC7722)
         settings.tileColors.windows = TileColor(0x7766BB)
         settings.tileColors.registered = TileColor(0x448877)
@@ -109,6 +113,7 @@ final class PreviewFixture: ObservableObject {
         let restored = SettingsStore(defaults: defaults)
         guard restored.tileColors == expectedColors, restored.theme == .glass,
               restored.menuHistory == settings.menuHistory,
+              restored.optionReopen == OptionReopenPreferences(enabled: false, interval: 1.2),
               restored.profiles == originalProfiles, restored.commands == originalCommands else {
             throw NSError(domain: "TileLauncher.Preview", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "Settings persistence regression"])
@@ -120,6 +125,11 @@ final class PreviewFixture: ObservableObject {
             throw NSError(domain: "TileLauncher.Preview", code: 4)
         }
         print("SettingsStore: history periods, section colors, theme switch, single-section reset and existing data preservation passed.")
+        settings.optionReopen = .init(interval: 0.3)
+        guard SettingsStore(defaults: defaults).optionReopen == OptionReopenPreferences(interval: 0.3) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 46)
+        }
+        print("SettingsStore: Option recovery default 0.8, disabled/custom interval persistence and existing data preservation passed.")
         let captured = CapturedMenu(appID: "preview.editor", appName: "문서 편집기", path: ["편집", "복사"],
                                     shortcut: "c", commandModifier: true)
         settings.recordCapturedMenu(captured)
@@ -227,6 +237,11 @@ enum PreviewExport {
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
+        try verifyQuickOptionReopen()
+        let reopenPreview = PreviewFixture(theme: .glass)
+        try save(OptionReopenSettings(settings: reopenPreview.settings).padding(20).frame(width: 570)
+                    .background(Color(nsColor: .windowBackgroundColor)),
+                 to: directory.appendingPathComponent("option-reopen-settings.png"))
         try verifySurfaceClipping(to: directory)
         try save(MenuUsagePreview().environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("menu-usage-dark.png"))
@@ -243,6 +258,61 @@ enum PreviewExport {
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported tile layout/color samples; native settings controls and desktop Glass composition are not covered.")
+    }
+
+    @MainActor private static func verifyQuickOptionReopen() throws {
+        // Synthetic NSEvents are passed directly to the production adapter.
+        // No event monitor, OS input injection or visible panel is installed.
+        let monitor = HoldMonitor()
+        var memory = OptionReopenMemory<CGRect>()
+        let frame = CGRect(x: -900, y: 80, width: 800, height: 650)
+        var quick = 0, ordinary = 0, executions = 0
+        var actionPending = false
+        monitor.canTriggerHold = { true }
+        monitor.hasPressedMouseButtons = { false }
+        monitor.onReopenCancelled = { memory.cancel() }
+        monitor.onShow = { ordinary += 1; monitor.isShowing = true }
+        monitor.onHide = { reason, time in
+            memory.record(frame, at: time, reason: reason, held: monitor.isShowing, actionPending: actionPending)
+            monitor.isShowing = false
+        }
+        monitor.onRelease = {
+            if actionPending { executions += 1; actionPending = false }
+        }
+        monitor.onQuickReopen = { time in
+            guard memory.take(at: time) == frame else { return false }
+            quick += 1; monitor.isShowing = true
+            return true
+        }
+        defer {
+            monitor.stop()
+            monitor.onShow = nil; monitor.onHide = nil; monitor.onQuickReopen = nil
+        }
+        func event(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags, _ time: TimeInterval) throws {
+            guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
+                                              timestamp: time, windowNumber: 0, context: nil,
+                                              characters: "", charactersIgnoringModifiers: "",
+                                              isARepeat: false, keyCode: type == .flagsChanged ? 58 : 0) else {
+                throw NSError(domain: "TileLauncher.Preview", code: 40)
+            }
+            _ = monitor.handle(event, external: true)
+        }
+        memory.record(frame, at: 10, reason: .release, held: true, actionPending: false)
+        try event(.flagsChanged, .option, 10.75)
+        guard quick == 1, ordinary == 0, monitor.isShowing else { throw NSError(domain: "TileLauncher.Preview", code: 41) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        guard ordinary == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 42) }
+        try event(.flagsChanged, [], 11)
+        try event(.keyDown, [], 11.01)
+        try event(.flagsChanged, .option, 11.1)
+        guard quick == 1, ordinary == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 43) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        guard ordinary == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 44) }
+        actionPending = true
+        try event(.flagsChanged, [], 12)
+        try event(.flagsChanged, .option, 12.1)
+        guard executions == 1, quick == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 45) }
+        print("HoldMonitor: immediate same-location recovery, no duplicate timer, intervening input cancellation, normal delay and single action release passed.")
     }
 
     @MainActor private static func verifySurfaceClipping(to directory: URL) throws {

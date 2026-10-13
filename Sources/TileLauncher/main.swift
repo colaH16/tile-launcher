@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var trusted = false
     private var pendingAction: (() -> Void)?
     private var heldPresentation = false
+    private var optionReopen = OptionReopenMemory<PanelLayout>()
     private var browser: FolderBrowser?
     private var scrollMonitor: Any?
     private var profileScroll = ProfileScrollGesture()
@@ -75,9 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.schedulePinnedRefresh()
         }
         hold.onShow = { [weak self] in self?.show(held: true) }
-        hold.onHide = { [weak self] reason in
+        hold.onQuickReopen = { [weak self] time in
+            guard let self, let layout = self.optionReopen.take(at: time, enabled: self.settings.optionReopen.enabled) else { return false }
+            self.show(held: true, restoring: layout)
+            return true
+        }
+        hold.onReopenCancelled = { [weak self] in self?.optionReopen.cancel() }
+        hold.onHide = { [weak self] reason, time in
             guard let self, self.presentation.dismisses(for: reason) else { return }
-            self.hide()
+            self.hide(reason: reason, at: time)
         }
         hold.onCancel = { [weak self] in self?.pendingAction = nil; self?.presentation.selection = nil }
         hold.onRelease = { [weak self] in
@@ -252,15 +259,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences.makeKeyAndOrderFront(nil)
         } else { show(held: false) }
     }
-    private func show(held: Bool) {
+    private func show(held: Bool, restoring previousLayout: PanelLayout? = nil) {
         guard panel?.isVisible != true else { return }
+        optionReopen.cancel()
         checkPermission()
         updateApps()
         let point = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
             ?? NSScreen.main else { return }
-        let layout = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point)
-            .fittingContent(registeredCount: settings.profiles.map { $0.items.count }.max() ?? 0)
+        let layout: PanelLayout
+        if let previousLayout, NSScreen.screens.contains(where: { $0.visibleFrame.contains(previousLayout.frame) }) {
+            layout = previousLayout
+        } else {
+            layout = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point)
+                .fittingContent(registeredCount: settings.profiles.map { $0.items.count }.max() ?? 0)
+        }
         guard layout.supported else {
             error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.")
             return
@@ -378,7 +391,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
                                 menuHistory: settings.menuHistory)
     }
-    private func hide() {
+    private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
+        optionReopen.record(visibleSnapshot?.layout, at: time, reason: reason,
+                            held: heldPresentation && panel?.isVisible == true,
+                            actionPending: pendingAction != nil, preferences: settings.optionReopen)
         pinnedRefresh?.cancel()
         pinnedRefresh = nil
         panel?.orderOut(nil)

@@ -3,12 +3,15 @@ import DeckCore
 
 final class HoldMonitor {
     var onShow: (() -> Void)?
-    var onHide: ((OverlayDismissal) -> Void)?
+    var onHide: ((OverlayDismissal, TimeInterval) -> Void)?
+    var onQuickReopen: ((TimeInterval) -> Bool)?
+    var onReopenCancelled: (() -> Void)?
     var onCancel: (() -> Void)?
     var onRelease: (() -> Void)?
     var onShortcut: ((OverlayShortcut) -> Void)?
     var ownsKeyboard: (() -> Bool)?
     var canTriggerHold: (() -> Bool)?
+    var hasPressedMouseButtons: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
     var isShowing = false
     private var gesture = HoldGesture()
     private var timer: DispatchWorkItem?
@@ -26,6 +29,7 @@ final class HoldMonitor {
         }
     }
     func stop() {
+        onReopenCancelled?()
         if let global { NSEvent.removeMonitor(global) }
         if let local { NSEvent.removeMonitor(local) }
         global = nil
@@ -47,23 +51,28 @@ final class HoldMonitor {
         }
         return true
     }
-    private func handle(_ event: NSEvent, external: Bool) -> Bool {
+    func handle(_ event: NSEvent, external: Bool) -> Bool {
         if event.type == .flagsChanged {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             optionDown = flags.contains(.option)
             let other = !flags.intersection([.command, .control, .shift, .function]).isEmpty
-            apply(gesture.flags(option: optionDown, otherModifier: other, overlayVisible: isShowing))
+            apply(gesture.flags(option: optionDown, otherModifier: other, overlayVisible: isShowing), at: event.timestamp)
+            if other { onReopenCancelled?() }
         } else if event.type == .keyDown {
+            onReopenCancelled?()
             if !external, handleOverlayShortcut(event) { return true }
-            apply(gesture.interrupt())
+            apply(gesture.interrupt(), at: event.timestamp)
             if isShowing || event.keyCode == 53 {
-                onHide?(event.keyCode == 53 ? .escape : .interruption)
+                onHide?(event.keyCode == 53 ? .escape : .interruption, event.timestamp)
             }
-        } else if !isShowing {
-            apply(gesture.interrupt())
-        } else if external {
-            onHide?(.outsideClick)
-            apply(gesture.interrupt())
+        } else {
+            onReopenCancelled?()
+            if !isShowing {
+                apply(gesture.interrupt(), at: event.timestamp)
+            } else if external {
+                onHide?(.outsideClick, event.timestamp)
+                apply(gesture.interrupt(), at: event.timestamp)
+            }
         }
         return false
     }
@@ -75,15 +84,20 @@ final class HoldMonitor {
         ] where event.modifierFlags.contains(native) { result.insert(core) }
         return result
     }
-    private func apply(_ effect: HoldGesture.Effect) {
+    private func apply(_ effect: HoldGesture.Effect, at time: TimeInterval) {
         switch effect {
         case .none: break
         case .arm:
             guard canTriggerHold?() != false else { return }
             timer?.cancel()
+            timer = nil
+            if !hasPressedMouseButtons(), onQuickReopen?(time) == true {
+                triggered = true
+                return
+            }
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.optionDown, self.canTriggerHold?() != false,
-                      NSEvent.pressedMouseButtons == 0 else { return }
+                      !self.hasPressedMouseButtons() else { return }
                 self.triggered = true
                 self.onShow?()
             }
@@ -93,11 +107,11 @@ final class HoldMonitor {
             onCancel?()
             timer?.cancel()
             timer = nil
-            if triggered { onHide?(.interruption) }
+            if triggered { onHide?(.interruption, time) }
         case .release:
             timer?.cancel()
             timer = nil
-            if triggered { onHide?(.release) }
+            if triggered { onHide?(.release, time) }
             triggered = false
             onRelease?()
         }
