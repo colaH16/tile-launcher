@@ -14,14 +14,14 @@ struct SettingsView: View {
     var body: some View {
         GeometryReader { geometry in
             TabView(selection: $navigation.tab) {
-                GeneralSettingsView(settings: settings, loginItem: loginItem).tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
+                GeneralSettingsView(settings: settings, loginItem: loginItem,
+                                    requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
+                    .tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
                 AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
                 MenuSettingsView(settings: settings, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition,
                                  additionSize: MenuAdditionLayout.size(for: geometry.size), applicationProvider: applicationProvider)
                     .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
                 registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
-                PermissionsSettingsView(requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
-                    .tabItem { Label("권한", systemImage: "hand.raised") }.tag(SettingsTab.permissions)
             }.padding(16)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         }

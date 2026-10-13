@@ -17,9 +17,9 @@ R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공�
 
 ## 지금 준비하는 개발용 서명 배포
 
-현재 개발 구성은 `release/config.json`의 v0.17.4, 빌드 11, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
+현재 개발 구성은 `release/config.json`의 v0.17.5, 빌드 12, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
 
-R108의 0.17.1 공개는 완료했고 R109–R115의 0.17.4는 로컬 수정본이다. R113에 따라 소스만 푸시하고 바이너리 릴리스는 보류한다. 아래 게시 단계는 다음 공개 요청 때 실행한다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
+R108의 0.17.1 공개는 완료했고 R109–R117의 0.17.5는 로컬 수정본이다. R113에 따라 소스만 푸시하고 바이너리 릴리스는 보류한다. 아래 게시 단계는 다음 공개 요청 때 실행한다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer
@@ -29,10 +29,10 @@ python3 scripts/release.py verify
 ```
 
 - `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
-- `~/Library/Developer/TileLauncher/releases/v0.17.4/downloads`에 `Tile-Launcher-0.17.4-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `~/Library/Developer/TileLauncher/releases/v0.17.5/downloads`에 `Tile-Launcher-0.17.5-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
 - `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
-- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v0.17.4/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
-- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v0.17.4`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
+- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v0.17.5/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
+- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v0.17.5`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
 
 ## GitHub 초안과 정식 게시
 

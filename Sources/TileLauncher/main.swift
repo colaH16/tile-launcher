@@ -610,30 +610,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hide()
         settingsNavigation.open(destination, app: context)
         if let preferences {
+            if !preferences.isVisible {
+                sizeSettingsWindow(preferences)
+                preferences.center()
+            }
             NSApp.activate()
             preferences.makeKeyAndOrderFront(nil)
             return
         }
         let view = SettingsView(settings: settings, loginItem: loginItem, navigation: settingsNavigation,
                                 requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 820),
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: SettingsWindowLayout.defaultContentSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "\(AppIdentity.name) 설정"
+        window.titleVisibility = .hidden
         window.contentView = NSHostingView(rootView: view)
-        if let visibleFrame = NSScreen.main?.visibleFrame {
-            let available = visibleFrame.insetBy(dx: 24, dy: 24)
-            var frame = window.frame
-            frame.size.width = min(frame.width, available.width)
-            frame.size.height = min(frame.height, available.height)
-            window.setFrame(frame, display: false)
-        }
-        window.minSize = NSSize(width: min(540, window.frame.width), height: min(660, window.frame.height))
+        sizeSettingsWindow(window)
         window.isReleasedWhenClosed = false
         window.center()
         preferences = window
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+    private func sizeSettingsWindow(_ window: NSWindow) {
+        MainActor.assumeIsolated {
+            SettingsWindowLayout.apply(to: window, visibleFrame: window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)
+        }
     }
     private func error(_ message: String) {
         let alert = NSAlert()

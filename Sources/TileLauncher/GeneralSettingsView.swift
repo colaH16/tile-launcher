@@ -5,6 +5,8 @@ import DeckCore
 struct GeneralSettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var loginItem: LoginItemManager
+    let requestPermission: () -> Void
+    let openAppManagementSettings: () -> Void
     @State private var countText = ""
     @State private var invalidCount = false
     var body: some View {
@@ -46,6 +48,7 @@ struct GeneralSettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
+                PermissionsSettingsSection(requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
                 Text(AppIdentity.versionLabel).font(.caption).foregroundStyle(.secondary)
             }.padding(16)
         }
