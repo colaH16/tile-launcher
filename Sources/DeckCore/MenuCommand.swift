@@ -61,10 +61,17 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         }
     }
     /// Storage order is the manual order within pinned/frequent groups.
+    /// Preserve stored history and intentional pins, but hide previously learned
+    /// system commands from recent/frequent app menus.
+    private var hiddenSystemCapture: Bool {
+        isAutomatic && !isPinned && MenuCapturePolicy.isAppleMenuPath(path)
+    }
     public static func ordered(_ commands: [Self], appID: String,
                                history: MenuHistoryPreferences = .init(), at now: Date = Date(),
                                includingHidden: Bool = false) -> [Self] {
-        let peers = commands.enumerated().filter { $0.element.appID == appID }
+        let peers = commands.enumerated().filter {
+            $0.element.appID == appID && (includingHidden || !$0.element.hiddenSystemCapture)
+        }
         let recent = peers.filter { !$0.element.isPinned && $0.element.lastUsed != nil }.sorted {
             if $0.element.lastUsed != $1.element.lastUsed { return $0.element.lastUsed! > $1.element.lastUsed! }
             return $0.offset < $1.offset
@@ -88,6 +95,6 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     }
     public static func frequentIDs(_ commands: [Self], appID: String,
                                    history: MenuHistoryPreferences = .init(), at now: Date = Date()) -> Set<UUID> {
-        Set(commands.filter { $0.appID == appID && $0.isFrequent(history: history, at: now) }.map(\.id))
+        Set(commands.filter { $0.appID == appID && !$0.hiddenSystemCapture && $0.isFrequent(history: history, at: now) }.map(\.id))
     }
 }

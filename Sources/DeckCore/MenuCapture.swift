@@ -35,9 +35,14 @@ public struct CapturedMenu: Equatable {
 }
 
 public enum MenuCapturePolicy {
+    public static func isAppleMenuPath(_ path: [String]) -> Bool {
+        guard let root = path.first else { return false }
+        return ["apple", ""].contains(normalize(root))
+    }
     public static func allows(_ menu: CapturedMenu, preferences: MenuCapturePreferences) -> Bool {
         let path = menu.identity.path
         guard preferences.allows(appID: menu.identity.appID), !preferences.excludedMenus.contains(menu.identity),
+              !isAppleMenuPath(path),
               (2...12).contains(path.count), path.allSatisfy({ !$0.isEmpty && $0.count <= 256 }) else { return false }
         let normalized = path.map(normalize)
         let dynamicParents: Set<String> = ["open recent", "recent items", "recent documents", "recent folders",
@@ -53,7 +58,7 @@ public enum MenuCapturePolicy {
     }
     /// Help results are only usable when the real menu command has one exact title match.
     public static func resolveHelp(title: String, choices: [CapturedMenu]) -> CapturedMenu? {
-        let matches = choices.filter { normalize($0.identity.path.last ?? "") == normalize(title) }
+        let matches = choices.filter { !isAppleMenuPath($0.identity.path) && normalize($0.identity.path.last ?? "") == normalize(title) }
         let unique = Dictionary(grouping: matches, by: \.identity)
         guard unique.count == 1, let match = unique.values.first?.first else { return nil }
         return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
@@ -89,6 +94,7 @@ public enum MenuCaptureKeyDecision: Equatable {
 
 public enum MenuCaptureHistory {
     public static func record(_ menu: CapturedMenu, in commands: [MenuCommand], at date: Date) -> [MenuCommand] {
+        guard !MenuCapturePolicy.isAppleMenuPath(menu.identity.path) else { return commands }
         var result = commands
         if let i = result.firstIndex(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) {
             result[i].recordUse(at: date, observed: true)

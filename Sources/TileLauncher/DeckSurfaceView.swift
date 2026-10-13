@@ -13,18 +13,24 @@ final class DeckSurfaceView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.mask = silhouette
-        let glass = NSGlassEffectView(frame: bounds)
+        // Keep the glass's own narrow dark edge outside the final silhouette.
+        // The content stays at the original bounds; only the effect overscans.
+        let glass = NSGlassEffectView(frame: bounds.insetBy(dx: -1, dy: -1))
         glass.style = .regular
-        glass.cornerRadius = Self.cornerRadius
-        glass.autoresizingMask = [.width, .height]
+        glass.cornerRadius = Self.cornerRadius + 1
+        glass.translatesAutoresizingMaskIntoConstraints = false
         glass.contentView = content
         addSubview(glass)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: glass.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: glass.trailingAnchor),
-            content.topAnchor.constraint(equalTo: glass.topAnchor),
-            content.bottomAnchor.constraint(equalTo: glass.bottomAnchor)
+            glass.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -1),
+            glass.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 1),
+            glass.topAnchor.constraint(equalTo: topAnchor, constant: -1),
+            glass.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 1),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         updateSilhouette()
     }

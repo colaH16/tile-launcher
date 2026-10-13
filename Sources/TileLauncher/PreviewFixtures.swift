@@ -264,6 +264,10 @@ enum PreviewExport {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
             surface.layoutSubtreeIfNeeded()
             surface.layer?.displayIfNeeded()
+            guard content.convert(content.bounds, to: surface) == surface.bounds else {
+                throw NSError(domain: "TileLauncher.Preview", code: 35,
+                              userInfo: [NSLocalizedDescriptionKey: "Glass overscan changed content bounds"])
+            }
             for scale in [1, 2] {
                 let width = Int(size.width) * scale, height = Int(size.height) * scale
                 guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,

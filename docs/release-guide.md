@@ -2,11 +2,11 @@
 
 확인일: 2026-10-13, Asia/Seoul. R93–R95에 따라 첫 공개판은 **정식 릴리스**, 현재는 **개발용 ad-hoc 서명/공증 없음**으로 준비한다. 유료 등록은 보류했으며 공개 바이너리 Release/개발자 등록/공증 제출은 아직 실행하지 않았다.
 
-## R96–R98 · 현재 게시 보류와 버전 정책
+## R96–R101 · 현재 게시 보류와 버전 정책
 
-사용자가 모서리 UI 버그를 보고하여 바이너리 게시를 보류했다. 기존 v0.2.0(4) 파일은 이번 수정 전 산출물이므로 게시하지 않는다. 새 준비 대상은 0.2.1(5)이며, 수정 확인 후 게시 재개 시 깨끗한 새 커밋에서 패키징한다.
+사용자가 모서리 UI 버그를 보고하여 바이너리 게시를 보류했다. 기존 v0.2.0(4) 파일은 이번 수정 전 산출물이므로 게시하지 않는다. 직전 실제 모서리 수정본은 0.2.1(5)이었고 이력 재분류·추가 수정 후 현재 준비 대상은 0.16.3(6)이다. 수정 확인 후 게시 재개 시 깨끗한 새 커밋에서 패키징한다.
 
-`release/config.json`의 version/build를 패치 전달마다 올린다. `scripts/build.sh`도 같은 값을 Info.plist에 넣고 설정은 실행 중인 번들에서 읽는다. 동일 패치의 내부 컴파일 재시도는 번호를 소비하지 않는다. 릴리스 노트 제목도 version과 일치시킨다.
+`release/config.json`은 버그·UI 수정이면 patch, 기능 추가·변경이면 minor를 올리고 patch=0으로 한다. build는 전달 산출물마다 증가하며 [CHANGELOG](../CHANGELOG.md)를 따른다. `scripts/build.sh`도 같은 값을 Info.plist에 넣고 설정은 실행 중인 번들에서 읽는다. 동일 패치의 내부 컴파일 재시도는 번호를 소비하지 않는다. 릴리스 노트 제목도 version과 일치시킨다.
 
 ## 비용과 가입 유형
 
@@ -17,7 +17,7 @@
 
 ## 지금 준비하는 개발용 서명 배포
 
-구성은 `release/config.json`의 v0.2.1, 빌드 5, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
+구성은 `release/config.json`의 v0.16.3, 빌드 6, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
 
 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
@@ -29,10 +29,10 @@ python3 scripts/release.py verify
 ```
 
 - `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
-- `~/Library/Developer/TileLauncher/releases/v0.2.1/downloads`에 `Tile-Launcher-0.2.1-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `~/Library/Developer/TileLauncher/releases/v0.16.3/downloads`에 `Tile-Launcher-0.16.3-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
 - `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
-- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v0.2.1/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
-- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v0.2.1`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
+- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v0.16.3/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
+- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v0.16.3`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
 
 ## GitHub 초안과 정식 게시
 
@@ -44,11 +44,13 @@ python3 scripts/release.py draft --allow-unnotarized
 python3 scripts/release.py publish --allow-unnotarized
 ```
 
-초안은 검증한 소스 커밋에 v0.2.1 태그를 연결하고 지정한 세 파일만 올린다. 기존 릴리스/다른 커밋의 태그는 덮어쓰지 않는다. 게시 단계는 초안 설명과 자산 목록이 같고, GitHub에서 다시 받은 파일의 체크섬도 일치해야 정식 릴리스로 전환한다. 중단된 업로드나 서로 다른 초안이 있으면 검토 후 처리하며 자동으로 덮어쓰지 않는다.
+초안은 검증한 소스 커밋에 v0.16.3 태그를 연결하고 지정한 세 파일만 올린다. 기존 릴리스/다른 커밋의 태그는 덮어쓰지 않는다. 게시 단계는 초안 설명과 자산 목록이 같고, GitHub에서 다시 받은 파일의 체크섬도 일치해야 정식 릴리스로 전환한다. 중단된 업로드나 서로 다른 초안이 있으면 검토 후 처리하며 자동으로 덮어쓰지 않는다.
 
 [GitHub CLI 릴리스 생성](https://cli.github.com/manual/gh_release_create) · [GitHub 릴리스 관리](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)
 
 ## 나중에 Developer ID·공증으로 전환
+
+**Developer ID Application 서명 완료·검증 첫 빌드는 1.0.0**이다. 후보를 준비할 때 버전/빌드/노트를 맞추고 실제 서명 검증 전에는 완료/공개로 기록하지 않는다. 가입·인증서 생성·ad-hoc 서명만으로 전환하지 않는다. 공증은 서명 뒤 별도로 수행한다.
 
 먼저 개발자 등록을 마치고 Xcode에서 Developer ID Application 인증서를 만든다. 아래 SHA1은 `security find-identity -v -p codesigning`에서 확인하는 인증서 식별자이며 개인 키/암호가 아니다. Team ID도 개발자 계정에서 확인한다.
 
@@ -64,7 +66,7 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 - 현재 선언하는 권한은 Finder의 통합 휴지통을 여는 Apple Events 요청을 위한 항목이다. get-task-allow/JIT/라이브러리 검증 해제 같은 예외는 넣지 않는다. 실제 Developer ID 환경에서 Finder/접근성/Space/Focus 동작을 재검증해야 한다. [Apple Events 권한](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.automation.apple-events)
 - 공증을 한 번 제출하면 ID를 저장한다. 진행 중에는 같은 notarize 명령을 다시 실행하여 그 제출만 조회한다. 제출 응답이 끊긴 경우 자동 재업로드하지 않으며, `notarytool history`에서 ID를 확인한 뒤 `--submission-id`로 복구한다.
 - Accepted 후에만 티켓을 붙이고 Gatekeeper 검사를 통과한 앱을 다시 ZIP으로 만든다. 이전 사본은 pre-sign.app/pre-staple.app으로 보존한다. 공증 후 다운로드 폴더에 이전 ZIP이 남을 수 있지만 게시 도구는 manifest에 기록된 최종 파일만 사용한다.
-- 공증된 결과는 `--allow-unnotarized` 없이 draft/publish할 수 있다. 이미 v0.2.1을 개발용 서명으로 공개했다면 배포 설정과 릴리스 노트를 다음 버전으로 갱신하여 새 릴리스로 낸다. 공개된 자산을 조용히 바꾸지 않는다.
+- 공증된 결과는 `--allow-unnotarized` 없이 draft/publish할 수 있다. 이미 0.x를 개발용 서명으로 공개했더라도 최초 Developer ID 서명본은 1.0.0으로 별도 준비한다. 공개된 자산을 조용히 바꾸지 않는다.
 - 로컬 manifest/log/인증 정보는 공개하지 않는다. 공개 메타데이터에는 버전·아키텍처·소스 SHA·도구 버전·서명 상태만 담는다.
 
 ## 사용자가 진행하는 등록

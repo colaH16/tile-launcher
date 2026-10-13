@@ -57,24 +57,40 @@ private struct TileStyle: ButtonStyle {
     var section: TileSection = .menus
     var emphasized = false
     var selected = false
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.deckTheme) private var theme
-    @Environment(\.tileColors) private var colors
     func makeBody(configuration: Configuration) -> some View {
-        let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark, theme: theme, colors: colors)
-        let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 14, style: .continuous)
-        configuration.label
-            .foregroundStyle(palette.ink, palette.secondary)
-            .contentShape(shape)
-            .background(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96), in: shape)
-            .overlay {
-                shape.strokeBorder(selected || configuration.isPressed ? Color.accentColor
-                                   : palette.ink.opacity(contrast == .increased ? 0.55 : 0.08),
-                                   lineWidth: selected || configuration.isPressed ? 2 : 1)
-                    .allowsHitTesting(false)
-            }
+        Surface(configuration: configuration, section: section, emphasized: emphasized, selected: selected)
+    }
+    private struct Surface: View {
+        let configuration: ButtonStyleConfiguration
+        let section: TileSection
+        let emphasized: Bool
+        let selected: Bool
+        @Environment(\.colorScheme) private var scheme
+        @Environment(\.colorSchemeContrast) private var contrast
+        @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+        @Environment(\.deckTheme) private var theme
+        @Environment(\.tileColors) private var colors
+        @State private var hovering = false
+        var body: some View {
+            let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark, theme: theme, colors: colors)
+            let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 14, style: .continuous)
+            configuration.label
+                .foregroundStyle(palette.ink, palette.secondary)
+                .contentShape(shape)
+                .background {
+                    ZStack {
+                        shape.fill(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96))
+                        shape.fill(palette.ink.opacity(configuration.isPressed ? 0.16 : hovering ? 0.10 : 0))
+                    }.allowsHitTesting(false)
+                }
+                .overlay {
+                    shape.strokeBorder(selected || configuration.isPressed ? Color.accentColor
+                                       : palette.ink.opacity(hovering ? 0.65 : contrast == .increased ? 0.55 : 0.08),
+                                       lineWidth: selected || configuration.isPressed || hovering ? 2 : 1)
+                        .allowsHitTesting(false)
+                }
+                .onHover { hovering = $0 }
+        }
     }
 }
 struct DeckView: View {
@@ -141,7 +157,7 @@ struct DeckView: View {
         .environment(\.tileColors, settings.tileColors)
         .background {
             // The AppKit surface clips this fill and the native glass together.
-            Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.72)
+            Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.28)
         }
         .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
     }

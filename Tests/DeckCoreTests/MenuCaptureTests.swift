@@ -35,6 +35,44 @@ final class MenuCaptureTests: XCTestCase {
             XCTAssertTrue(MenuCapturePolicy.allows(candidate, preferences: .init()))
         }
     }
+    func testAppleRootAndNestedSystemMenusAreNeverCaptured() {
+        for root in ["Apple", "", " APPLE "] {
+            for suffix in [["System Settings…"], ["이 Mac에 관하여"], ["Location", "Automatic"], ["Sleep"]] {
+                let item = CapturedMenu(appID: "editor", appName: "Editor", path: [root] + suffix)
+                XCTAssertFalse(MenuCapturePolicy.allows(item, preferences: .init()))
+                XCTAssertTrue(MenuCaptureHistory.record(item, in: [], at: Date()).isEmpty)
+            }
+        }
+        // Compare ancestry, not the leaf label: same-named real app commands stay valid.
+        for path in [["Editor", "Settings…"], ["File", "Sleep"], ["File", "Apple", "Export"]] {
+            XCTAssertTrue(MenuCapturePolicy.allows(CapturedMenu(appID: "editor", appName: "Editor", path: path), preferences: .init()))
+        }
+    }
+    func testHelpSearchCannotReintroduceAppleCommands() {
+        let system = CapturedMenu(appID: "editor", appName: "Editor", path: ["Apple", "System Settings…"])
+        let own = CapturedMenu(appID: "editor", appName: "Editor", path: ["Tools", "System Settings…"])
+        XCTAssertNil(MenuCapturePolicy.resolveHelp(title: system.identity.path.last!, choices: [system]))
+        XCTAssertEqual(MenuCapturePolicy.resolveHelp(title: system.identity.path.last!, choices: [system, own])?.identity, own.identity)
+    }
+    func testOldSystemCapturesDoNotConsumeRecentSlotsAndIntentionalPinsSurvive() {
+        let now = Date()
+        let older = now.addingTimeInterval(-40 * 86400)
+        let appMenu = MenuCaptureHistory.record(menu(), in: [], at: older)[0]
+        var history = [appMenu]
+        for i in 0..<6 {
+            var system = MenuCommand(appID: "finder", appName: "Finder", path: ["Apple", "System \(i)"], isPinned: false)
+            system.isAutomatic = true
+            for _ in 0..<3 { system.recordUse(at: now, observed: true) }
+            history.append(system)
+        }
+        XCTAssertEqual(MenuCommand.ordered(history, appID: "finder", at: now).map(\.id), [appMenu.id])
+        XCTAssertTrue(MenuCommand.frequentIDs(history, appID: "finder", at: now).isEmpty)
+        XCTAssertEqual(MenuCommand.ordered(history, appID: "finder", at: now, includingHidden: true).count, 7)
+        history[1].isPinned = true
+        let manual = MenuCommand(appID: "finder", appName: "Finder", path: ["Apple", "Manual"], isPinned: false)
+        history.append(manual)
+        XCTAssertEqual(Set(MenuCommand.ordered(history, appID: "finder", at: now).map(\.id)), [appMenu.id, history[1].id, manual.id])
+    }
     func testDirectShortcutsTypingRepeatsAndEscapeNeverConfirmAMenu() {
         for key in UInt16(0)...UInt16(127) {
             XCTAssertEqual(MenuCaptureKeyDecision.resolve(keyCode: key, shortcutModifier: true,

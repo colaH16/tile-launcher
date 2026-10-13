@@ -195,7 +195,7 @@ struct MenuSettingsView: View {
             GroupBox("자동 메뉴 수집 · 실험 기능") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("모든 앱의 메뉴 막대에서 선택한 메뉴 수집", isOn: $settings.menuCapture.enabled)
-                    Text("메뉴 클릭과 열린 메뉴·Help 검색의 Enter 선택을 기록합니다. 단축키로 바로 실행한 동작, 리본·우클릭 메뉴는 제외합니다. 복사·붙여넣기도 메뉴에서 선택했다면 수집합니다.")
+                    Text("메뉴 클릭과 열린 메뉴·Help 검색의 Enter 선택을 기록합니다. Apple 로고의 시스템 메뉴 전체, 단축키 직접 실행, 리본·우클릭 메뉴는 제외합니다. 복사·붙여넣기도 메뉴에서 선택했다면 수집합니다.")
                         .font(.caption).foregroundStyle(.secondary)
                     Text("앱이 메뉴 정보를 제공하지 않으면 일부 선택이 누락될 수 있습니다. 검색어·입력 문자는 저장하지 않습니다.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -332,6 +332,10 @@ struct MenuCommandDetails: View {
             Text(command.path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary)
             Text(command.usageDescription).font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if command.isAutomatic && MenuCapturePolicy.isAppleMenuPath(command.path) {
+                Text("Apple 시스템 메뉴 · 자동 수집 제외 · 고정하지 않으면 오버레이에서 숨김")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
     }
 }

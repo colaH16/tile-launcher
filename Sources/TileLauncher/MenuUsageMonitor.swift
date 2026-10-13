@@ -136,6 +136,7 @@ final class MenuUsageMonitor {
                 self.gate.cancel(); self.action = nil
                 self.down = hit
                 let path = element.flatMap { reader.menuPath($0) }
+                if path.map(MenuCapturePolicy.isAppleMenuPath) == true { self.resetInteraction(); return }
                 if hit != nil || path != nil {
                     self.menuSession = true
                     self.closedAt = nil
@@ -212,7 +213,7 @@ final class MenuUsageMonitor {
         guard AXUIElementGetPid(element, &pid) == .success, pid == app.pid else { return }
         let reader = MenuAXReader(app: app, budget: 0.2)
         if name == kAXMenuOpenedNotification {
-            guard let path = reader.menuPath(element) else { resetInteraction(); return }
+            guard let path = reader.menuPath(element), !MenuCapturePolicy.isAppleMenuPath(path) else { resetInteraction(); return }
             if highlighted?.menu.identity.path.first != path.first { highlighted = nil }
             menuSession = true
             closedAt = nil
@@ -346,6 +347,13 @@ private final class MenuAXReader {
             guard let node = current, hasTime else { return nil }
             let role = value(node, kAXRoleAttribute) as? String
             if role == kAXMenuBarRole { return path.reversed() }
+            // macOS puts the system Apple menu first. Canonicalize by ancestry,
+            // so an empty/localized title cannot turn it into an app command.
+            if role == kAXMenuBarItemRole, let parent = self.element(node, kAXParentAttribute),
+               value(parent, kAXRoleAttribute) as? String == kAXMenuBarRole,
+               let first = children(parent)?.first, CFEqual(first, node) {
+                return ["Apple"] + path.reversed()
+            }
             if role == kAXMenuItemRole || role == kAXMenuBarItemRole,
                let title = value(node, kAXTitleAttribute) as? String, !title.isEmpty { path.append(title) }
             current = self.element(node, kAXParentAttribute)
@@ -375,6 +383,7 @@ private final class MenuAXReader {
         if let exact = menuPath(current), exact.count >= 2 { path = exact }
         else if allowHelp, let title = value(current, kAXTitleAttribute) as? String { path = ["Help", title] }
         else { return nil }
+        guard !MenuCapturePolicy.isAppleMenuPath(path) else { return nil }
         let shortcut = value(current, kAXMenuItemCmdCharAttribute) as? String ?? ""
         let modifiers = value(current, kAXMenuItemCmdModifiersAttribute) as? Int ?? 0
         var frame: CGRect?
@@ -413,14 +422,16 @@ private final class MenuAXReader {
             let title = value(node, kAXTitleAttribute) as? String ?? ""
             let named = role == kAXMenuItemRole || role == kAXMenuBarItemRole
             let next = named && !title.isEmpty ? path + [title] : path
-            if next.first.map(Self.isHelp) == true { return }
+            if next.first.map(Self.isHelp) == true || MenuCapturePolicy.isAppleMenuPath(next) { return }
             guard let descendants = children(node) else { complete = false; return }
             if role == kAXMenuItemRole, descendants.isEmpty, next.count >= 2 {
                 let shortcut = value(node, kAXMenuItemCmdCharAttribute) as? String ?? ""
                 result.append(CapturedMenu(appID: app.id, appName: app.name, path: next, shortcut: shortcut))
             } else { descendants.forEach { visit($0, path: next, depth: depth + 1) } }
         }
-        visit(bar, path: [], depth: 0)
+        guard let roots = children(bar) else { return nil }
+        // Exclude the whole Apple subtree, including Location and Recent Items.
+        for root in roots.dropFirst() { visit(root, path: [], depth: 0) }
         return complete && hasTime ? result : nil
     }
 }

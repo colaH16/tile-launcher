@@ -6,6 +6,13 @@
 
 최신 변경: R75–R77에서 모양 탭·세 섹션 색 선택·작업 화면을 건드리지 않는 사전 검사를 추가했습니다. R65–R73의 두 테마·활성 앱 추종·최종 아이콘 및 R61–R64의 3.3줄·임시 프로필 순환·Option 명령은 유지합니다. 아래 과거 시점의 기록은 현재 requirements.md와 함께 읽습니다.
 
+## R100–R101 · Apple 메뉴와 hover·배경
+
+- [Apple 메뉴 막대 지침](https://developer.apple.com/design/human-interface-guidelines/the-menu-bar)과 [AXMenuBar](https://developer.apple.com/documentation/applicationservices/kaxmenubarattribute)를 다시 확인한다. 최상위 첫 항목인 시스템 메뉴를 ancestry로 구별하고 Apple/ 경로도 방어적으로 제외한다. 일반 앱 명령의 이름이 같다는 이유로 제외하지 않는다. 한국어/영어·하위 메뉴·Help·클릭/키보드와 앱 전환을 검사한다.
+- 기존 자동 시스템 기록은 삭제하지 않고 최근/빈도·최근 5개에서 제외한다. 의도적인 핀/수동 등록 및 앱별 기록 보존을 확인한다.
+- 메뉴/창 hover의 채움 0.10·누름 0.16과 2pt 테두리를 두 테마/명암/강조색에서 확인한다. 글자색/불투명도는 유지하고 등록 타일 스타일은 바꾸지 않는다.
+- 배경 색 레이어 0.28은 앱 조정값이며 OS 합성의 실제 투명도는 아니다. 타일 0.96/1.0은 유지한다. Glass 1pt overscan과 단일 외곽 마스크를 다른 배율에서 확인하고, 네이티브 굴절·옆선·그림자는 실제 배경 위에서 검증한다. 레이어를 1pt 넓혀도 내부 콘텐츠/드래그/버튼 위치는 같아야 한다.
+
 ## R97 · 창 모서리와 그림자 합성
 
 - NSGlassEffectView.cornerRadius는 유리 모양을 지정하며 contentView 전체 클리핑을 보장하는 속성으로 취급하지 않는다. 2026-10-13 현재 SDK에서 유리/콘텐츠의 바깥 clipping mask가 없음을 화면 없는 네이티브 뷰 검사로 확인했다. [NSGlassEffectView](https://developer.apple.com/documentation/appkit/nsglasseffectview), [cornerRadius](https://developer.apple.com/documentation/appkit/nsglasseffectview/cornerradius)를 새 SDK에서 다시 확인한다.
