@@ -13,6 +13,12 @@ SPEC.loader.exec_module(r)
 
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_signing_output_rejects_synced_folders(self):
+        for folder in ['Desktop', 'Documents', 'Library/Mobile Documents', 'Library/CloudStorage']:
+            with self.assertRaises(r.ReleaseError): r.validate_output_path((Path.home() / folder / 'release').resolve())
+        r.validate_output_path(Path('/private/tmp/tile-release'))
+        r.validate_output_path(Path.home() / 'Library/Developer/TileLauncher/releases/v0.2.0')
+
     def test_regular_release_configuration_is_consistent(self):
         cfg = r.config()
         self.assertEqual(cfg['version'], '0.2.0')

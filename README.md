@@ -126,7 +126,7 @@ DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 sc
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py verify
 ```
 
-깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 무시되는 dist 폴더에 생성합니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
+깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 `~/Library/Developer/TileLauncher/releases/v0.2.0`에 생성합니다. Desktop/문서/클라우드 동기화 폴더는 서명 작업 경로로 사용하지 않습니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
 
 ## 라이선스
 

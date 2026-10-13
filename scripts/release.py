@@ -154,9 +154,18 @@ def archive(output, manifest):
     print('Prepared:', destination)
 
 
+def validate_output_path(output):
+    # Desktop/Documents/CloudStorage can add Finder metadata while signing.
+    home = Path.home()
+    synced = [home / 'Desktop', home / 'Documents', home / 'Library/Mobile Documents', home / 'Library/CloudStorage']
+    require(not any(output.is_relative_to(path.resolve()) for path in synced),
+            'Build/sign outside synced folders. Use ~/Library/Developer/TileLauncher/releases/v' + config()['version'] + '.')
+
+
 def prepare(args):
     cfg = config()
     output = args.output
+    validate_output_path(output)
     require(not output.exists() or not any(output.iterdir()), 'Output directory is not empty; choose a new directory.')
     dirty = bool(run(['git', 'status', '--porcelain']))
     require(args.local_check or not dirty, 'Commit the release sources first, or use --local-check for non-publishable rehearsal.')
@@ -367,7 +376,7 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     for name in ['prepare', 'verify', 'sign', 'notarize', 'draft', 'publish']:
         command = sub.add_parser(name)
-        command.add_argument('--output', type=Path, default=ROOT / 'dist' / ('v' + config()['version']))
+        command.add_argument('--output', type=Path, default=Path.home() / 'Library/Developer/TileLauncher/releases' / ('v' + config()['version']))
         if name == 'prepare': command.add_argument('--local-check', action='store_true')
         if name == 'sign':
             command.add_argument('--identity', required=True)

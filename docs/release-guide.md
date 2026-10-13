@@ -18,15 +18,15 @@
 ```sh
 export DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer
 ./scripts/test.sh
-python3 scripts/release.py prepare --output dist/v0.2.0
-python3 scripts/release.py verify --output dist/v0.2.0
+python3 scripts/release.py prepare
+python3 scripts/release.py verify
 ```
 
 - `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
-- `dist/v0.2.0/downloads`에 `Tile-Launcher-0.2.0-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `~/Library/Developer/TileLauncher/releases/v0.2.0/downloads`에 `Tile-Launcher-0.2.0-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
 - `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
-- 최종 릴리스 설명은 `dist/v0.2.0/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
-- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다.
+- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v0.2.0/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
+- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v0.2.0`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
 
 ## GitHub 초안과 정식 게시
 
@@ -34,8 +34,8 @@ python3 scripts/release.py verify --output dist/v0.2.0
 
 ```sh
 # 개발용 서명/공증 없음으로 배포하기로 정했을 때
-python3 scripts/release.py draft --output dist/v0.2.0 --allow-unnotarized
-python3 scripts/release.py publish --output dist/v0.2.0 --allow-unnotarized
+python3 scripts/release.py draft --allow-unnotarized
+python3 scripts/release.py publish --allow-unnotarized
 ```
 
 초안은 검증한 소스 커밋에 v0.2.0 태그를 연결하고 지정한 세 파일만 올린다. 기존 릴리스/다른 커밋의 태그는 덮어쓰지 않는다. 게시 단계는 초안 설명과 자산 목록이 같고, GitHub에서 다시 받은 파일의 체크섬도 일치해야 정식 릴리스로 전환한다. 중단된 업로드나 서로 다른 초안이 있으면 검토 후 처리하며 자동으로 덮어쓰지 않는다.
@@ -47,11 +47,11 @@ python3 scripts/release.py publish --output dist/v0.2.0 --allow-unnotarized
 먼저 개발자 등록을 마치고 Xcode에서 Developer ID Application 인증서를 만든다. 아래 SHA1은 `security find-identity -v -p codesigning`에서 확인하는 인증서 식별자이며 개인 키/암호가 아니다. Team ID도 개발자 계정에서 확인한다.
 
 ```sh
-python3 scripts/release.py sign --output dist/v0.2.0 --identity CERTIFICATE_SHA1 --team-id TEAM_ID
+python3 scripts/release.py sign --identity CERTIFICATE_SHA1 --team-id TEAM_ID
 
 # 민감한 값은 이 도구의 보안 프롬프트에 직접 입력한다.
 xcrun notarytool store-credentials tile-launcher-notary
-python3 scripts/release.py notarize --output dist/v0.2.0 --keychain-profile tile-launcher-notary
+python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 ```
 
 - sign은 Developer ID Application 유형·팀·강화된 런타임·보안 타임스탬프와 지정 권한을 검사한다. 실패 시 기존 개발용 앱을 보존하도록 임시 사본에 서명한다.

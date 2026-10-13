@@ -9,7 +9,7 @@
 - `/tmp/tile-release-rehearsal`에서 실제 개발용 서명 패키징을 실행했다. ZIP을 재추출하여 앱 서명·아키텍처·아이콘·Focus 메타데이터·버전·빌드·소스 SHA·실행 권한 및 번들 트리 해시 일치를 확인했다. local_only=true 리허설이라 업로드할 수 없다. 로그는 `/tmp/tile-release-rehearsal.log`다.
 - 현재 `gh`는 로그인되지 않았고 유효한 Developer ID Application 인증서는 0개였다. 소스 푸시는 기존 SSH 경로를 사용한다. Developer ID/강화된 런타임/공증/GitHub 초안·게시 경로는 구현했지만 실제 자격 증명을 사용한 검증은 아직 하지 않았다.
 - Apple Events 권한은 향후 Developer ID 서명 시 Finder 통합 휴지통 요청을 위해 선언한다. get-task-allow/JIT/라이브러리 검증 해제는 넣지 않았다. 현재 ad-hoc 단계는 권한을 새로 켜지 않으며 사용자 앱을 설치/재실행하거나 시스템 보안을 변경하지 않는다.
-- 최종 배포 산출물은 준비 코드를 커밋한 뒤 그 깨끗한 커밋에서 별도로 생성하고 결과를 아래에 기록한다. 기록 당시까지 GitHub 공개 바이너리는 업로드하지 않았다.
+- 첫 깨끗한 커밋 빌드는 Desktop 아래 dist 경로에서 동기화 메타데이터가 붙어 codesign 검증에 실패했다. 기본 작업 경로를 Library/Developer/TileLauncher/releases로 바꾸고 알려진 동기화 폴더를 거부하도록 보완한다. 최종 배포 산출물은 보완 코드를 커밋한 뒤 그 깨끗한 커밋에서 생성하고 결과를 아래에 기록한다. 기록 당시까지 GitHub 공개 바이너리는 업로드하지 않았다.
 
 ## R91–R92 · Focus 등록 점검·복귀 보완·공개 배포 안내
 

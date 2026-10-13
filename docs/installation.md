@@ -2,7 +2,7 @@
 
 Apple Silicon Mac용 ZIP입니다. macOS 26 이상을 실행 대상으로 빌드하며 실제 확인한 OS 범위와 제한은 릴리스 노트를 확인하세요.
 
-1. 이 저장소의 Releases에서 ZIP과 SHA256SUMS.txt를 받습니다.
+1. 이 저장소의 Releases에서 ZIP, release-metadata.json, SHA256SUMS.txt를 받습니다.
 2. 다운로드 폴더에서 `shasum -a 256 -c SHA256SUMS.txt`로 ZIP과 함께 받은 release-metadata.json의 체크섬을 확인할 수 있습니다. SHA256SUMS.txt에 나열된 파일을 모두 같은 폴더에 둡니다. 체크섬은 파일 무결성 확인이며 Apple 공증을 대신하지 않습니다.
 3. ZIP을 풀고 Tile Launcher.app을 `/Applications`(응용 프로그램)로 옮깁니다. 기존 버전이 있으면 앱을 종료하고 교체합니다.
 4. 앱을 열고 메뉴 막대에서 설정으로 들어갑니다. 접근성 권한 안내에 따라 시스템 설정에서 Tile Launcher를 허용합니다.
