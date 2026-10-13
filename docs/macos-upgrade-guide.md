@@ -262,3 +262,11 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - Focus 자동 선택 끄기, 정상 프로필 ID, 필터 해제(nil), 삭제된 프로필 ID, 수동 프로필까지 없는 경우의 우선순위를 검사한다. 정상 Focus 프로필 → 마지막 수동 구성 → 첫 구성 순이며 자동 선택이 꺼지면 Focus 값을 무시한다.
 - 테스트 앱은 실제 제품과 다른 ID를 쓰고, App Intents 메타데이터 존재/설정 모델 검사/실제 OS perform 전달과 current 조회를 구분한다. 시스템 Focus 전환 시험은 사용자의 작업을 배려해 따로 진행한다.
 - 공개 배포 전 최신 Apple 등록 가격·Developer ID·공증 요구 사항을 재확인한다. 당시 절차와 남은 검증은 release-guide.md에 기록한다. 정식 서명/강화된 런타임에서 권한·로그인 항목·메뉴/창/Focus 동작을 다시 확인하고 개발용 ad-hoc 빌드의 결과를 그대로 배포 검증으로 간주하지 않는다.
+
+
+## R93–R95 · 배포 도구 회귀 점검
+
+- release.py의 prepare/verify로 깨끗한 커밋 → 독립 빌드 → ZIP → 재추출 앱 검사를 수행한다. Xcode 업데이트 후 extract-intents.py의 추출 경로·메타데이터 이름, lipo의 아키텍처, codesign entitlements 출력 형식과 서명 세부 필드를 확인한다.
+- Developer ID 단계는 강화된 런타임·타임스탬프·팀을 확인하고 실제 기능을 재검증한다. Apple Events 용도 설명과 권한은 Finder 기능에 한정한다. 예외 entitlement를 일괄로 켜지 않는다.
+- notarytool JSON의 id/name/status, Keychain profile, 중단 후 제출 복구, stapler/Gatekeeper와 재패키징을 당시 도구로 재확인한다. 개발용 서명 패키징 검사가 공증 성공을 대신하지 않는다.
+- GitHub CLI의 공개 저장소/태그/초안/파일 다운로드 동작을 검사한다. 정식(prerelease=false) 선택과 공증 상태는 별개로 유지한다. 실제 게시 단계 실행 전 업로드한 파일 해시/설명 일치를 확인한다.

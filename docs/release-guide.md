@@ -1,6 +1,6 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
-확인일: 2026-10-13, Asia/Seoul. R91–R92 기준. 아직 공개 바이너리 Release/개발자 등록/공증 제출을 실행한 상태는 아니다.
+확인일: 2026-10-13, Asia/Seoul. R93–R95에 따라 첫 공개판은 **정식 릴리스**, 현재는 **개발용 ad-hoc 서명/공증 없음**으로 준비한다. 유료 등록은 보류했으며 공개 바이너리 Release/개발자 등록/공증 제출은 아직 실행하지 않았다.
 
 ## 비용과 가입 유형
 
@@ -8,6 +8,58 @@
 - 웹의 공식 기준은 **연 US$99**이고 지역별 현지 가격이 적용된다. 최종 금액/세금은 가입 결제 화면을 기준으로 한다. [Apple 멤버십 안내](https://developer.apple.com/kr/help/account/membership/program-enrollment/)
 - 개인 제작자로 배포하면 일반 Apple Developer Program의 개인 등록을 사용할 수 있다. 법인의 이름으로 등록하려면 조직 요건과 D-U-N-S 확인이 필요하다. 개인 등록은 법적 실명을 사용하며 App Store에 배포할 경우 판매자 이름도 실명이다. [개인/조직 등록 요건](https://developer.apple.com/kr/programs/enroll/)
 - Developer ID를 이용한 Mac App Store 외부 배포가 이 프로그램의 기능이다. 현재 Tile Launcher의 GitHub 배포 방향에 해당한다. [Developer ID 안내](https://developer.apple.com/kr/developer-id/)
+
+## 지금 준비하는 개발용 서명 배포
+
+구성은 `release/config.json`의 v0.2.0, 빌드 4, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
+
+저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
+
+```sh
+export DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer
+./scripts/test.sh
+python3 scripts/release.py prepare --output dist/v0.2.0
+python3 scripts/release.py verify --output dist/v0.2.0
+```
+
+- `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
+- `dist/v0.2.0/downloads`에 `Tile-Launcher-0.2.0-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
+- 최종 릴리스 설명은 `dist/v0.2.0/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
+- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다.
+
+## GitHub 초안과 정식 게시
+
+아래 명령은 원격 태그/릴리스를 변경한다. **현재 작업에서는 실행하지 않았다.** 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 자동으로 공개 범위를 바꾸지는 않는다.
+
+```sh
+# 개발용 서명/공증 없음으로 배포하기로 정했을 때
+python3 scripts/release.py draft --output dist/v0.2.0 --allow-unnotarized
+python3 scripts/release.py publish --output dist/v0.2.0 --allow-unnotarized
+```
+
+초안은 검증한 소스 커밋에 v0.2.0 태그를 연결하고 지정한 세 파일만 올린다. 기존 릴리스/다른 커밋의 태그는 덮어쓰지 않는다. 게시 단계는 초안 설명과 자산 목록이 같고, GitHub에서 다시 받은 파일의 체크섬도 일치해야 정식 릴리스로 전환한다. 중단된 업로드나 서로 다른 초안이 있으면 검토 후 처리하며 자동으로 덮어쓰지 않는다.
+
+[GitHub CLI 릴리스 생성](https://cli.github.com/manual/gh_release_create) · [GitHub 릴리스 관리](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)
+
+## 나중에 Developer ID·공증으로 전환
+
+먼저 개발자 등록을 마치고 Xcode에서 Developer ID Application 인증서를 만든다. 아래 SHA1은 `security find-identity -v -p codesigning`에서 확인하는 인증서 식별자이며 개인 키/암호가 아니다. Team ID도 개발자 계정에서 확인한다.
+
+```sh
+python3 scripts/release.py sign --output dist/v0.2.0 --identity CERTIFICATE_SHA1 --team-id TEAM_ID
+
+# 민감한 값은 이 도구의 보안 프롬프트에 직접 입력한다.
+xcrun notarytool store-credentials tile-launcher-notary
+python3 scripts/release.py notarize --output dist/v0.2.0 --keychain-profile tile-launcher-notary
+```
+
+- sign은 Developer ID Application 유형·팀·강화된 런타임·보안 타임스탬프와 지정 권한을 검사한다. 실패 시 기존 개발용 앱을 보존하도록 임시 사본에 서명한다.
+- 현재 선언하는 권한은 Finder의 통합 휴지통을 여는 Apple Events 요청을 위한 항목이다. get-task-allow/JIT/라이브러리 검증 해제 같은 예외는 넣지 않는다. 실제 Developer ID 환경에서 Finder/접근성/Space/Focus 동작을 재검증해야 한다. [Apple Events 권한](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.automation.apple-events)
+- 공증을 한 번 제출하면 ID를 저장한다. 진행 중에는 같은 notarize 명령을 다시 실행하여 그 제출만 조회한다. 제출 응답이 끊긴 경우 자동 재업로드하지 않으며, `notarytool history`에서 ID를 확인한 뒤 `--submission-id`로 복구한다.
+- Accepted 후에만 티켓을 붙이고 Gatekeeper 검사를 통과한 앱을 다시 ZIP으로 만든다. 이전 사본은 pre-sign.app/pre-staple.app으로 보존한다. 공증 후 다운로드 폴더에 이전 ZIP이 남을 수 있지만 게시 도구는 manifest에 기록된 최종 파일만 사용한다.
+- 공증된 결과는 `--allow-unnotarized` 없이 draft/publish할 수 있다. 이미 v0.2.0을 개발용 서명으로 공개했다면 배포 설정과 릴리스 노트를 다음 버전으로 갱신하여 새 릴리스로 낸다. 공개된 자산을 조용히 바꾸지 않는다.
+- 로컬 manifest/log/인증 정보는 공개하지 않는다. 공개 메타데이터에는 버전·아키텍처·소스 SHA·도구 버전·서명 상태만 담는다.
 
 ## 사용자가 진행하는 등록
 
@@ -25,7 +77,7 @@
 
 - Xcode 또는 개발자 계정에서 **Developer ID Application** 서명 인증서를 만든다. 현재 빌드는 `codesign --sign -`인 ad-hoc 서명이며 정식 배포 서명이 아니다.
 - 배포 버전/빌드 번호를 정하고 해당 소스 커밋에 연결한다. 같은 코드에 서명만 바꾸는 첫 전환에서도 앱의 교체 판단이 분명하도록 빌드 번호를 갱신한다.
-- 현재 `scripts/build.sh`는 로컬 개발용이다. 정식 서명 경로에서는 강화된 런타임과 보안 타임스탬프를 적용하고 필요한 권한만 선언한 뒤 기능을 다시 검증한다. 인증서 이름을 하드코딩하거나 키를 저장소에 넣지 않는다.
+- 현재 `scripts/build.sh`는 로컬 개발용이다. `scripts/release.py`는 이를 독립 소스/출력 경로에서 호출하고 서명·공증·검증·GitHub 초안/게시를 분리한다. Developer ID 경로에서는 강화된 런타임과 보안 타임스탬프를 적용하고 필요한 권한만 선언한 뒤 기능을 다시 검증한다. 인증서 이름을 하드코딩하거나 키를 저장소에 넣지 않는다.
 - 배포 파일은 ZIP 또는 DMG로 패키징한다. `notarytool`로 공증을 제출하고 승인 결과를 확인한 뒤 `stapler`로 앱/DMG에 티켓을 첨부한다. 공증 후 바뀐 파일은 최종 형태로 다시 패키징한다.
 - 코드 서명/공증 티켓/Gatekeeper와 실제 다운로드·첫 실행·업데이트를 검증한다. 통과한 파일, 체크섬, 지원 macOS/CPU, 변경 내용으로 GitHub Release를 만든다.
 

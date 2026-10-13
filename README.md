@@ -4,7 +4,7 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-개인용 **0.2 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, Developer ID 서명·공증을 거친 GitHub 공개 릴리스를 준비하고 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
+개인용 **0.2 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, GitHub 정식 릴리스를 우선 개발용 ad-hoc 서명으로 준비하고 있으며, Developer ID 서명·공증은 추후 적용할 수 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
 
 ## 빌드와 실행
 
@@ -116,6 +116,17 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 새로운 요청은 요청 기록과 요구사항에 함께 반영하고, 단위 테스트·실제 UI 검증·성능 측정을 구분하여 남깁니다.
 
 빌드 교체의 화면 없는 통합 검사는 `DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" python3 scripts/verify-instance-handoff.py`로 실행합니다. 고유한 테스트 앱 식별자와 임시 번들을 쓰며 실제 사용자 앱/설정/접근성/키 입력은 사용하지 않습니다.
+
+## 배포 파일 준비
+
+`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 준비 파일은 개발용 서명이며 Apple 공증을 받지 않았습니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
+
+```sh
+DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py prepare
+DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py verify
+```
+
+깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 무시되는 dist 폴더에 생성합니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
 
 ## 라이선스
 

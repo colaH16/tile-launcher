@@ -5,3 +5,10 @@ build/
 
 # Paused publication copy; not part of the native app repository.
 site/
+
+# Local release artifacts and credentials are never source assets.
+dist/
+__pycache__/
+*.p12
+*.p8
+release.local.*
