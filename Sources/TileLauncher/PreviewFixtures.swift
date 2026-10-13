@@ -115,6 +115,31 @@ final class PreviewFixture: ObservableObject {
         guard !paused.menuCapture.enabled, paused.menuCapture.excludedApps.contains("preview.editor"),
               paused.profiles == originalProfiles else { throw NSError(domain: "TileLauncher.Preview", code: 7) }
         print("SettingsStore: automatic Copy capture, deletion exclusion, app pause and global pause persistence passed.")
+        let pinned = MenuCommand(appID: "preview.counts", appName: "미리보기", path: ["File", "Export"])
+        let selection = CapturedMenu(appID: pinned.appID, appName: pinned.appName, path: pinned.path)
+        paused.addCommand(pinned)
+        paused.recordUse(pinned.id)
+        paused.recordUse(pinned.id)
+        paused.recordCapturedMenu(selection) // Capture is off, launcher usage still counts.
+        guard let launcherOnly = paused.commands.first(where: { $0.id == pinned.id }),
+              launcherOnly.totalUseCount == 2, launcherOnly.useCount == 2, launcherOnly.observedCount == 0 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 10)
+        }
+        paused.menuCapture.enabled = true
+        paused.recordCapturedMenu(selection)
+        let counted = SettingsStore(defaults: defaults)
+        guard let combined = counted.commands.first(where: { $0.id == pinned.id }),
+              combined.isPinned, combined.totalUseCount == 3, combined.useCount == 2,
+              combined.observedCount == 1, combined.recentUses.count == 3, combined.lastUsed != nil else {
+            throw NSError(domain: "TileLauncher.Preview", code: 11)
+        }
+        counted.togglePin(pinned.id)
+        guard let unpinned = counted.commands.first(where: { $0.id == pinned.id }),
+              !unpinned.isPinned, unpinned.isFrequent(history: counted.menuHistory),
+              MenuCommand.ordered(counted.commands, appID: pinned.appID, history: counted.menuHistory).contains(where: { $0.id == pinned.id }) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 12)
+        }
+        print("SettingsStore: pinned launcher-only counts while capture is off, combined counts/dates persistence and frequency after unpinning passed.")
     }
 }
 
@@ -139,15 +164,42 @@ struct AppearancePreview: View {
     var body: some View { AppearanceView(settings: fixture.settings).frame(width: 580, height: 760) }
 }
 
+struct MenuUsagePreview: View {
+    private let commands: [MenuCommand] = {
+        var launcher = MenuCommand(appID: "preview", appName: "문서 편집기", path: ["도구", "그림 크기 줄이기"])
+        for _ in 0..<3 { launcher.recordUse(at: Date()) }
+        var combined = MenuCommand(appID: "preview", appName: "문서 편집기", path: ["파일", "PDF로 내보내기"])
+        for _ in 0..<3 { combined.recordUse(at: Date()) }
+        for _ in 0..<2 { combined.recordUse(at: Date(), observed: true) }
+        let unused = MenuCommand(appID: "preview", appName: "문서 편집기", path: ["보기", "페이지에 맞추기"])
+        return [launcher, combined, unused]
+    }()
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("메뉴 사용 횟수").font(.headline)
+            ForEach(commands) { command in
+                HStack {
+                    MenuCommandDetails(command: command)
+                    Spacer()
+                    Image(systemName: "pin.fill").foregroundStyle(.secondary)
+                }
+            }
+        }.padding(20).frame(width: 440).background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
 #Preview("클래식 · 기본색") { DeckPreview(theme: .classic).preferredColorScheme(.dark) }
 #Preview("유리 · 기본색") { DeckPreview(theme: .glass).preferredColorScheme(.dark) }
 #Preview("사용자 색 · 밝은 화면") { DeckPreview(theme: .classic, customColors: true).preferredColorScheme(.light) }
 #Preview("모양 설정") { AppearancePreview() }
+#Preview("메뉴 사용 횟수") { MenuUsagePreview() }
 
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try PreviewFixture(theme: .classic).verifySettingsRoundTrip()
+        try save(MenuUsagePreview().environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("menu-usage-dark.png"))
         for theme in DeckTheme.allCases {
             for dark in [false, true] {
                 let view = DeckPreview(theme: theme).environment(\.colorScheme, dark ? .dark : .light)

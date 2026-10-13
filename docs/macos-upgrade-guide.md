@@ -245,3 +245,10 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - Apple [didLaunchApplicationNotification](https://developer.apple.com/documentation/appkit/nsworkspace/didlaunchapplicationnotification)의 일반/LSUIElement 앱 차이와 NSWorkspace 전경 앱 전환을 재확인한다. 현재 수집 범위를 유지하는 한 전 앱에 메뉴 옵저버를 붙일 필요는 없다.
 - 실행 교체는 같은 빌드, 업그레이드, 다운그레이드, 동일 버전/경로 덮어쓰기 후 재열기, 서로 다른 경로, 종료 거부를 나눠 검사한다. [createsNewApplicationInstance](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/createsnewapplicationinstance)와 allowsRunningApplicationSubstitution의 당시 동작을 확인한다.
 - `scripts/verify-instance-handoff.py`는 생산 InstanceCoordinator/BuildReplacement를 고유 ID의 창 없는 fixture에서 검사한다. 사용자 앱을 종료/활성화하거나 실제 접근성 권한을 쓰지 않는다. 이 결과와 실제 사용자 앱 교체/권한 유지 검증을 구분한다. 진단 시 OSLog의 `dev.cola16.TileLauncher` / `instance` 항목과 실행 소유자 기록의 빌드 ID를 비교한다.
+
+
+## R89 · 두 경로의 메뉴 사용 기록
+
+- 메뉴 막대 1회+런처 2회, 런처만 3회, 미사용 0회, 고정 메뉴, 고정 해제, 자동 수집 중단 상태의 런처 실행을 나눠 검사한다. 저장/재실행 뒤 합계와 각 경로의 카운터·최근 시각이 유지되어야 한다.
+- 실제 메뉴 실행 성공 1회가 2회로 기록되지 않는지, 선택 후 취소/실행 오류는 횟수에 들어가지 않는지 실기 확인한다. 정책·SettingsStore 격리 검사와 외부 AX 실행 검증을 구분한다.
+- 설정 행의 누적 합계/경로별 횟수는 작은 폭과 긴 메뉴 경로에서도 읽을 수 있어야 한다. 타일 툴팁/VoiceOver에도 제공하되 타일 제목이나 클릭 영역을 줄이지 않는다. 누적 합계를 최근 90일 횟수로 잘못 표기하지 않는다.

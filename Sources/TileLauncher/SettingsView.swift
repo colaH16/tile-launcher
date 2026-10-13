@@ -254,13 +254,7 @@ struct MenuSettingsView: View {
             List {
                 ForEach(MenuCommand.ordered(settings.commands, appID: selectedID, history: settings.menuHistory, includingHidden: true)) { command in
                     HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(command.title)
-                            Text(command.path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary)
-                            if command.observedCount > 0 {
-                                Text("메뉴에서 선택 누적 \(command.observedCount)회").font(.caption2).foregroundStyle(.secondary)
-                            }
-                        }
+                        MenuCommandDetails(command: command)
                         Spacer()
                         Button { settings.togglePin(command.id) } label: {
                             Image(systemName: command.isPinned ? "pin.fill" : "pin")
@@ -326,5 +320,18 @@ struct MenuSettingsView: View {
                 return AppItem(id: id, pid: app.processIdentifier, name: app.localizedName ?? id, url: app.bundleURL)
             }
         if selectedID.isEmpty { selectedID = preferredApp?.id ?? applications.first?.id ?? settings.commands.first?.appID ?? "" }
+    }
+}
+
+/// Shared by the real settings list and the isolated native preview.
+struct MenuCommandDetails: View {
+    let command: MenuCommand
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(command.title)
+            Text(command.path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary)
+            Text(command.usageDescription).font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

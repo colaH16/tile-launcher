@@ -275,7 +275,8 @@ struct DeckView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
-            .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : ""))
+            .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : "") + "\n" + command.usageDescription)
+            .accessibilityValue(command.usageDescription)
             .contextMenu {
                 Button(command.isPinned ? "고정 해제" : "앞에 고정") {
                     settings.togglePin(command.id)

@@ -24,6 +24,11 @@ extension PinnedItem {
             ?? URL(fileURLWithPath: path)
     }
 }
+extension MenuCommand {
+    var usageDescription: String {
+        "누적 \(totalUseCount)회 · 메뉴 막대 \(observedCount)회 · Tile Launcher \(useCount)회"
+    }
+}
 struct OverlaySnapshot: Equatable {
     let context: AppItem?
     let contextWindowTitle: String?

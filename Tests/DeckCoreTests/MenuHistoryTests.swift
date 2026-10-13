@@ -85,4 +85,44 @@ final class MenuHistoryTests: XCTestCase {
         let preferences = MenuHistoryPreferences(recentDays: 45, frequentDays: 180)
         XCTAssertEqual(MenuHistoryPreferences.restore(try JSONEncoder().encode(preferences)), preferences)
     }
+    func testPinnedMenuCombinesBothSourcesAndRetainsFrequencyAfterUnpinning() throws {
+        let command = MenuCommand(appID: "excel", appName: "Excel", path: ["File", "Export"])
+        let captured = CapturedMenu(appID: command.appID, appName: command.appName, path: command.path)
+        var commands = MenuCaptureHistory.record(captured, in: [command], at: ago(60))
+        commands[0].recordUse(at: ago(30))
+        commands[0].recordUse(at: ago(1))
+        var restored = try JSONDecoder().decode([MenuCommand].self, from: JSONEncoder().encode(commands))[0]
+        XCTAssertEqual(restored.id, command.id)
+        XCTAssertTrue(restored.isPinned)
+        XCTAssertEqual(restored.totalUseCount, 3)
+        XCTAssertEqual(restored.observedCount, 1)
+        XCTAssertEqual(restored.useCount, 2)
+        XCTAssertEqual(restored.lastUsed, ago(1))
+        restored.isPinned = false
+        XCTAssertTrue(restored.isFrequent(history: .init(), at: now))
+        XCTAssertEqual(visible([restored]).first?.id, command.id)
+    }
+    func testLauncherUseRefreshesExpiredRecentMenuWithoutExternalSelection() {
+        var expired = menu("Expired", days: 100)
+        let other = (0..<6).map { menu("\($0)", days: Double($0)) }
+        XCTAssertFalse(visible(other + [expired]).contains { $0.id == expired.id })
+        expired.recordUse(at: ago(0.5))
+        let refreshed = visible(other + [expired])
+        XCTAssertTrue(refreshed.contains { $0.id == expired.id })
+        XCTAssertEqual(refreshed[1].id, expired.id)
+        XCTAssertEqual(expired.useCount, 1)
+        XCTAssertEqual(expired.observedCount, 1)
+        XCTAssertEqual(expired.totalUseCount, 2)
+        XCTAssertEqual(expired.lastUsed, ago(0.5))
+    }
+    func testLifetimeTotalSurvivesWindowExpiryAndSaturatesInsteadOfOverflowing() {
+        var command = menu("Count", days: 100)
+        command.recordUse(at: ago(99))
+        XCTAssertFalse(command.isFrequent(history: .init(), at: now))
+        XCTAssertEqual(command.totalUseCount, 2)
+        command.useCount = Int.max
+        XCTAssertEqual(command.totalUseCount, Int.max)
+        command.recordUse(at: now)
+        XCTAssertEqual(command.totalUseCount, Int.max)
+    }
 }

@@ -14,6 +14,10 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     // even when the user changes the lookback period. No unbounded event log.
     public private(set) var recentUses: [Date]
     public var title: String { path.last ?? "" }
+    public var totalUseCount: Int {
+        let (total, overflow) = useCount.addingReportingOverflow(observedCount)
+        return overflow ? Int.max : total
+    }
     public var isWide: Bool { isWide(history: .init()) }
     public func isWide(history: MenuHistoryPreferences, at now: Date = Date()) -> Bool {
         isPinned || isFrequent(history: history, at: now)
