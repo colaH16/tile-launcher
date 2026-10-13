@@ -87,10 +87,12 @@ public struct TileSurfaceColors {
         let seed = colors.seed(for: section, theme: theme)
         let white = TileColor(0xFFFFFF)
         if emphasized {
-            fill = theme.isClassic ? seed : seed.mixed(with: white, amount: dark ? 0.61 : 0.76)
+            fill = theme.isClassic ? seed : seed.mixed(with: white, amount: dark ? 0.56 : 0.72)
         } else {
-            fill = dark ? seed.mixed(with: TileColor(0x343A42), amount: theme.isClassic ? 0.62 : 0.72)
-                        : seed.mixed(with: white, amount: theme.isClassic ? 0.84 : 0.91)
+            // Lift the selected hue with white instead of muddying it with dark gray.
+            // Classic keeps its strong solid accents; glass uses a lighter pastel range.
+            fill = seed.mixed(with: white, amount: dark ? (theme.isClassic ? 0.50 : 0.76)
+                                                        : (theme.isClassic ? 0.84 : 0.91))
         }
         let black = TileColor(0x101820)
         // Pure black is the fallback around middle luminances where off-black loses contrast.

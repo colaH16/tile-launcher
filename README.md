@@ -35,6 +35,8 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 
 기본색은 클래식의 메뉴 초록·최근 창 파랑·등록 항목 보라 계열이며, 유리 테마의 기본 메뉴는 노랑 계열입니다. 사용자 색은 두 테마에서 유지하고 명도·글자색은 자동으로 조정합니다. 섹션별 또는 전체 기본색 복원이 가능합니다. 배경과 상단 버튼은 공통 유리 재질입니다.
 
+기본 타일에는 선택한 색을 밝게 섞어 부드러운 파스텔 느낌을 주고, 클래식의 고정 메뉴·현재 데스크탑 강조에는 진한 기준 색을 유지합니다.
+
 앱 아이콘은 파란 계단형 바탕에서 초록 타일이 오른쪽 위로 빠져나오는 모양입니다. 메뉴 막대에도 같은 형태의 단색 심벌을 사용합니다. 원본과 재생성 방법은 [아이콘 기록](Resources/Brand/README.md)에 있습니다. 설정 → 일반 → 시작에서 Option 호출을 끌 수도 있습니다.
 
 ## 사용
@@ -106,6 +108,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 - [조작·크기 설계 근거](docs/interaction-design.md)
 - [macOS 업그레이드 지침](docs/macos-upgrade-guide.md)
 - [검증 결과](docs/validation.md)
+- [외부 메뉴 자동 수집 검토 — 아직 미구현](docs/menu-observation-design.md)
 
 새로운 요청은 요청 기록과 요구사항에 함께 반영하고, 단위 테스트·실제 UI 검증·성능 측정을 구분하여 남깁니다.
 
