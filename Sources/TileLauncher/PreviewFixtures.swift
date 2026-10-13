@@ -244,11 +244,41 @@ struct MenuUsagePreview: View {
     }
 }
 
+/// Real tab views with isolated preferences and a synthetic application roster.
+struct SettingsLayoutPreview: View {
+    @StateObject private var fixture = PreviewFixture(theme: .glass)
+    @StateObject private var loginItem = LoginItemManager()
+    @StateObject private var navigation = SettingsNavigation()
+    let tab: SettingsTab
+    let size: CGSize
+    var emptyMenus = false
+    var body: some View {
+        SettingsView(settings: fixture.settings, loginItem: loginItem, navigation: navigation,
+                     requestPermission: {}, openAppManagementSettings: {},
+                     applicationProvider: { [fixture.content.snapshot.context].compactMap { $0 } })
+            .frame(width: size.width, height: size.height)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .onAppear {
+                navigation.tab = tab
+                guard let app = fixture.content.snapshot.context else { return }
+                fixture.settings.commands = emptyMenus ? [] : (1...24).map { index in
+                    var command = MenuCommand(appID: app.id, appName: app.name,
+                                              path: ["파일", "문서 작업 \(index)"])
+                    command.isPinned = index <= 3
+                    command.recordUse(at: Date(), observed: index % 2 == 0)
+                    return command
+                }
+            }
+    }
+}
+
 #Preview("클래식 · 기본색") { DeckPreview(theme: .classic).preferredColorScheme(.dark) }
 #Preview("유리 · 기본색") { DeckPreview(theme: .glass).preferredColorScheme(.dark) }
 #Preview("사용자 색 · 밝은 화면") { DeckPreview(theme: .classic, customColors: true).preferredColorScheme(.light) }
 #Preview("모양 설정") { AppearancePreview() }
 #Preview("메뉴 사용 횟수") { MenuUsagePreview() }
+#Preview("일반 설정") { SettingsLayoutPreview(tab: .general, size: CGSize(width: 640, height: 820)) }
+#Preview("메뉴 설정") { SettingsLayoutPreview(tab: .menus, size: CGSize(width: 640, height: 820)) }
 
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
@@ -263,6 +293,17 @@ enum PreviewExport {
         try verifyWebAppIcon()
         try verifyQuickOptionReopen()
         try verifyMenuCatalogChoices()
+        for size in [CGSize(width: 640, height: 820), CGSize(width: 540, height: 638)] {
+            for tab in [SettingsTab.general, .menus, .permissions] {
+                try save(SettingsLayoutPreview(tab: tab, size: size).environment(\.colorScheme, .dark),
+                         to: directory.appendingPathComponent("settings-\(tab)-\(Int(size.width)).png"))
+            }
+        }
+        try save(SettingsLayoutPreview(tab: .menus, size: CGSize(width: 640, height: 820), emptyMenus: true)
+                    .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("settings-menus-empty.png"))
+        try save(SettingsLayoutPreview(tab: .general, size: CGSize(width: 540, height: 638))
+                    .environment(\.colorScheme, .dark), scrollToEnd: true,
+                 to: directory.appendingPathComponent("settings-general-540-bottom.png"))
         try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: CGSize(width: 580, height: 760)))
                     .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("menu-addition-large.png"))
         try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: CGSize(width: 540, height: 660)), manualExpanded: true)
@@ -470,7 +511,7 @@ enum PreviewExport {
         guard !window.isVisible else { throw NSError(domain: "TileLauncher.Preview", code: 34) }
         print("Panel surface: all four corners transparent at 1x/2x, fill preserved, resize covered; never shown onscreen.")
     }
-    @MainActor private static func save<V: View>(_ view: V, dark: Bool = true, to url: URL) throws {
+    @MainActor private static func save<V: View>(_ view: V, dark: Bool = true, scrollToEnd: Bool = false, to url: URL) throws {
         // AppKit hosts render native controls/scroll views that ImageRenderer omits.
         // This window is never ordered onscreen and never becomes key.
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -486,6 +527,23 @@ enum PreviewExport {
         hosting.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         hosting.layoutSubtreeIfNeeded()
+        if scrollToEnd {
+            func scrollViews(in view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews(in: $0) }
+            }
+            guard let scroll = scrollViews(in: hosting).first(where: {
+                ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height + 1
+            }), let document = scroll.documentView else {
+                throw NSError(domain: "TileLauncher.Preview", code: 75,
+                              userInfo: [NSLocalizedDescriptionKey: "Small General tab has no usable overflow scroll view"])
+            }
+            let end = document.isFlipped ? document.frame.height - scroll.contentView.bounds.height : 0
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: end))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            hosting.layoutSubtreeIfNeeded()
+            print("Small General settings: overflow scroll view reaches the bottom offscreen.")
+        }
         guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             throw NSError(domain: "TileLauncher.Preview", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Could not render \(url.lastPathComponent)"])

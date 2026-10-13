@@ -1,6 +1,17 @@
 # 네이티브 빌드 검증
 
-최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.3(10). GitHub 공개본 0.17.1(8).
+최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.4(11). GitHub 공개본 0.17.1(8).
+
+## R114–R115 · 일반 하단 잘림과 메뉴 목록 공간
+
+- 실제 SettingsView/GeneralSettingsView/MenuSettingsView/PermissionsSettingsView를 고유 UserDefaults와 가상 앱·24개 메뉴로 화면에 표시하지 않는 NSWindow에 렌더링했다. 기본 640×820pt 콘텐츠와 최소 540×660pt 창 프레임에 대응하는 540×638pt 콘텐츠를 확인했다. SettingsLayoutPreview는 Xcode Canvas에서도 재사용한다.
+- 기본 창에서 일반의 시작·재입력·숫자·최근 창 설정과 마지막 버전이 모두 보였다. 작은 창에서는 실제 NSScrollView를 화면 밖 창 안에서 끝까지 이동해 최근 창·버전에 접근하는 검사 및 이미지 확인을 통과했다. 권한 두 버튼과 설명은 별도 탭 안에 들어갔다. 긴 실제 로그인 오류 안내까지 재현한 검사는 아니며 스크롤을 유지한다.
+- 메뉴 목록의 180pt 고정을 제거했다. 기본 창의 세 줄 샘플 행은 5개, 작은 창에서는 2개와 다음 행 일부가 보였고 메뉴 추가 버튼이 두 크기 모두 하단에 남았다. 실제 메뉴의 제목/경로 줄바꿈에 따라 행 수는 달라진다. 24개 메뉴와 빈 목록을 각각 렌더링했으며 핀/순서/삭제/횟수와 빈 목록 안내를 확인했다. 긴 설명은 기본 접힘, 펼친 경우 상단 스크롤로 접근하는 구조다. 안내 펼침의 실제 입력은 별도 실기 범위다.
+- 파일: /tmp/tile-0174-previews/settings-general-640.png, settings-general-540.png, settings-general-540-bottom.png, settings-menus-640.png, settings-menus-540.png, settings-menus-empty.png, settings-permissions-640.png 및 settings-permissions-540.png. 로그: /tmp/tile-0174-previews.log. 비표시 네이티브 탭 컨트롤의 글자/선택 표시는 축소·검게 렌더링되는 한계가 있어 이를 실기 외관 확인으로 설명하지 않는다. 창을 화면에 띄우거나 시스템 입력/권한을 조작하지 않았다.
+- 기존 클릭 즉시 실행/숫자 대기·설정 이동·웹 앱 아이콘·재입력·메뉴 카탈로그·Focus 모델/저장·횟수/기간·surface 마스크의 격리 검사도 통과했다. DeckCore는 변경하지 않았고 이전 105개 전체 XCTest를 이번에 다시 실행한 것으로 표시하지 않는다.
+- 0.17.4(11) 최적화 빌드, App Intents 추출, ad-hoc 서명 및 deep/strict 검증 통과. 컴파일 경고/오류 없음. 로그 /tmp/tile-0174-build.log, 빌드 식별자 f7a51f9b1b24c517124328fd474f7632acabe2d9b047fe7c46999418261fa0f7.
+- /Applications/launch at Login/Tile Launcher.app에 Contents를 교체해 설치하고 서명을 재검증했다. 이전 0.17.3 Contents는 /tmp/tile-before-0174-55p1gklb.app에 보존했다. /tmp/tile-0174-install.json에 결과를 기록했고 설치 전후 인스턴스 소유자 기록은 동일했다. 사용자 데이터/권한을 변경하거나 앱을 자동 종료·재실행하지 않았다. 사용자가 다음에 다시 열면 새 UI를 사용한다.
+- R113에 따라 소스만 커밋·푸시하며 새 태그/릴리스/바이너리는 게시하지 않는다. 공개본은 0.17.1이다.
 
 ## R112 · 수동 메뉴 검색의 시스템 메뉴 제외·시트 확장
 

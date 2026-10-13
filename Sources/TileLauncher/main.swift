@@ -616,12 +616,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let view = SettingsView(settings: settings, loginItem: loginItem, navigation: settingsNavigation,
                                 requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 760),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 820),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "\(AppIdentity.name) 설정"
         window.contentView = NSHostingView(rootView: view)
-        window.minSize = NSSize(width: 540, height: 660)
+        if let visibleFrame = NSScreen.main?.visibleFrame {
+            let available = visibleFrame.insetBy(dx: 24, dy: 24)
+            var frame = window.frame
+            frame.size.width = min(frame.width, available.width)
+            frame.size.height = min(frame.height, available.height)
+            window.setFrame(frame, display: false)
+        }
+        window.minSize = NSSize(width: min(540, window.frame.width), height: min(660, window.frame.height))
         window.isReleasedWhenClosed = false
         window.center()
         preferences = window

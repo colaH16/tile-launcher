@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-enum SettingsTab: Hashable { case general, appearance, menus, registered }
+enum SettingsTab: Hashable { case general, appearance, menus, registered, permissions }
 enum SettingsDestination { case general, addMenu, registered }
 
 struct MenuAdditionRequest: Identifiable, Equatable {

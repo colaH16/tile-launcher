@@ -8,75 +8,22 @@ struct SettingsView: View {
     @ObservedObject var navigation: SettingsNavigation
     let requestPermission: () -> Void
     let openAppManagementSettings: () -> Void
-    @State private var countText = ""
-    @State private var invalidCount = false
+    var applicationProvider: (() -> [AppItem])? = nil
     @State private var profileName = ""
 
     var body: some View {
         GeometryReader { geometry in
             TabView(selection: $navigation.tab) {
-                general.tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
+                GeneralSettingsView(settings: settings, loginItem: loginItem).tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
                 AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
                 MenuSettingsView(settings: settings, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition,
-                                 additionSize: MenuAdditionLayout.size(for: geometry.size))
+                                 additionSize: MenuAdditionLayout.size(for: geometry.size), applicationProvider: applicationProvider)
                     .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
                 registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
+                PermissionsSettingsView(requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
+                    .tabItem { Label("권한", systemImage: "hand.raised") }.tag(SettingsTab.permissions)
             }.padding(16)
-                .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
-        }
-    }
-    private var general: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(AppIdentity.name).font(.title2.weight(.semibold))
-                Text("Option을 0.25초 누르면 커서 근처에 열립니다.").font(.callout).foregroundStyle(.secondary)
-                GroupBox("시작") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Option을 길게 눌러 오버레이 열기", isOn: $settings.optionTriggerEnabled)
-                        Toggle("로그인 시 자동 실행", isOn: Binding(get: { loginItem.registered }, set: { loginItem.setEnabled($0) }))
-                            .disabled(loginItem.changing)
-                        Text(loginItem.statusText).font(.caption).foregroundStyle(.secondary)
-                        if loginItem.needsApproval { Button("로그인 항목 설정 열기", action: loginItem.openSystemSettings) }
-                        if let error = loginItem.error { Text(error).font(.caption).foregroundStyle(.red) }
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }
-                OptionReopenSettings(settings: settings)
-                GroupBox("숫자 단축키") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Picker("기본 조합", selection: $settings.numberShortcuts) {
-                            ForEach(NumberShortcutAssignment.allCases) { Text($0.title).tag($0) }
-                        }.pickerStyle(.radioGroup)
-                        Text("오버레이를 연 뒤 1–9, 0으로 첫 10개 중 하나를 고르고 Option을 놓으면 실행합니다. 0은 10번째입니다. 직접 프로필을 넘기면 등록 항목 번호도 해당 목록으로 바뀝니다.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Text("⌥X 고정 · ⌘, / ⌥, 설정 · Esc / ⌘W / ⌥W 닫기").font(.caption)
-                        Text("⌥A 또는 ⌥S: 이전 프로필 · ⌥D 또는 ⌥F: 다음 프로필").font(.caption)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }
-                GroupBox("최근 창") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Toggle("패널 크기에 맞춰 자동 배치 · 전체 창 포함", isOn: $settings.automatic)
-                        HStack {
-                            Text("수동 최대 개수")
-                            TextField("최소 6", text: $countText).frame(width: 100).onSubmit(saveCount)
-                            Button("적용", action: saveCount)
-                        }.disabled(settings.automatic)
-                        if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("앱이 바뀌는 곳은 가로형, 같은 앱이 연속되면 정사각형입니다. 현재 데스크탑은 배경색으로 구분합니다. 최대 3.3줄로 다음 줄의 일부까지 보여주며 아래로 스크롤할 수 있습니다. 작은 화면에서는 표시 영역을 줄입니다.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }
-                GroupBox("권한") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Button("접근성 권한 설정", action: requestPermission)
-                        Text("창 전환과 앱 메뉴 실행·수집에 사용합니다.").font(.caption).foregroundStyle(.secondary)
-                        Button("앱 관리 설정 보기", action: openAppManagementSettings)
-                        Text("다른 앱을 업데이트·삭제할 수 있는 권한입니다. Tile Launcher에는 해당 기능이 없습니다. 앱 실행 중 이 권한의 차단 알림이 나타날 때 상태를 확인하는 용도로 제공합니다.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }
-                Text(AppIdentity.versionLabel).font(.caption).foregroundStyle(.secondary)
-            }.padding(16)
         }
     }
     private var registered: some View {
@@ -176,10 +123,7 @@ struct SettingsView: View {
             Text("앞의 10개에 1–9, 0이 표시됩니다. 순서를 바꾸면 숫자도 바뀝니다.").font(.caption).foregroundStyle(.secondary)
         }.padding(16)
     }
-    private func saveCount() {
-        guard let value = Int(countText.trimmingCharacters(in: .whitespaces)), value >= 6 else { invalidCount = true; return }
-        invalidCount = false; settings.manualCount = value
-    }
+
 }
 
 struct MenuSettingsView: View {
@@ -187,6 +131,7 @@ struct MenuSettingsView: View {
     let preferredApp: AppItem?
     let additionRequest: MenuAdditionRequest?
     let additionSize: CGSize
+    var applicationProvider: (() -> [AppItem])? = nil
     @StateObject private var catalog = MenuCatalog()
     @State private var applications: [AppItem] = []
     @State private var selectedID = ""
@@ -197,6 +142,7 @@ struct MenuSettingsView: View {
     @State private var invalidHistory = false
     @State private var showingAddition = false
     @State private var handledRequestID: UUID?
+    @State private var configurationHeight: CGFloat = 360
     private var selectedApp: AppItem? { applications.first { $0.id == selectedID } }
     private var appNames: [(id: String, name: String)] {
         var names = Dictionary(settings.commands.map { ($0.appID, $0.appName) }, uniquingKeysWith: { first, _ in first })
@@ -208,14 +154,55 @@ struct MenuSettingsView: View {
         return names.map { (id: $0.key, name: $0.value) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     var body: some View {
-        ScrollView {
+        GeometryReader { geometry in
+            VStack(alignment: .leading, spacing: 12) {
+                ScrollView {
+                    configuration
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(GeometryReader { content in
+                            Color.clear.preference(key: MenuConfigurationHeight.self, value: content.size.height)
+                        })
+                }
+                .scrollIndicators(.visible)
+                .frame(height: min(configurationHeight, max(120, geometry.size.height - 230)))
+                .onPreferenceChange(MenuConfigurationHeight.self) { height in
+                    if height > 0, abs(height - configurationHeight) > 0.5 { configurationHeight = height }
+                }
+                savedMenus.frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+                    HStack {
+                        Button("메뉴 추가…") { beginAddition(app: nil) }
+                        Spacer()
+                    }
+                }.fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(16)
+        .onAppear {
+            refreshApps()
+            handleAdditionRequest()
+        }
+        .onChange(of: additionRequest?.id) { _, _ in handleAdditionRequest() }
+        .sheet(isPresented: $showingAddition) {
+            MenuAdditionSheet(settings: settings, catalog: catalog, selectedID: $selectedID,
+                              search: $search, manualPath: $manualPath, appNames: appNames,
+                              selectedApp: selectedApp, size: additionSize,
+                              refreshApps: {
+                                  refreshApps()
+                                  if let app = selectedApp { catalog.load(app: app) }
+                              }, dismiss: { showingAddition = false })
+                .task(id: selectedID) {
+                    if let app = selectedApp { catalog.load(app: app) } else { catalog.clear() }
+                }
+                .onDisappear { catalog.clear() }
+        }
+    }
+    private var configuration: some View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox("자동 메뉴 수집 · 실험 기능") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("모든 앱의 메뉴 막대에서 선택한 메뉴 수집", isOn: $settings.menuCapture.enabled)
-                    Text("메뉴 클릭과 열린 메뉴·Help 검색의 Enter 선택을 기록합니다. Apple 로고의 시스템 메뉴 전체, 단축키 직접 실행, 리본·우클릭 메뉴는 제외합니다. 복사·붙여넣기도 메뉴에서 선택했다면 수집합니다.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Text("앱이 메뉴 정보를 제공하지 않으면 일부 선택이 누락될 수 있습니다. 검색어·입력 문자는 저장하지 않습니다.")
+                    Text("메뉴 막대에서 직접 선택한 메뉴를 기록합니다. 일부 앱에서는 수집이 누락될 수 있습니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
             }
@@ -233,8 +220,6 @@ struct MenuSettingsView: View {
                         Spacer()
                         Button("적용", action: saveHistory)
                     }
-                    Text("기간이 지나고 최근 5개에서도 벗어난 메뉴만 최근 목록에서 숨깁니다. 고정 메뉴는 유지하며, 아래 목록에서 다시 고정할 수 있습니다.")
-                        .font(.caption).foregroundStyle(.secondary)
                     if invalidHistory { Text("기간은 1–36,500일로 입력해 주세요.").font(.caption).foregroundStyle(.red) }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
             }.onAppear {
@@ -267,10 +252,22 @@ struct MenuSettingsView: View {
                     }.disabled(!settings.menuCapture.excludedMenus.contains { $0.appID == selectedID })
                 }
             }
-            Text("자동 수집 메뉴는 최근 선택 순으로 표시됩니다. 설정한 자주 사용 기간 안에 런처 실행과 메뉴 선택을 합쳐 3회 이상이면 가로형으로 커지고, 고정 메뉴는 맨 앞에 표시됩니다.")
-                .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("수집과 표시 안내") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("메뉴 클릭과 열린 메뉴·Help 검색의 Enter 선택을 기록합니다. Apple 로고의 시스템 메뉴 전체, 단축키 직접 실행, 리본·우클릭 메뉴는 제외합니다. 복사·붙여넣기도 메뉴에서 선택했다면 수집합니다.")
+                    Text("앱이 메뉴 정보를 제공하지 않으면 일부 선택이 누락될 수 있습니다. 검색어·입력 문자는 저장하지 않습니다.")
+                    Text("기간이 지나고 최근 5개에서도 벗어난 메뉴만 최근 목록에서 숨깁니다. 고정 메뉴는 유지하며, 아래 목록에서 다시 고정할 수 있습니다.")
+                    Text("자동 수집 메뉴는 최근 선택 순으로 표시됩니다. 설정한 자주 사용 기간 안에 런처 실행과 메뉴 선택을 합쳐 3회 이상이면 가로형으로 커지고, 고정 메뉴는 맨 앞에 표시됩니다.")
+                }.font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private var savedMenus: some View {
+        let commands = MenuCommand.ordered(settings.commands, appID: selectedID, history: settings.menuHistory, includingHidden: true)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("자동 수집·고정 메뉴 \(commands.count)개").font(.caption).foregroundStyle(.secondary)
             List {
-                ForEach(MenuCommand.ordered(settings.commands, appID: selectedID, history: settings.menuHistory, includingHidden: true)) { command in
+                ForEach(commands) { command in
                     HStack {
                         MenuCommandDetails(command: command)
                         Spacer()
@@ -284,27 +281,12 @@ struct MenuSettingsView: View {
                         Button { settings.removeCommand(command) } label: { Image(systemName: "minus.circle") }.help("목록에서 삭제하고 자동 수집에서도 제외")
                     }.buttonStyle(.borderless)
                 }
-            }.frame(height: 180)
-            Divider()
-            Button("메뉴 추가…") { beginAddition(app: nil) }
-        }.padding(16)
-        }.onAppear {
-            refreshApps()
-            handleAdditionRequest()
-        }
-        .onChange(of: additionRequest?.id) { _, _ in handleAdditionRequest() }
-        .sheet(isPresented: $showingAddition) {
-            MenuAdditionSheet(settings: settings, catalog: catalog, selectedID: $selectedID,
-                              search: $search, manualPath: $manualPath, appNames: appNames,
-                              selectedApp: selectedApp, size: additionSize,
-                              refreshApps: {
-                                  refreshApps()
-                                  if let app = selectedApp { catalog.load(app: app) }
-                              }, dismiss: { showingAddition = false })
-                .task(id: selectedID) {
-                    if let app = selectedApp { catalog.load(app: app) } else { catalog.clear() }
+            }.overlay {
+                if commands.isEmpty {
+                    Text("메뉴를 추가하거나 앱의 메뉴 막대에서 선택해 보세요.")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
-                .onDisappear { catalog.clear() }
+            }
         }
     }
     private func beginAddition(app: AppItem?) {
@@ -333,13 +315,18 @@ struct MenuSettingsView: View {
         settings.menuHistory = MenuHistoryPreferences(recentDays: recent, frequentDays: frequent)
     }
     private func refreshApps() {
-        applications = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
+        applications = applicationProvider?() ?? NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
             .compactMap { app in
                 guard let id = app.bundleIdentifier ?? app.bundleURL?.path else { return nil }
                 return AppItem(id: id, pid: app.processIdentifier, name: app.localizedName ?? id, url: app.bundleURL)
             }
         if selectedID.isEmpty { selectedID = preferredApp?.id ?? applications.first?.id ?? settings.commands.first?.appID ?? "" }
     }
+}
+
+private struct MenuConfigurationHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 /// Shared by the real settings list and the isolated native preview.
