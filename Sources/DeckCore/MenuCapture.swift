@@ -91,23 +91,14 @@ public enum MenuCaptureHistory {
     public static func record(_ menu: CapturedMenu, in commands: [MenuCommand], at date: Date) -> [MenuCommand] {
         var result = commands
         if let i = result.firstIndex(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) {
-            result[i].observedCount = min(Int.max - 1, result[i].observedCount) + 1
-            result[i].lastUsed = date
+            result[i].recordUse(at: date, observed: true)
         } else {
             var command = MenuCommand(appID: menu.identity.appID, appName: menu.appName, path: menu.identity.path, isPinned: false)
-            command.isAutomatic = true; command.observedCount = 1; command.lastUsed = date
+            command.isAutomatic = true; command.recordUse(at: date, observed: true)
             result.append(command)
         }
-        // Bound only unpinned automatic history; never evict manual registrations or pins.
-        let eligible = result.filter { $0.isAutomatic && !$0.isPinned }
-            .sorted { ($0.lastUsed ?? .distantPast) > ($1.lastUsed ?? .distantPast) }
-        var counts: [String: Int] = [:]
-        var keep = Set<UUID>()
-        for command in eligible where keep.count < 500 {
-            if counts[command.appID, default: 0] < 100 {
-                keep.insert(command.id); counts[command.appID, default: 0] += 1
-            }
-        }
-        return result.filter { !$0.isAutomatic || $0.isPinned || keep.contains($0.id) }
+        // Visibility uses the user-selected lookback OR the app-local recent five.
+        // Keep compact metadata so changing the lookback can restore older items.
+        return result
     }
 }

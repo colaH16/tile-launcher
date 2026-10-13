@@ -17,7 +17,7 @@ final class DeckPanel: NSPanel {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let runningBuild: AppBuild
-    private var replacementRequested = false
+    private lazy var replacement = BuildReplacement(running: runningBuild)
     init(build: AppBuild) {
         runningBuild = build
         super.init()
@@ -232,25 +232,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func reopenExistingInterface(settings: Bool = false, checkForUpdate: Bool = true) {
         // Finder/open may reuse this process even after the app at the same path
         // was rebuilt. Start a new instance so the normal handoff policy can run.
-        if checkForUpdate, let diskBuild = try? InstanceCoordinator.build(at: Bundle.main.bundleURL),
-           diskBuild != runningBuild {
-            guard !replacementRequested else { return }
-            replacementRequested = true
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.createsNewApplicationInstance = true
-            configuration.arguments = [settings ? "--settings" : "--show"]
-            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { [weak self] _, failure in
-                DispatchQueue.main.async {
-                    if let failure {
-                        self?.replacementRequested = false
-                        self?.error("새 빌드를 열지 못했습니다. \(failure.localizedDescription)")
-                    }
-                }
+        if checkForUpdate {
+            do {
+                if try replacement.requestIfChanged(arguments: [settings ? "--settings" : "--show"], onFailure: { [weak self] in
+                    self?.error("새 빌드를 열지 못했습니다. \($0)")
+                }) { return }
+            } catch {
+                self.error("설치된 빌드를 확인하지 못했습니다. \(error.localizedDescription)")
+                return
             }
-            // Permit another attempt if the replacement could not complete its startup.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.replacementRequested = false }
-            return
         }
+        // Reopening is also an explicit recovery opportunity after a temporary
+        // menu/permission failure, even when the build has not changed.
+        checkPermission(force: true)
         if settings { openSettings(); return }
         if let preferences, preferences.isVisible {
             NSApp.activate()
@@ -271,13 +265,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
+        let menuNow = Date()
         let snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid }?.title,
                                        apps: Array(apps.prefix(3)),
                                        windows: Array(windows.prefix(count)), layout: layout, permission: trusted,
                                        pins: settings.pins, profileID: settings.activeProfile.id,
                                        profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
-                                       commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? ""))
+                                       commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
+                                       frequentMenuIDs: MenuCommand.frequentIDs(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow))
         let content = OverlayContent(snapshot)
         visibleContent = content
         let folderBrowser = FolderBrowser()
@@ -386,7 +382,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
-                                commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount)
+                                commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
+                                menuHistory: settings.menuHistory)
     }
     private func hide() {
         pinnedRefresh?.cancel()

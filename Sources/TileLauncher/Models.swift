@@ -36,12 +36,14 @@ struct OverlaySnapshot: Equatable {
     let profileName: String
     let shortcuts: NumberShortcutAssignment
     let commands: [MenuCommand]
+    var frequentMenuIDs: Set<UUID> = []
 }
 final class OverlayContent: ObservableObject {
     @Published var snapshot: OverlaySnapshot
     init(_ snapshot: OverlaySnapshot) { self.snapshot = snapshot }
     func refresh(context: AppItem?, apps: [AppItem], windows: [WindowItem],
-                 trusted: Bool, commands: [MenuCommand], manualCount: Int?) {
+                 trusted: Bool, commands: [MenuCommand], manualCount: Int?,
+                 menuHistory: MenuHistoryPreferences = .init(), now: Date = Date()) {
         let old = snapshot
         let count = old.layout.windowLimit(manual: manualCount, actual: windows.count)
         let next = OverlaySnapshot(context: context,
@@ -49,7 +51,8 @@ final class OverlayContent: ObservableObject {
                                    apps: Array(apps.prefix(3)), windows: Array(windows.prefix(count)),
                                    layout: old.layout, permission: trusted, pins: old.pins,
                                    profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
-                                   commands: MenuCommand.ordered(commands, appID: context?.id ?? ""))
+                                   commands: MenuCommand.ordered(commands, appID: context?.id ?? "", history: menuHistory, at: now),
+                                   frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: context?.id ?? "", history: menuHistory, at: now))
         if next != old { snapshot = next }
     }
 }
@@ -62,6 +65,7 @@ final class SettingsStore: ObservableObject {
     @Published var focusProfileID: String?
     @Published var numberShortcuts: NumberShortcutAssignment { didSet { save() } }
     @Published var commands: [MenuCommand] { didSet { save() } }
+    @Published var menuHistory: MenuHistoryPreferences { didSet { save() } }
     @Published var menuCapture: MenuCapturePreferences { didSet { save() } }
     @Published var menuCaptureStatus: [String: String] = [:]
     var activeProfile: LauncherProfile {
@@ -121,14 +125,14 @@ final class SettingsStore: ObservableObject {
     }
     func recordUse(_ id: UUID) {
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
-        commands[i].useCount = min(Int.max - 1, commands[i].useCount) + 1
-        commands[i].lastUsed = Date()
+        commands[i].recordUse(at: Date())
     }
     func moveCommand(_ id: UUID, by offset: Int) {
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
-        guard commands[i].isWide else { return }
+        let now = Date()
+        guard commands[i].isWide(history: menuHistory, at: now) else { return }
         let peers = commands.indices.filter {
-            commands[$0].appID == commands[i].appID && commands[$0].isPinned == commands[i].isPinned && commands[$0].isWide
+            commands[$0].appID == commands[i].appID && commands[$0].isPinned == commands[i].isPinned && commands[$0].isWide(history: menuHistory, at: now)
         }
         guard let old = peers.firstIndex(of: i), peers.indices.contains(old + offset) else { return }
         commands.swapAt(i, peers[old + offset])
@@ -147,6 +151,7 @@ final class SettingsStore: ObservableObject {
         followFocus = defaults.object(forKey: "followFocus") as? Bool ?? true
         numberShortcuts = defaults.string(forKey: "numberShortcuts").flatMap(NumberShortcutAssignment.init(rawValue:)) ?? .registeredFirst
         commands = defaults.data(forKey: "menuCommands").flatMap { try? JSONDecoder().decode([MenuCommand].self, from: $0) } ?? []
+        menuHistory = MenuHistoryPreferences.restore(defaults.data(forKey: "menuHistoryPreferences"))
         menuCapture = MenuCapturePreferences.restore(defaults.data(forKey: "menuCapturePreferences"))
         automatic = defaults.object(forKey: "automaticWindowCount") as? Bool ?? true
         optionTriggerEnabled = defaults.object(forKey: "optionTriggerEnabled") as? Bool ?? true
@@ -162,6 +167,7 @@ final class SettingsStore: ObservableObject {
             defaults.set(data, forKey: "pinnedItems")
         }
         if let data = try? JSONEncoder().encode(commands) { defaults.set(data, forKey: "menuCommands") }
+        if let data = try? JSONEncoder().encode(menuHistory) { defaults.set(data, forKey: "menuHistoryPreferences") }
         if let data = try? JSONEncoder().encode(menuCapture) { defaults.set(data, forKey: "menuCapturePreferences") }
         defaults.set(manualProfileID, forKey: "manualProfileID")
         defaults.set(followFocus, forKey: "followFocus")

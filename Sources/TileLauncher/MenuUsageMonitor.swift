@@ -17,6 +17,8 @@ final class MenuUsageMonitor {
 
     // Queue-owned state.
     private var app: AppItem?
+    private var lifecycle = MenuObservationLifecycle()
+    private var retryWork: DispatchWorkItem?
     private var preferences = MenuCapturePreferences()
     private var observer: AXObserver?
     private var subscriptions: [(AXUIElement, String)] = []
@@ -38,7 +40,8 @@ final class MenuUsageMonitor {
     func start() {
         stop()
         let center = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didLaunchApplicationNotification,
+                     NSWorkspace.didTerminateApplicationNotification,
                      NSWorkspace.didWakeNotification] {
             workspaceTokens.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 self?.refresh()
@@ -66,7 +69,10 @@ final class MenuUsageMonitor {
             }
         } else if let inputMonitor { NSEvent.removeMonitor(inputMonitor); self.inputMonitor = nil }
         let canObserve = trusted && target.map { options.allows(appID: $0.id) } == true
-        queue.async { [weak self] in self?.configure(canObserve ? target : nil, preferences: options) }
+        let process = canObserve ? target.flatMap { ProcessIdentity.read(pid: $0.pid) } : nil
+        queue.async { [weak self] in
+            self?.configure(process == nil ? nil : target, process: process, preferences: options)
+        }
     }
     func stop() {
         workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
@@ -147,19 +153,34 @@ final class MenuUsageMonitor {
             }
         }
     }
-    private func configure(_ target: AppItem?, preferences: MenuCapturePreferences) {
+    private func configure(_ target: AppItem?, process: ProcessIdentity?, preferences: MenuCapturePreferences) {
         self.preferences = preferences
-        if app == target { return }
+        if app == target, lifecycle.process == process, bar != nil { return }
         tearDown()
         app = target
-        guard let target else { return }
+        let generation = lifecycle.begin(process)
+        guard let target, process != nil else { return }
+        connect(target, generation: generation)
+    }
+    private func connect(_ target: AppItem, generation: UInt64) {
+        guard lifecycle.accepts(generation), app == target,
+              ProcessIdentity.read(pid: target.pid) == lifecycle.process else { return }
         let reader = MenuAXReader(app: target, budget: 0.2)
         let application = AXUIElementCreateApplication(target.pid)
         guard let bar = reader.element(application, kAXMenuBarAttribute) else {
-            status("메뉴 정보를 읽을 수 없어 수집을 건너뜁니다.", for: target)
+            if let delay = lifecycle.retryDelay(generation: generation) {
+                status("메뉴 준비를 기다리는 중 · 잠시 후 다시 연결합니다.", for: target)
+                let work = DispatchWorkItem { [weak self] in self?.connect(target, generation: generation) }
+                retryWork = work
+                queue.asyncAfter(deadline: .now() + delay, execute: work)
+            } else {
+                status("메뉴 정보를 읽지 못했습니다. 이 앱으로 다시 전환하면 재시도합니다.", for: target)
+            }
             return
         }
+        retryWork = nil
         self.bar = bar
+        lifecycle.connected(generation: generation)
         var created: AXObserver?
         let callback: AXObserverCallback = { _, element, notification, context in
             guard let context else { return }
@@ -261,6 +282,8 @@ final class MenuUsageMonitor {
         closedAt = nil
     }
     private func tearDown() {
+        retryWork?.cancel(); retryWork = nil
+        lifecycle.begin(nil)
         if let observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
             for (element, name) in subscriptions { AXObserverRemoveNotification(observer, element, name as CFString) }

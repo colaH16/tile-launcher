@@ -30,9 +30,8 @@ final class PreviewFixture: ObservableObject {
             MenuCommand(appID: app.id, appName: app.name, path: ["이동", "폴더로 이동…"], isPinned: false),
             MenuCommand(appID: app.id, appName: app.name, path: ["보기", "확대"], isPinned: false)
         ]
-        commands[2].useCount = 4
-        commands[3].useCount = 1
-        commands[3].lastUsed = Date(timeIntervalSince1970: 100)
+        for _ in 0..<4 { commands[2].recordUse(at: Date()) }
+        commands[3].recordUse(at: Date())
         settings.commands = commands
         var windows: [WindowItem] = []
         for index in 0..<16 {
@@ -48,13 +47,31 @@ final class PreviewFixture: ObservableObject {
                                            cursor: CGPoint(x: 720, y: 500)).fittingContent(registeredCount: pins.count)
         content = OverlayContent(OverlaySnapshot(context: app, contextWindowTitle: "미리보기 문서",
                     apps: [app], windows: windows, layout: layout, permission: true, pins: pins,
-                    profileID: "default", profileName: "기본", shortcuts: .registeredFirst, commands: commands))
+                    profileID: "default", profileName: "기본", shortcuts: .registeredFirst, commands: commands,
+                    frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: app.id)))
         presentation.profile = settings.activeProfile
         presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
         // Keep the synthetic panel unpinned, so its drag representable cannot affect a preview host window.
     }
     deinit { defaults.removePersistentDomain(forName: suite) }
     func verifySettingsRoundTrip() throws {
+        let before = content.snapshot
+        let now = Date()
+        func refresh(at date: Date) {
+            content.refresh(context: before.context, apps: before.apps, windows: before.windows,
+                            trusted: true, commands: settings.commands, manualCount: nil, now: date)
+        }
+        refresh(at: now)
+        let current = content.snapshot
+        refresh(at: now.addingTimeInterval(1))
+        guard content.snapshot == current, !current.frequentMenuIDs.isEmpty else {
+            throw NSError(domain: "TileLauncher.Preview", code: 8)
+        }
+        refresh(at: now.addingTimeInterval(91 * 86_400))
+        guard content.snapshot.frequentMenuIDs.isEmpty, !before.frequentMenuIDs.isEmpty else {
+            throw NSError(domain: "TileLauncher.Preview", code: 9)
+        }
+        print("OverlayContent: stable snapshot equality and date-based frequency refresh passed.")
         let originalProfiles = settings.profiles
         let originalCommands = settings.commands
         settings.tileColors.menus = TileColor(0xCC7722)
@@ -62,8 +79,10 @@ final class PreviewFixture: ObservableObject {
         settings.tileColors.registered = TileColor(0x448877)
         let expectedColors = settings.tileColors
         settings.theme = .glass
+        settings.menuHistory = MenuHistoryPreferences(recentDays: 45, frequentDays: 120)
         let restored = SettingsStore(defaults: defaults)
         guard restored.tileColors == expectedColors, restored.theme == .glass,
+              restored.menuHistory == settings.menuHistory,
               restored.profiles == originalProfiles, restored.commands == originalCommands else {
             throw NSError(domain: "TileLauncher.Preview", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "Settings persistence regression"])
@@ -74,13 +93,13 @@ final class PreviewFixture: ObservableObject {
               reset.tileColors.registered == expectedColors.registered else {
             throw NSError(domain: "TileLauncher.Preview", code: 4)
         }
-        print("SettingsStore: section colors, theme switch, single-section reset and existing data preservation passed.")
+        print("SettingsStore: history periods, section colors, theme switch, single-section reset and existing data preservation passed.")
         let captured = CapturedMenu(appID: "preview.editor", appName: "문서 편집기", path: ["편집", "복사"],
                                     shortcut: "c", commandModifier: true)
         settings.recordCapturedMenu(captured)
         let menusRestored = SettingsStore(defaults: defaults)
         guard let copy = menusRestored.commands.first(where: { $0.path == captured.identity.path }),
-              copy.isAutomatic, !copy.isPinned, copy.observedCount == 1 else {
+              copy.isAutomatic, !copy.isPinned, copy.observedCount == 1, copy.recentUses.count == 1 else {
             throw NSError(domain: "TileLauncher.Preview", code: 5)
         }
         menusRestored.removeCommand(copy)

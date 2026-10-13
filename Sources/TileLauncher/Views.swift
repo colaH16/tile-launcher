@@ -247,7 +247,7 @@ struct DeckView: View {
                     }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.buttonStyle(TileStyle())
             } else {
-                let packed = rows(menuItems.map { $0.isWide ? 2 : 1 }, columns: 4)
+                let packed = rows(menuItems.map { ($0.isPinned || snapshot.frequentMenuIDs.contains($0.id)) ? 2 : 1 }, columns: 4)
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: geometry.gap) {
                         ForEach(packed.indices, id: \.self) { row in
@@ -279,11 +279,11 @@ struct DeckView: View {
             .contextMenu {
                 Button(command.isPinned ? "고정 해제" : "앞에 고정") {
                     settings.togglePin(command.id)
-                    editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID)
+                    editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID, history: settings.menuHistory)
                 }
                 Button("목록에서 삭제하고 자동 수집 제외") {
                     settings.removeCommand(command)
-                    editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID)
+                    editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID, history: settings.menuHistory)
                 }
             }
     }

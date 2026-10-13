@@ -78,7 +78,7 @@ final class TileWorkflowTests: XCTestCase {
         var b = MenuCommand(appID: "excel", appName: "Excel", path: ["파일", "B"], isPinned: false)
         let c = MenuCommand(appID: "excel", appName: "Excel", path: ["파일", "C"])
         let foreign = MenuCommand(appID: "safari", appName: "Safari", path: ["파일", "D"])
-        a.useCount = 3; b.lastUsed = Date()
+        for _ in 0..<3 { a.recordUse(at: Date()) }; b.recordUse(at: Date())
         XCTAssertEqual(MenuCommand.ordered([a, b, foreign, c], appID: "excel").map(\.title), ["C", "A", "B"])
         XCTAssertTrue(a.isWide)
         XCTAssertFalse(b.isWide)

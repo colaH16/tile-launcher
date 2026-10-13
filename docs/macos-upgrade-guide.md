@@ -235,3 +235,13 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - 다른 앱을 클릭한 뒤에는 해당 앱의 ⌘W/⌘,를 가로채지 않아야 한다. 키 창 여부, 키 반복 억제, 숫자로 대기 중인 선택의 취소, 메뉴/프로필 변경 후 다시 고정하는 경로를 확인한다. 합성 NSEvent 및 단위 테스트와 실제 키보드 검증을 구분한다.
 - 등록 타일의 최소 60pt 정사각형·32pt 아이콘·8pt 간격·12pt 연속 곡선은 현재 앱의 조정값이며 Apple 규격이 아니다. 512–1,040pt 폭/열 수 전환점에서 그리드와 선반 높이가 같은 기하를 사용하는지, 0/1/14/35/200개와 긴 이름·숫자 배지가 잘리지 않는지 확인한다. 다크/라이트·대비 증가·투명도 줄이기·포커스/VoiceOver를 검증하고 개별 타일마다 불필요한 유리 합성이나 블러를 추가하지 않는다.
 - 2026-10-12 참고한 Apple 공식 자료: [키 이벤트와 key equivalents](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/HandlingKeyEvents/HandlingKeyEvents.html), [앱 활성화 요청](https://developer.apple.com/documentation/appkit/nsapplication/activate()), [key window](https://developer.apple.com/documentation/appkit/nsapplication/keywindow). 이벤트 설명은 보관 문서이므로 다음 업그레이드 시 최신 SDK 선언·공식 자료와 실제 동작을 함께 재확인한다.
+
+
+## R83–R86 · 메뉴 기간·재연결·실행 교체
+
+- 날짜를 고정한 테스트로 앱별 최근 5개가 30일 이후에도 남는지, 6번째 이후도 30일 안이면 남는지, 정확한 경계·앱 분리·고정 제외·90일 빈도·기간 변경 후 복구를 검사한다. 이전 날짜 없는 카운터는 마지막 1회 외에 날짜를 추정하지 않는다.
+- 전경 앱이 런처보다 먼저 실행된 경우, 실행 직후 메뉴가 아직 준비되지 않은 경우, 종료/재실행/PID 재사용, 일시 응답 없음, 권한 변경을 나눠 검사한다. 앱 전환/수집 중단 뒤 오래된 예약이 다시 옵저버를 붙이면 안 된다. 제한 재시도 후 유휴 폴링을 시작하지 않는다.
+- 당시 SDK의 AXUIElementSetMessagingTimeout 선언과 실제 시간 초과 동작을 다시 확인한다. 짧은 타임아웃/백그라운드 큐만으로 전체 작업의 엄밀한 시간 상한이나 무누락 수집을 주장하지 않는다.
+- Apple [didLaunchApplicationNotification](https://developer.apple.com/documentation/appkit/nsworkspace/didlaunchapplicationnotification)의 일반/LSUIElement 앱 차이와 NSWorkspace 전경 앱 전환을 재확인한다. 현재 수집 범위를 유지하는 한 전 앱에 메뉴 옵저버를 붙일 필요는 없다.
+- 실행 교체는 같은 빌드, 업그레이드, 다운그레이드, 동일 버전/경로 덮어쓰기 후 재열기, 서로 다른 경로, 종료 거부를 나눠 검사한다. [createsNewApplicationInstance](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration/createsnewapplicationinstance)와 allowsRunningApplicationSubstitution의 당시 동작을 확인한다.
+- `scripts/verify-instance-handoff.py`는 생산 InstanceCoordinator/BuildReplacement를 고유 ID의 창 없는 fixture에서 검사한다. 사용자 앱을 종료/활성화하거나 실제 접근성 권한을 쓰지 않는다. 이 결과와 실제 사용자 앱 교체/권한 유지 검증을 구분한다. 진단 시 OSLog의 `dev.cola16.TileLauncher` / `instance` 항목과 실행 소유자 기록의 빌드 ID를 비교한다.

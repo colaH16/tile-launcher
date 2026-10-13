@@ -177,6 +177,9 @@ struct MenuSettingsView: View {
     @State private var selectedID = ""
     @State private var search = ""
     @State private var manualPath = ""
+    @State private var recentDaysText = ""
+    @State private var frequentDaysText = ""
+    @State private var invalidHistory = false
     private var selectedApp: AppItem? { applications.first { $0.id == selectedID } }
     private var appNames: [(id: String, name: String)] {
         var names = Dictionary(settings.commands.map { ($0.appID, $0.appName) }, uniquingKeysWith: { first, _ in first })
@@ -197,6 +200,28 @@ struct MenuSettingsView: View {
                     Text("앱이 메뉴 정보를 제공하지 않으면 일부 선택이 누락될 수 있습니다. 검색어·입력 문자는 저장하지 않습니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
+            GroupBox("최근·자주 사용 기간") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("최근 사용")
+                        TextField("30", text: $recentDaysText).frame(width: 70).accessibilityLabel("최근 사용 기간, 일")
+                        Text("일 또는 앱별 최근 5개")
+                    }
+                    HStack {
+                        Text("자주 사용")
+                        TextField("90", text: $frequentDaysText).frame(width: 70).accessibilityLabel("자주 사용 기간, 일")
+                        Text("일 안에 3회 이상")
+                        Spacer()
+                        Button("적용", action: saveHistory)
+                    }
+                    Text("기간이 지나고 최근 5개에서도 벗어난 메뉴만 최근 목록에서 숨깁니다. 고정 메뉴는 유지하며, 아래 목록에서 다시 고정할 수 있습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if invalidHistory { Text("기간은 1–36,500일로 입력해 주세요.").font(.caption).foregroundStyle(.red) }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }.onAppear {
+                recentDaysText = String(settings.menuHistory.recentDays)
+                frequentDaysText = String(settings.menuHistory.frequentDays)
             }
             HStack {
                 Picker("앱", selection: $selectedID) {
@@ -224,16 +249,16 @@ struct MenuSettingsView: View {
                     }.disabled(!settings.menuCapture.excludedMenus.contains { $0.appID == selectedID })
                 }
             }
-            Text("자동 수집 메뉴는 최근 선택 순으로 표시됩니다. 런처 실행과 메뉴 선택을 합쳐 3회 이상이면 가로형으로 커지고, 고정 메뉴는 맨 앞에 표시됩니다.")
+            Text("자동 수집 메뉴는 최근 선택 순으로 표시됩니다. 설정한 자주 사용 기간 안에 런처 실행과 메뉴 선택을 합쳐 3회 이상이면 가로형으로 커지고, 고정 메뉴는 맨 앞에 표시됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             List {
-                ForEach(MenuCommand.ordered(settings.commands, appID: selectedID)) { command in
+                ForEach(MenuCommand.ordered(settings.commands, appID: selectedID, history: settings.menuHistory, includingHidden: true)) { command in
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(command.title)
                             Text(command.path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary)
                             if command.observedCount > 0 {
-                                Text("메뉴에서 선택 \(command.observedCount)회").font(.caption2).foregroundStyle(.secondary)
+                                Text("메뉴에서 선택 누적 \(command.observedCount)회").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
@@ -241,9 +266,9 @@ struct MenuSettingsView: View {
                             Image(systemName: command.isPinned ? "pin.fill" : "pin")
                         }.help(command.isPinned ? "고정 해제" : "앞에 고정")
                         Button { settings.moveCommand(command.id, by: -1) } label: { Image(systemName: "chevron.up") }
-                            .disabled(!command.isWide).help("고정·자주 사용 그룹 안에서 앞으로 이동")
+                            .disabled(!command.isWide(history: settings.menuHistory)).help("고정·자주 사용 그룹 안에서 앞으로 이동")
                         Button { settings.moveCommand(command.id, by: 1) } label: { Image(systemName: "chevron.down") }
-                            .disabled(!command.isWide).help("고정·자주 사용 그룹 안에서 뒤로 이동")
+                            .disabled(!command.isWide(history: settings.menuHistory)).help("고정·자주 사용 그룹 안에서 뒤로 이동")
                         Button { settings.removeCommand(command) } label: { Image(systemName: "minus.circle") }.help("목록에서 삭제하고 자동 수집에서도 제외")
                     }.buttonStyle(.borderless)
                 }
@@ -284,6 +309,15 @@ struct MenuSettingsView: View {
         }.padding(16)
         }.onAppear(perform: refreshApps)
             .onChange(of: selectedID) { _, _ in catalog.clear() }
+    }
+    private func saveHistory() {
+        guard let recent = Int(recentDaysText.trimmingCharacters(in: .whitespaces)),
+              let frequent = Int(frequentDaysText.trimmingCharacters(in: .whitespaces)),
+              MenuHistoryPreferences.dayRange.contains(recent), MenuHistoryPreferences.dayRange.contains(frequent) else {
+            invalidHistory = true; return
+        }
+        invalidHistory = false
+        settings.menuHistory = MenuHistoryPreferences(recentDays: recent, frequentDays: frequent)
     }
     private func refreshApps() {
         applications = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }

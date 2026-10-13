@@ -108,21 +108,21 @@ final class MenuCaptureTests: XCTestCase {
         let decoded = try JSONDecoder().decode(MenuCommand.self, from: JSONSerialization.data(withJSONObject: object))
         XCTAssertEqual(decoded, command)
     }
-    func testHistoryLimitsNeverEvictManualOrPinnedEntries() {
+    func testRecordingNeverEvictsRecentOrMonthlyAppHistory() {
         let manual = MenuCommand(appID: "finder", appName: "Finder", path: ["File", "Manual"])
         var pinned = MenuCommand(appID: "finder", appName: "Finder", path: ["File", "Pinned"])
         pinned.isAutomatic = true
         var history = [manual, pinned]
         for i in 0..<110 { history = MenuCaptureHistory.record(menu("Item \(i)"), in: history, at: Date(timeIntervalSince1970: Double(i))) }
-        XCTAssertEqual(history.count, 102)
+        XCTAssertEqual(history.count, 112)
         XCTAssertTrue(history.contains { $0.id == manual.id })
         XCTAssertTrue(history.contains { $0.id == pinned.id })
-        XCTAssertFalse(history.contains { $0.title == "Item 0" })
+        XCTAssertTrue(history.contains { $0.title == "Item 0" })
         for i in 0..<510 {
             history = MenuCaptureHistory.record(menu("Item \(i)", app: "app\(i)"), in: history,
                                                 at: Date(timeIntervalSince1970: Double(i + 200)))
         }
-        XCTAssertEqual(history.filter { $0.isAutomatic && !$0.isPinned }.count, 500)
+        XCTAssertEqual(history.filter { $0.isAutomatic && !$0.isPinned }.count, 620)
         XCTAssertTrue(history.contains { $0.id == manual.id })
         XCTAssertTrue(history.contains { $0.id == pinned.id })
     }

@@ -1,10 +1,12 @@
 import AppKit
 import CryptoKit
 import DeckCore
+import OSLog
 
 enum InstanceCoordinator {
     static let bundleID = AppIdentity.bundleID
     static let reopenName = Notification.Name("\(bundleID).reopen")
+    private static let log = Logger(subsystem: bundleID, category: "instance")
 
     static func build(at bundle: URL) throws -> AppBuild {
         // Read fresh data, not Bundle's cached Info dictionary, for in-place updates.
@@ -61,6 +63,7 @@ enum InstanceCoordinator {
                     try wait(until: deadline)
                 }
                 try JSONEncoder().encode(candidate).write(to: ownerURL, options: .atomic)
+                log.info("Acquired instance PID \(process.pid), build \(build.fingerprint.prefix(12), privacy: .public)")
                 return lock
             }
 
@@ -73,10 +76,14 @@ enum InstanceCoordinator {
                 if existing.decision(for: candidate) == .keepExisting {
                     // Its run loop/notification observer may still be starting.
                     if !app.isFinishedLaunching { try wait(until: deadline); continue }
+                    log.info("Keep existing PID \(existing.process.pid); candidate build \(build.fingerprint.prefix(12), privacy: .public)")
                     reopen()
                     return nil
                 }
                 if !app.isFinishedLaunching { try wait(until: deadline); continue }
+                if askedToQuit[existing.process.pid] == nil {
+                    log.info("Replace PID \(existing.process.pid): \(existing.build.fingerprint.prefix(12), privacy: .public) -> \(build.fingerprint.prefix(12), privacy: .public)")
+                }
                 try requestTermination(app, asked: &askedToQuit)
             } else {
                 // Migration from releases that held the lock without an owner record.
