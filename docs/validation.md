@@ -5,11 +5,14 @@
 ## R93–R95 · 개발용 서명 릴리스 준비
 
 - 사용자는 정식 GitHub 릴리스를 선택했고, 개발자 등록을 지금 완료할 수 없어 현재는 개발용 ad-hoc 서명만 요청했다. v0.2.0(4), Apple Silicon, 공증 없음으로 준비한다. Release/태그 게시나 유료 공증 제출은 실행하지 않는다.
-- XCTest **93개, 실패 0개**와 Python 배포 정책 테스트 **11개, 실패 0개** 통과. 로컬 리허설 업로드 금지, 미공증 업로드의 명시 선택, 리소스/실행 권한 변조, ZIP 경로·symlink, 알 수 없는 서명 상태, 검증 전 GitHub 호출 차단, 공증 결과 불명/진행/거절 상태의 중복 제출 방지를 검사했다. 공증 상태 테스트는 모의 응답이며 실제 Apple 서비스 검증이 아니다.
+- XCTest **93개, 실패 0개**와 Python 배포 정책 테스트 **12개, 실패 0개** 통과. 로컬 리허설 업로드 금지, 미공증 업로드의 명시 선택, 리소스/실행 권한 변조, ZIP 경로·symlink, 알 수 없는 서명 상태, 검증 전 GitHub 호출 차단, 공증 결과 불명/진행/거절 상태의 중복 제출 방지를 검사했다. 공증 상태 테스트는 모의 응답이며 실제 Apple 서비스 검증이 아니다.
 - `/tmp/tile-release-rehearsal`에서 실제 개발용 서명 패키징을 실행했다. ZIP을 재추출하여 앱 서명·아키텍처·아이콘·Focus 메타데이터·버전·빌드·소스 SHA·실행 권한 및 번들 트리 해시 일치를 확인했다. local_only=true 리허설이라 업로드할 수 없다. 로그는 `/tmp/tile-release-rehearsal.log`다.
 - 현재 `gh`는 로그인되지 않았고 유효한 Developer ID Application 인증서는 0개였다. 소스 푸시는 기존 SSH 경로를 사용한다. Developer ID/강화된 런타임/공증/GitHub 초안·게시 경로는 구현했지만 실제 자격 증명을 사용한 검증은 아직 하지 않았다.
 - Apple Events 권한은 향후 Developer ID 서명 시 Finder 통합 휴지통 요청을 위해 선언한다. get-task-allow/JIT/라이브러리 검증 해제는 넣지 않았다. 현재 ad-hoc 단계는 권한을 새로 켜지 않으며 사용자 앱을 설치/재실행하거나 시스템 보안을 변경하지 않는다.
-- 첫 깨끗한 커밋 빌드는 Desktop 아래 dist 경로에서 동기화 메타데이터가 붙어 codesign 검증에 실패했다. 기본 작업 경로를 Library/Developer/TileLauncher/releases로 바꾸고 알려진 동기화 폴더를 거부하도록 보완한다. 최종 배포 산출물은 보완 코드를 커밋한 뒤 그 깨끗한 커밋에서 생성하고 결과를 아래에 기록한다. 기록 당시까지 GitHub 공개 바이너리는 업로드하지 않았다.
+- 첫 깨끗한 커밋 빌드는 Desktop 아래 dist 경로에서 동기화 메타데이터가 붙어 codesign 검증에 실패했다. 기본 작업 경로를 Library/Developer/TileLauncher/releases로 바꾸고 알려진 동기화 폴더를 거부하도록 보완했다. 실패 산출물은 작업 폴더 밖 임시 백업으로 보존했다.
+- 최종 `29f6fa0bd6c413efe23f79a6f6752196b9452fb9` 커밋을 git archive로 추출해 새 소스 경로에서 빌드했다. `~/Library/Developer/TileLauncher/releases/v0.2.0/downloads/Tile-Launcher-0.2.0-arm64-unnotarized.zip`(1,931,145바이트), release-metadata.json, SHA256SUMS.txt와 릴리스 노트를 생성했다. ZIP SHA-256은 `a42c0b885e9c1a37e053a04d3b1e2c5c45cffca4189697cea47156a8c388cdda`다.
+- 최종 ZIP의 재추출 코드 서명/트리 해시/실행 권한/아이콘/Focus/버전·빌드·소스/아키텍처 검사 통과. local_only=false, signing=adhoc, prerelease=false를 확인했다. 이 검사는 Developer ID 신원 확인이나 Gatekeeper 공증 승인을 의미하지 않는다. 실제 다운로드 후 첫 실행의 시스템 경고/접근성 허용은 자동 조작하지 않았다.
+- 최종 로그는 `/tmp/tile-release-final.log`와 릴리스 폴더의 build.log다. 준비 파일은 실행 중인 개발 앱에 설치하지 않았고 GitHub 공개 바이너리·태그·초안도 생성하지 않았다. 현재 작업에서 푸시하는 것은 소스/문서뿐이다.
 
 ## R91–R92 · Focus 등록 점검·복귀 보완·공개 배포 안내
 
