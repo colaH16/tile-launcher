@@ -21,7 +21,7 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_regular_release_configuration_is_consistent(self):
         cfg = r.config()
-        self.assertEqual(cfg['version'], '0.2.0')
+        self.assertTrue((r.ROOT / 'release/notes.md').read_text().startswith('# Tile Launcher ' + cfg['version'] + '\n'))
         self.assertGreater(int(cfg['build']), 3)
         self.assertFalse(cfg['prerelease'])
         self.assertEqual(cfg['architecture'], 'arm64')

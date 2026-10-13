@@ -6,6 +6,13 @@
 
 최신 변경: R75–R77에서 모양 탭·세 섹션 색 선택·작업 화면을 건드리지 않는 사전 검사를 추가했습니다. R65–R73의 두 테마·활성 앱 추종·최종 아이콘 및 R61–R64의 3.3줄·임시 프로필 순환·Option 명령은 유지합니다. 아래 과거 시점의 기록은 현재 requirements.md와 함께 읽습니다.
 
+## R97 · 창 모서리와 그림자 합성
+
+- NSGlassEffectView.cornerRadius는 유리 모양을 지정하며 contentView 전체 클리핑을 보장하는 속성으로 취급하지 않는다. 2026-10-13 현재 SDK에서 유리/콘텐츠의 바깥 clipping mask가 없음을 화면 없는 네이티브 뷰 검사로 확인했다. [NSGlassEffectView](https://developer.apple.com/documentation/appkit/nsglasseffectview), [cornerRadius](https://developer.apple.com/documentation/appkit/nsglasseffectview/cornerradius)를 새 SDK에서 다시 확인한다.
+- DeckSurfaceView가 유리/SwiftUI 배경/자식 효과 전체의 외곽을 하나의 연속 곡선으로 자른다. 유리 내부 비공개 뷰/레이어를 직접 수정하지 않는다. NSWindow의 그림자는 유지하며 레이아웃 확정 뒤 invalidateShadow를 호출한다.
+- 네 모서리를 라이트·다크 배경, 두 테마, Retina/비Retina, 크기 변경, 고정 후 드래그, 다른 배율 화면으로 이동, 투명도 줄이기에서 확인한다. 둥근 모서리 밖 검은 선·직각 배경·잘린 그림자와 상단 버튼 입력을 점검한다.
+- 화면 밖 레이어 렌더링은 마스크와 alpha만 확인한다. 실제 데스크탑 뒤의 Glass/WindowServer 그림자·이동 시 잔상까지 검증됐다고 설명하지 않는다. 이를 확인하려고 사용자 작업 중 자동으로 창을 띄우거나 드래그하지 않는다.
+
 ## R80–R82 · 메뉴 막대 자동 수집
 
 - 현재 일반 앱의 AXMenuBar와 AXMenuOpened/Closed/ItemSelected, AXParent/Children/Enabled/Position/Size/Press 정보가 새 SDK·OS에서 어떻게 제공되는지 확인한다. 알림 등록 성공만으로 수신 성공을 선언하지 않는다.

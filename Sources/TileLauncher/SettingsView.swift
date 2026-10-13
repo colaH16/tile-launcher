@@ -62,7 +62,7 @@ struct SettingsView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
                 Button("접근성 권한 설정", action: requestPermission)
-                Text("개인용 개발 버전 0.2").font(.caption).foregroundStyle(.secondary)
+                Text(AppIdentity.versionLabel).font(.caption).foregroundStyle(.secondary)
             }.padding(16)
         }
     }

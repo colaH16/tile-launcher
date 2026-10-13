@@ -140,8 +140,8 @@ struct DeckView: View {
         .environment(\.deckTheme, settings.theme)
         .environment(\.tileColors, settings.tileColors)
         .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.72))
+            // The AppKit surface clips this fill and the native glass together.
+            Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.72)
         }
         .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
     }

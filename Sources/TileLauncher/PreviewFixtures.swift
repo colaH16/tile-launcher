@@ -182,6 +182,7 @@ struct DeckPreview: View {
                  showSettings: {}, requestPermission: {}, pinOverlay: {}, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(DeckSurfaceView.shape)
     }
 }
 
@@ -226,6 +227,7 @@ enum PreviewExport {
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
+        try verifySurfaceClipping(to: directory)
         try save(MenuUsagePreview().environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("menu-usage-dark.png"))
         for theme in DeckTheme.allCases {
@@ -241,6 +243,61 @@ enum PreviewExport {
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported tile layout/color samples; native settings controls and desktop Glass composition are not covered.")
+    }
+
+    @MainActor private static func verifySurfaceClipping(to directory: URL) throws {
+        // A bright, rectangular descendant deliberately fills every corner. The
+        // production surface must clip it, including after its bounds change.
+        let content = NSView()
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor.systemBlue.cgColor
+        let surface = DeckSurfaceView(content: content, frame: CGRect(x: 0, y: 0, width: 512, height: 420))
+        let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = surface
+        defer { window.contentView = nil; window.close() }
+        for size in [CGSize(width: 512, height: 420), CGSize(width: 1040, height: 720)] {
+            window.setContentSize(size)
+            surface.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            surface.layoutSubtreeIfNeeded()
+            surface.layer?.displayIfNeeded()
+            for scale in [1, 2] {
+                let width = Int(size.width) * scale, height = Int(size.height) * scale
+                guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                              bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                    throw NSError(domain: "TileLauncher.Preview", code: 30)
+                }
+                context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+                surface.layer?.render(in: context)
+                guard let image = context.makeImage(), let bytes = context.data?.assumingMemoryBound(to: UInt8.self) else {
+                    throw NSError(domain: "TileLauncher.Preview", code: 31)
+                }
+                let corners = [(0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)]
+                for (x, y) in corners {
+                    let dx = x == 0 ? 1 : -1, dy = y == 0 ? 1 : -1
+                    for offsetX in 0..<(5 * scale) {
+                        for offsetY in 0..<(5 * scale) {
+                            guard bytes[((y + offsetY * dy) * width + x + offsetX * dx) * 4 + 3] == 0 else {
+                                throw NSError(domain: "TileLauncher.Preview", code: 32,
+                                              userInfo: [NSLocalizedDescriptionKey: "Panel corner leaked at \(size), \(scale)x"])
+                            }
+                        }
+                    }
+                }
+                guard bytes[((height / 2) * width + width / 2) * 4 + 3] > 240 else {
+                    throw NSError(domain: "TileLauncher.Preview", code: 33)
+                }
+                let bitmap = NSBitmapImageRep(cgImage: image)
+                try bitmap.representation(using: .png, properties: [:])?.write(to:
+                    directory.appendingPathComponent("surface-\(Int(size.width))-\(scale)x.png"))
+            }
+        }
+        guard !window.isVisible else { throw NSError(domain: "TileLauncher.Preview", code: 34) }
+        print("Panel surface: all four corners transparent at 1x/2x, fill preserved, resize covered; never shown onscreen.")
     }
     @MainActor private static func save<V: View>(_ view: V, dark: Bool = true, to url: URL) throws {
         // AppKit hosts render native controls/scroll views that ImageRenderer omits.

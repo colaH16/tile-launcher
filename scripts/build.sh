@@ -13,6 +13,17 @@ BUNDLE="$OUTPUT_DIR/Tile Launcher.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BINARY_DIR/TileLauncher" "$BUNDLE/Contents/MacOS/TileLauncher"
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
+python3 - "$BUNDLE/Contents/Info.plist" <<'PY'
+import json, plistlib, re, sys
+from pathlib import Path
+config = json.loads(Path('release/config.json').read_text())
+assert re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', config['version']), 'Invalid version'
+assert re.fullmatch(r'[1-9]\d*', config['build']), 'Invalid build number'
+path = Path(sys.argv[1])
+info = plistlib.loads(path.read_bytes())
+info.update(CFBundleShortVersionString=config['version'], CFBundleVersion=config['build'])
+path.write_bytes(plistlib.dumps(info))
+PY
 cp Resources/AppIcon.icns "$BUNDLE/Contents/Resources/AppIcon.icns"
 python3 scripts/extract-intents.py "$BUNDLE"
 # Identical compiled builds compare equal; source changes are distinguishable even

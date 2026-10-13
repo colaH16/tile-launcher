@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     init(build: AppBuild) {
         runningBuild = build
         super.init()
+        _ = AppIdentity.versionLabel
     }
     let settings = SettingsStore()
     let tracker = WindowTracker()
@@ -300,10 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 self?.hide()
                             })
         let hosting = NSHostingView(rootView: view)
-        let glass = NSGlassEffectView()
-        glass.style = .regular
-        glass.cornerRadius = 28
-        glass.contentView = hosting
+        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
         let window = DeckPanel(contentRect: layout.frame, styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered, defer: false)
         window.onClose = { [weak self] in
@@ -319,15 +317,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.isMovable = false
-        window.contentView = glass
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: glass.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: glass.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: glass.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: glass.bottomAnchor)
-        ])
+        window.contentView = surface
         window.setFrame(layout.frame, display: false)
+        surface.layoutSubtreeIfNeeded()
+        window.invalidateShadow()
         panel = window
         heldPresentation = held
         hold.isShowing = true

@@ -4,7 +4,9 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-개인용 **0.2 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, GitHub 정식 릴리스를 우선 개발용 ad-hoc 서명으로 준비하고 있으며, Developer ID 서명·공증은 추후 적용할 수 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
+개인용 **0.2.1 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, GitHub 정식 릴리스를 우선 개발용 ad-hoc 서명으로 준비하고 있으며, Developer ID 서명·공증은 추후 적용할 수 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
+
+모서리 수정 검증을 위해 GitHub 바이너리 게시는 현재 보류 중입니다. 패치를 전달할 때마다 표시 버전과 빌드를 올리며, 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
 
 ## 빌드와 실행
 
@@ -126,7 +128,7 @@ DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 sc
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py verify
 ```
 
-깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 `~/Library/Developer/TileLauncher/releases/v0.2.0`에 생성합니다. Desktop/문서/클라우드 동기화 폴더는 서명 작업 경로로 사용하지 않습니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
+깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 `~/Library/Developer/TileLauncher/releases/v0.2.1`에 생성합니다. Desktop/문서/클라우드 동기화 폴더는 서명 작업 경로로 사용하지 않습니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
 
 ## 라이선스
 
