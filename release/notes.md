@@ -32,6 +32,8 @@ Apple Silicon Mac, macOS 26 이상이 필요합니다. Intel Mac은 이번 파�
 
 ## 지원 범위
 
+- **2026-10-13 추가 확인 — Focus 제한:** macOS 27.2 beta에서 현재 ad-hoc 배포본의 Team ID 조회가 실패하며 Focus 필터 로딩이 시간 초과됩니다. 아이콘 파일과 일반 아이콘 로딩은 정상이지만, 유효한 Apple 서명 후 시스템 연결을 재검증해야 합니다. 그동안 앱 안의 수동 프로필 선택·좌우 전환을 사용하세요. 진단: https://github.com/colaH16/tile-launcher/blob/main/docs/focus-diagnostics.md
+
 - 현재 주 검증 환경은 Apple Silicon/macOS 27.2 beta입니다. macOS 26은 최소 실행 대상으로 빌드했으며 별도 실기 검증은 남아 있습니다.
 - 메뉴 자동 수집은 실험 기능으로, 앱이 제공하는 접근성 메뉴 정보에 따라 누락될 수 있습니다.
 - 다른 데스크탑의 창 구분·전환은 macOS 내부 API를 일부 사용하며 OS 업데이트에 따라 제한될 수 있습니다.

@@ -2,6 +2,14 @@
 
 최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개인용 0.16.3(6).
 
+## R103 · 배포본 Focus 오류 읽기 진단
+
+- Applications/launch at Login의 0.16.3(6)이 실제 실행 중이며 Launch Services의 기본 경로도 일치함을 확인했다. codesign 무결성 통과, Signature=adhoc / TeamIdentifier 없음. 유효한 서명 identity는 0개다.
+- AppIcon.icns와 Focus intent/entity/query 메타데이터 존재 및 linkd의 새 경로 메타데이터 등록 로그를 확인했다. 별도 화면 없는 NSWorkspace 검사에서 유효한 아이콘(32개 표현)과 최종 심벌 PNG를 확인했다. 아이콘 파일 누락으로 설명하지 않는다.
+- 14:02–14:04 linkd에서 Unable to get teamId 오류가 반복되고 FocusSettingsExtension 연결이 약 32초 후 ProcessRegistry.Errors Code=0으로 실패했다. BackgroundShortcutRunner의 앱 definition 조회 실패도 있었다. 사용자가 제공한 최종 오류 화면과 시간대가 일치한다.
+- 사용자/시스템 설정·프로세스·앱 파일·Launch Services 캐시는 변경하지 않았다. 등록 3개가 남아 있어도 실제 기본 경로는 설치 앱이다. 원시 로그는 /tmp/tile-focus-diagnostic.log 및 /tmp/tile-focus-lsregister.txt에만 두고 앱 관련 증거를 focus-diagnostics.md에 요약했다.
+- 직접 확인된 차단점은 Team ID 없는 앱의 identity 생성 실패다. Apple 서명 전후 비교는 인증서 부재로 아직 수행할 수 없다. 아이콘 누락과의 인과관계 및 서명 후 전체 Focus 동작은 미검증이다. 문서만 변경하므로 새 버전/빌드/코드 테스트는 만들지 않는다.
+
 ## R102 · v0.16.3 정식 GitHub 릴리스 공개
 
 - 사용자 게시 승인·colaH16 GitHub CLI 인증·지정 저장소 PUBLIC을 확인했다. 소스 5388c2c400c8dd9b084538adf6f74385eabfe27b의 깨끗한 git archive를 독립 경로에서 빌드했다. 앱 기능/실행 중 프로세스/사용자 설정은 바꾸지 않았다.

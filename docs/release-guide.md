@@ -101,6 +101,8 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 
 ## 집중 모드 진단 기록과 다음 확인
 
+**R103에서 확인된 새 증거:** GitHub 0.16.3을 Applications 아래에서 실행했지만 Focus 필터 로딩이 시간 초과됐다. linkd는 `Unable to get teamId from dev.cola16.TileLauncher`를 반복했고 실제 서명은 TeamIdentifier 없음이었다. 아이콘 파일·NSWorkspace 아이콘 로딩·메타데이터 읽기는 정상이다. 현재 Mac의 유효한 코드 서명 identity는 0개라 서명 A/B 검사는 아직 할 수 없다. 자세한 근거와 다음 검증은 [Focus 진단](focus-diagnostics.md)을 따른다. 아래 R91 당시의 캐시/설정 점검은 이 오류가 해결됐다는 기록이 아니다.
+
 2026-10-13 읽기 점검에서 현재 개발 앱에는 AppIcon.icns, LauncherFocusIntent, ProfileEntity, 프로필 query 메타데이터가 모두 있었다. 서명은 ad-hoc이며 Team ID는 없었다.
 
 같은 앱 ID로 등록된 12개 경로 중 11개는 이전 테스트/작업 폴더 사본이었다. 해당 경로만 등록 해제하고 현재 `~/Library/Developer/TileLauncher/build/Tile Launcher.app`을 재등록하여 한 경로만 남겼다. 파일이나 집중 모드 연결을 삭제하지 않았다. 시스템 설정의 아이콘/필터 캐시가 즉시 갱신됐는지는 UI를 조작하지 않아 확인하지 못했다.

@@ -10,6 +10,8 @@ GitHub 정식 릴리스 구분과 Apple 개발자 서명·공증 상태는 별�
 
 ## 빌드와 실행
 
+**0.16.3 Focus 제한:** 현재 macOS 27.2 beta에서 Team ID 없는 ad-hoc 앱의 Focus 필터 로딩 실패를 확인했습니다. 아이콘 파일과 일반 아이콘 로딩은 정상이지만 App Intents 앱 식별/연결이 실패합니다. 유효한 Apple 서명 후 재검증이 필요하며, 그동안 수동 프로필·좌우 전환을 사용하세요. [진단 기록](docs/focus-diagnostics.md)
+
 - macOS 26 이상. 현재 검증 대상은 Apple Silicon / macOS 27.2 베타입니다.
 - Swift 6 이상과 해당 macOS SDK. 단위 테스트는 XCTest가 포함된 전체 Xcode를 사용합니다.
 - 외부 패키지 의존성 없음. 로컬 빌드는 ad-hoc 서명하며 공증된 배포 앱이 아닙니다.
