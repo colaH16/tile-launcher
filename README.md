@@ -4,7 +4,7 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-개인용 **0.2 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
+개인용 **0.2 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, Developer ID 서명·공증을 거친 GitHub 공개 릴리스를 준비하고 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
 
 ## 빌드와 실행
 
@@ -110,6 +110,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 - [조작·크기 설계 근거](docs/interaction-design.md)
 - [macOS 업그레이드 지침](docs/macos-upgrade-guide.md)
 - [검증 결과](docs/validation.md)
+- [Apple 개발자 등록·GitHub 공개 배포 준비](docs/release-guide.md)
 - [외부 메뉴 자동 수집의 동작과 제한](docs/menu-observation-design.md)
 
 새로운 요청은 요청 기록과 요구사항에 함께 반영하고, 단위 테스트·실제 UI 검증·성능 측정을 구분하여 남깁니다.

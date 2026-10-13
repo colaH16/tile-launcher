@@ -56,6 +56,30 @@ final class PreviewFixture: ObservableObject {
         // Keep the synthetic panel unpinned, so its drag representable cannot affect a preview host window.
     }
     deinit { defaults.removePersistentDomain(forName: suite) }
+    func verifyFocusSelection() throws {
+        let originalProfiles = settings.profiles
+        let originalManual = settings.manualProfileID
+        let originalFollow = settings.followFocus
+        let originalFocus = settings.focusProfileID
+        defer {
+            settings.profiles = originalProfiles; settings.manualProfileID = originalManual
+            settings.followFocus = originalFollow; settings.focusProfileID = originalFocus
+        }
+        settings.profiles = ["default", "manual", "work"].map { LauncherProfile(id: $0, name: $0) }
+        settings.manualProfileID = "manual"
+        settings.focusProfileID = "work"
+        settings.followFocus = false
+        guard settings.activeProfile.id == "manual" else { throw NSError(domain: "TileLauncher.Preview", code: 20) }
+        settings.followFocus = true
+        guard settings.activeProfile.id == "work" else { throw NSError(domain: "TileLauncher.Preview", code: 21) }
+        settings.focusProfileID = nil
+        guard settings.activeProfile.id == "manual" else { throw NSError(domain: "TileLauncher.Preview", code: 22) }
+        settings.focusProfileID = "deleted-profile"
+        guard settings.activeProfile.id == "manual" else { throw NSError(domain: "TileLauncher.Preview", code: 23) }
+        settings.manualProfileID = "deleted-manual"
+        guard settings.activeProfile.id == "default" else { throw NSError(domain: "TileLauncher.Preview", code: 24) }
+        print("SettingsStore: Focus opt-in, active mapping, cleared/deleted filter and missing manual fallback passed.")
+    }
     func verifySettingsRoundTrip() throws {
         let before = content.snapshot
         let now = Date()
@@ -199,7 +223,9 @@ struct MenuUsagePreview: View {
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try PreviewFixture(theme: .classic).verifySettingsRoundTrip()
+        let verification = PreviewFixture(theme: .classic)
+        try verification.verifyFocusSelection()
+        try verification.verifySettingsRoundTrip()
         try save(MenuUsagePreview().environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("menu-usage-dark.png"))
         for theme in DeckTheme.allCases {

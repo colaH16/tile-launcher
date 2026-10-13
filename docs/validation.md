@@ -2,6 +2,16 @@
 
 최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개인용 0.2.0(3).
 
+## R91–R92 · Focus 등록 점검·복귀 보완·공개 배포 안내
+
+- 현재 개발 앱의 아이콘과 Info.plist 아이콘 키, LauncherFocusIntent/ProfileEntity/프로필 query 메타데이터 존재를 확인했다. 기존 서명은 ad-hoc, TeamIdentifier 없음이었다. 메타데이터만으로 Focus perform 전달 성공을 판정하지 않는다.
+- 읽은 로컬 저장 설정은 followFocus=false, 프로필 2개, 수동 ID 유효였다. 프로필 이름/개인 등록 항목을 기록하거나 변경하지 않았다. 자동 선택 옵션은 사용자가 켜도록 안내했다.
+- Launch Services에서 같은 기본 앱 ID로 12개 경로를 확인했다. 현재 개발 앱을 제외한 구 테스트 사본 11개만 `lsregister -u`로 정리하고 현재 앱에 `-f`를 적용했다. 재조회 결과 현재 개발 경로 하나만 남았다. 전체 DB 초기화·파일 삭제·시스템 Focus 필터 삭제는 하지 않았다. 진단 당시 경로 목록은 `/tmp/tile-focus-registration-before.json`에 있다.
+- 실제 SettingsStore 격리 검사에서 자동 선택 끄기/정상 Focus ID/필터 해제/삭제된 Focus ID/유효한 수동 ID도 없는 경우를 확인했다. 삭제된 Focus ID는 마지막 수동 구성부터 쓰도록 보완했다. 기존 메뉴·색·스냅샷 저장 검사도 통과했다. XCTest 전체 반복 대신 변경 지점의 네이티브 설정 통합 검사를 사용했다.
+- 디버그/릴리스 빌드, App Intents 메타데이터 추출, ad-hoc 서명 검증 통과. 로그는 `/tmp/tile-focus-previews.log`, `/tmp/tile-focus-build.log`다. 최종 개발 빌드 `cadb87e39eef8acac1566ba27b78e9da26b294cbe1b01866bf85b9a36cd948a9`를 안정된 경로에 설치하고 재등록했다. 이전 Contents 백업은 `/tmp/tile-before-focus-2396sisa`이며 설치 전후 실행 소유자 기록은 동일했다.
+- 실제 시스템 설정의 아이콘 갱신, 필터 설정 후 집중 모드 전환/해제, OS의 perform/current 전달은 사용자 화면을 조작하지 않아 확인하지 않았다. 현재 준비된 빌드는 공증된 배포 파일이 아니다.
+- 개발자 등록 안내는 2026-10-13 Apple 공식 등록 페이지·한국 Apple Developer 앱 가격·Developer ID 안내를 확인해 release-guide.md에 작성했다. 가입/결제/인증서 발급/공증 제출/GitHub 바이너리 Release는 수행하지 않았다.
+
 ## R90 · 오버레이에 누적 합계 표시
 
 - 사용자 확인: 직전 빌드의 설정에서 Tile Launcher/메뉴 막대 경로별 횟수가 잘 보인다고 했다. 이번 요청은 오버레이 타일에도 합계만 항상 보이게 하는 표시 변경이다.

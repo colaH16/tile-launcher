@@ -74,8 +74,9 @@ final class SettingsStore: ObservableObject {
     @Published var menuCapture: MenuCapturePreferences { didSet { save() } }
     @Published var menuCaptureStatus: [String: String] = [:]
     var activeProfile: LauncherProfile {
-        let id = followFocus ? (focusProfileID ?? manualProfileID) : manualProfileID
-        return profiles.first { $0.id == id } ?? profiles[0]
+        if followFocus, let focused = profiles.first(where: { $0.id == focusProfileID }) { return focused }
+        // A filter can still reference a profile the user deleted or no longer has. Fall back to the user's manual choice first.
+        return profiles.first { $0.id == manualProfileID } ?? profiles[0]
     }
     var pins: [PinnedItem] {
         get { activeProfile.items }
