@@ -4,13 +4,13 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-**[0.17.1 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.1)**를 공개했습니다. Apple Silicon · macOS 26 이상이며, 현재는 **개발용 ad-hoc 서명·Apple 공증 없음**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v0.17.1/Tile-Launcher-0.17.1-arm64-unnotarized.zip) · [설치 안내](docs/installation.md). Developer ID 서명·공증은 추후 적용합니다.
+**[0.17.6 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.6)**를 공개했습니다. Apple Silicon · macOS 26 이상이며, 현재는 **개발용 ad-hoc 서명·Apple 공증 없음**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v0.17.6/Tile-Launcher-0.17.6-arm64-unnotarized.zip) · [설치 안내](docs/installation.md). Developer ID 서명·공증은 추후 적용합니다.
 
 GitHub 정식 릴리스 구분과 Apple 개발자 서명·공증 상태는 별개입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
 
 ## 빌드와 실행
 
-현재 개발 소스는 **0.17.6(13)**입니다. 초기 설정 창의 폭은 580pt, 높이는 일반 탭의 실제 내용에 맞춰 정합니다. 1000pt 고정 높이 때문에 남던 하단 여백을 줄였습니다. 메뉴 목록은 남은 공간을 모두 쓰며 ‘메뉴 추가…’는 하단에 고정합니다. 설정 아이콘·메뉴 +·등록 +는 각각 일반·현재 앱 메뉴 추가·등록 항목/프로필 화면을 엽니다. R120에 따라 이 버전의 GitHub 릴리스를 준비 중이며, 여백 균일화는 다음 UI 작업으로 남깁니다. 공개 완료 전까지 위 다운로드는 0.17.1입니다.
+현재 개발 소스는 **0.17.6(13)**입니다. 초기 설정 창의 폭은 580pt, 높이는 일반 탭의 실제 내용에 맞춰 정합니다. 1000pt 고정 높이 때문에 남던 하단 여백을 줄였습니다. 메뉴 목록은 남은 공간을 모두 쓰며 ‘메뉴 추가…’는 하단에 고정합니다. 설정 아이콘·메뉴 +·등록 +는 각각 일반·현재 앱 메뉴 추가·등록 항목/프로필 화면을 엽니다. R120에 따라 이 버전을 GitHub 최신 정식 릴리스로 공개했습니다. 여백 균일화는 다음 UI 작업으로 남깁니다.
 
 **0.16.3 Focus 제한:** 현재 macOS 27.2 beta에서 Team ID 없는 ad-hoc 앱의 Focus 필터 로딩 실패를 확인했습니다. 아이콘 파일과 일반 아이콘 로딩은 정상이지만 App Intents 앱 식별/연결이 실패합니다. 유효한 Apple 서명 후 재검증이 필요하며, 그동안 수동 프로필·좌우 전환을 사용하세요. [진단 기록](docs/focus-diagnostics.md)
 

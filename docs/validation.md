@@ -1,13 +1,17 @@
 # 네이티브 빌드 검증
 
-최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.6(13). GitHub 공개본 0.17.1(8).
+최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.6(13). GitHub 공개본 0.17.6(13).
 
-## R120 · 0.17.6 공개 준비
+## R120 · 0.17.6 GitHub 공개 완료
 
 - 사용자가 R119의 여백 개선을 다음으로 미룬 채 현재 GitHub 릴리스를 요청해 R113의 바이너리 게시 보류를 해제했다. 앱 UI 코드는 수정하지 않는다.
 - scripts/test.sh 전체 재실행 통과: Swift XCTest 105개, 배포 정책 Python unittest 14개, 실패 0개. 로그 /tmp/tile-0176-release-tests.log. 네이티브 입력/Focus/권한의 실제 수신을 이 단위 검사로 검증했다고 하지 않는다.
 - 대상 저장소 colaH16/tile-launcher는 PUBLIC/main이며 기존 공개본은 v0.16.3과 v0.17.1이다. v0.17.6 충돌이 없음을 확인했다. 현재 개발용 ad-hoc 서명·미공증 선택을 유지하며 여백 문제와 Focus 제한을 릴리스 노트에 명시했다.
-- 깨끗한 커밋의 독립 빌드·패키징·서명/ZIP 검증·업로드 후 재다운로드·공개 상태 확인을 이어서 기록한다. 현재 사용자 설치 앱을 교체/실행하지 않는다.
+- 소스 eb36d246b52b1fb418fa2e475885b5c87c0382b9의 git archive에서 독립 최적화 빌드·App Intents 추출·ad-hoc 서명/strict 검증 통과. 빌드 경고/오류 없음. 번들 버전 0.17.6(13), arm64/macOS 26, 앱 아이콘·실행 권한·Focus 메타데이터·소스 리비전을 확인했다. ZIP을 다시 풀어 앱 트리 해시와 서명을 대조했다. 배포 빌드 식별자는 b58d735ee63c8052d2a9fb394684e4379c047e2d099797f6dd6092925feb9fd9다.
+- 결과는 ~/Library/Developer/TileLauncher/releases/v0.17.6에 보존한다. ZIP Tile-Launcher-0.17.6-arm64-unnotarized.zip, 2,033,030 bytes, SHA-256 ffbde9caccf19436f4947f879f0865b38901c2794ebfd960456697232d34068d. release-metadata.json SHA-256 77e4029c567b0054f7caf2b5b3ebbabc2f2da0acebee4430f67179d405b5112b, SHA256SUMS.txt SHA-256 71921fb9362db052a02f237297ae8a23751f8647e1c731674cd51fff6a0e3b6b.
+- 초안에 세 자산만 업로드하고 asset ID로 다시 내려받아 각 SHA-256을 확인한 뒤 공개했다. GitHub latest API에서도 tag=v0.17.6, draft=false, prerelease=false, 세 자산 이름·크기·서버 digest 일치를 확인했다. 원격 annotated tag의 peeled commit은 위 소스 리비전과 같다. 기존 v0.16.3/v0.17.1을 수정하지 않았다.
+- 공개 시각 2026-10-13 17:03:03 KST. [정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.6) · [ZIP](https://github.com/colaH16/tile-launcher/releases/download/v0.17.6/Tile-Launcher-0.17.6-arm64-unnotarized.zip). 로그 /tmp/tile-0176-release-prepare.log, release-draft.log, release-publish.log(모두 tile-0176- 접두사), 공개 확인 /tmp/tile-0176-public-receipt.json.
+- 개발용 ad-hoc 서명·Apple 미공증 및 Focus 제한을 공개 노트에 명시했다. R119의 여백 균일화는 다음 작업이며 이번에 고치지 않았다. 이 배포 준비/게시에서 사용자 설치 앱을 교체·실행하거나 설정/권한을 변경하지 않았다.
 
 ## R118 · 일반 내용에 맞춘 초기 창 높이
 
