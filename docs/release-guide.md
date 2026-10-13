@@ -19,7 +19,7 @@ R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공�
 
 현재 개발 구성은 `release/config.json`의 v0.17.6, 빌드 13, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
 
-R108의 0.17.1 공개는 완료했고 R109–R118의 0.17.6는 로컬 수정본이다. R113에 따라 소스만 푸시하고 바이너리 릴리스는 보류한다. 아래 게시 단계는 다음 공개 요청 때 실행한다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
+R108의 0.17.1 공개는 완료했다. R120에서 현재 0.17.6 공개를 요청해 R113의 보류를 해제했다. R119의 여백 수정은 다음 UI 작업으로 미룬 채 아래 단계로 0.17.6을 준비·검증·게시한다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer
