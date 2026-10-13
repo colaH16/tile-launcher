@@ -6,7 +6,7 @@ Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별
 
 개인용 **0.16.3 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, GitHub 정식 릴리스를 우선 개발용 ad-hoc 서명으로 준비하고 있으며, Developer ID 서명·공증은 추후 적용할 수 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
 
-모서리 수정 검증을 위해 GitHub 바이너리 게시는 현재 보류 중입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
+사용자 승인에 따라 0.16.3 정식 GitHub 릴리스를 게시하는 중입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
 
 ## 빌드와 실행
 
@@ -122,7 +122,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 
 ## 배포 파일 준비
 
-`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 0.16.3 ZIP은 게시 재개 시 새로 준비하며 이전 미게시 0.2.0 ZIP과 구별합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
+`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 0.16.3 ZIP은 현재 소스 커밋에서 새로 준비하며 이전 미게시 0.2.0 ZIP과 구별합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
 
 ```sh
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py prepare
