@@ -201,6 +201,25 @@ struct AppearancePreview: View {
     var body: some View { AppearanceView(settings: fixture.settings).frame(width: 580, height: 760) }
 }
 
+struct MenuAdditionPreview: View {
+    @StateObject private var fixture = PreviewFixture(theme: .glass)
+    @StateObject private var catalog = MenuCatalog(initialChoices:
+        (1...50).map { AvailableMenu(path: ["파일", "내보내기", "문서 내보내기 \($0)"]) })
+    @State private var selectedID = "preview.editor"
+    @State private var search = ""
+    @State private var manualPath = ""
+    let size: CGSize
+    var manualExpanded = false
+    var body: some View {
+        MenuAdditionSheet(settings: fixture.settings, catalog: catalog, selectedID: $selectedID,
+                          search: $search, manualPath: $manualPath,
+                          appNames: [(id: "preview.editor", name: "문서 편집기")],
+                          selectedApp: fixture.content.snapshot.context, size: size,
+                          refreshApps: {}, dismiss: {}, manualExpanded: manualExpanded)
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
 struct MenuUsagePreview: View {
     private let commands: [MenuCommand] = {
         var launcher = MenuCommand(appID: "preview", appName: "문서 편집기", path: ["도구", "그림 크기 줄이기"])
@@ -243,6 +262,11 @@ enum PreviewExport {
         try verifySettingsNavigation()
         try verifyWebAppIcon()
         try verifyQuickOptionReopen()
+        try verifyMenuCatalogChoices()
+        try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: CGSize(width: 580, height: 760)))
+                    .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("menu-addition-large.png"))
+        try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: CGSize(width: 540, height: 660)), manualExpanded: true)
+                    .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("menu-addition-compact.png"))
         let reopenPreview = PreviewFixture(theme: .glass)
         try save(OptionReopenSettings(settings: reopenPreview.settings).padding(20).frame(width: 570)
                     .background(Color(nsColor: .windowBackgroundColor)),
@@ -263,6 +287,28 @@ enum PreviewExport {
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported tile layout/color samples; native settings controls and desktop Glass composition are not covered.")
+    }
+
+    @MainActor private static func verifyMenuCatalogChoices() throws {
+        let regular = [AvailableMenu(path: ["Finder", "Settings…"]),
+                       AvailableMenu(path: ["File", "Apple", "Export"])]
+        let apple = ["Apple", "", " APPLE "].flatMap { root in
+            [["System Settings…"], ["Recent Items", "App.app"], ["Location", "Automatic"]].map {
+                AvailableMenu(path: [root] + $0)
+            }
+        }
+        let duplicate = AvailableMenu(path: ["File", "Export"])
+        let filtered = MenuCatalog.searchableChoices(apple + regular + [duplicate, duplicate])
+        guard filtered.map(\.id) == regular.map(\.id),
+              MenuCatalog(initialChoices: apple).choices.isEmpty else {
+            throw NSError(domain: "TileLauncher.Preview", code: 73)
+        }
+        for parent in [CGSize(width: 540, height: 660), CGSize(width: 580, height: 760), CGSize(width: 900, height: 1100)] {
+            let size = MenuAdditionLayout.size(for: parent)
+            guard size.width < parent.width, size.height < parent.height, size.height >= parent.height * 0.9,
+                  size.height > 160 + 300 else { throw NSError(domain: "TileLauncher.Preview", code: 74) }
+        }
+        print("MenuCatalog: Apple and complete system subtrees excluded, real app names preserved, duplicates rejected; sheet follows parent height passed.")
     }
 
     @MainActor private static func verifyWebAppIcon() throws {

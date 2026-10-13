@@ -16,6 +16,14 @@ final class MenuCatalog: ObservableObject {
     private let queue = DispatchQueue(label: "TileLauncher.menus", qos: .userInitiated)
     private var generation = UUID()
 
+    init(initialChoices: [AvailableMenu] = []) { choices = Self.searchableChoices(initialChoices) }
+
+    static func searchableChoices(_ menus: [AvailableMenu]) -> [AvailableMenu] {
+        let appMenus = menus.filter { !MenuCapturePolicy.isAppleMenuPath($0.path) }
+        let counts = Dictionary(grouping: appMenus, by: \.id)
+        return appMenus.filter { counts[$0.id]?.count == 1 }
+    }
+
     func clear() { generation = UUID(); choices = []; loading = false; message = nil }
 
     func load(app: AppItem) {
@@ -44,6 +52,7 @@ final class MenuCatalog: ObservableObject {
                 let title = Self.value(element, kAXTitleAttribute) as? String ?? ""
                 let namedItem = role == kAXMenuBarItemRole || role == kAXMenuItemRole
                 let next = namedItem && !title.isEmpty ? path + [title] : path
+                guard !MenuCapturePolicy.isAppleMenuPath(next) else { return }
                 let children = Self.children(element)
                 if role == kAXMenuItemRole, !title.isEmpty, children.isEmpty, next.count >= 2 {
                     if Self.actions(element).contains(kAXPressAction) { found.append(AvailableMenu(path: next)) }
@@ -51,10 +60,12 @@ final class MenuCatalog: ObservableObject {
                     for child in children { walk(child, path: next, depth: depth + 1) }
                 }
             }
-            if let bar = Self.element(application, kAXMenuBarAttribute) { walk(bar, path: [], depth: 0) }
+            if let bar = Self.element(application, kAXMenuBarAttribute) {
+                // Match automatic capture: macOS's first root is the system Apple menu.
+                for root in Self.children(bar).dropFirst() { walk(root, path: [], depth: 0) }
+            }
             // Duplicate menu titles cannot safely identify an action after a later menu update.
-            let counts = Dictionary(grouping: found, by: \.id)
-            let unique = found.filter { counts[$0.id]?.count == 1 }
+            let unique = Self.searchableChoices(found)
             DispatchQueue.main.async { [weak self] in
                 guard self?.generation == request else { return }
                 self?.loading = false; self?.choices = unique

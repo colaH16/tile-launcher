@@ -13,15 +13,18 @@ struct SettingsView: View {
     @State private var profileName = ""
 
     var body: some View {
-        TabView(selection: $navigation.tab) {
-            general.tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
-            AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
-            MenuSettingsView(settings: settings, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition)
-                .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
-            registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
-        }.padding(16)
-            .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
+        GeometryReader { geometry in
+            TabView(selection: $navigation.tab) {
+                general.tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
+                AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
+                MenuSettingsView(settings: settings, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition,
+                                 additionSize: MenuAdditionLayout.size(for: geometry.size))
+                    .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
+                registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
+            }.padding(16)
+                .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
+        }
     }
     private var general: some View {
         ScrollView {
@@ -183,6 +186,7 @@ struct MenuSettingsView: View {
     @ObservedObject var settings: SettingsStore
     let preferredApp: AppItem?
     let additionRequest: MenuAdditionRequest?
+    let additionSize: CGSize
     @StateObject private var catalog = MenuCatalog()
     @State private var applications: [AppItem] = []
     @State private var selectedID = ""
@@ -290,67 +294,17 @@ struct MenuSettingsView: View {
         }
         .onChange(of: additionRequest?.id) { _, _ in handleAdditionRequest() }
         .sheet(isPresented: $showingAddition) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("메뉴 추가").font(.title2.weight(.semibold))
-                    Spacer()
-                    Button("완료") { showingAddition = false }.keyboardShortcut(.cancelAction)
-                }
-                HStack {
-                    Picker("앱", selection: $selectedID) {
-                        if selectedID.isEmpty { Text("앱 선택").tag("") }
-                        ForEach(appNames, id: \.id) { Text($0.name).tag($0.id) }
-                    }
-                    Button("앱 목록 새로고침") {
-                        refreshApps()
-                        if let app = selectedApp { catalog.load(app: app) }
-                    }
-                }
-                if selectedApp == nil {
-                    Text("메뉴를 추가할 앱을 실행한 뒤 선택해 주세요.").font(.caption).foregroundStyle(.secondary)
-                }
-                additionForm
-            }.padding(20).frame(width: 540)
+            MenuAdditionSheet(settings: settings, catalog: catalog, selectedID: $selectedID,
+                              search: $search, manualPath: $manualPath, appNames: appNames,
+                              selectedApp: selectedApp, size: additionSize,
+                              refreshApps: {
+                                  refreshApps()
+                                  if let app = selectedApp { catalog.load(app: app) }
+                              }, dismiss: { showingAddition = false })
                 .task(id: selectedID) {
                     if let app = selectedApp { catalog.load(app: app) } else { catalog.clear() }
                 }
                 .onDisappear { catalog.clear() }
-        }
-    }
-    private var additionForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("앱의 메뉴 막대에서 선택").font(.headline)
-                Spacer()
-                Button(catalog.loading ? "읽는 중…" : "선택한 앱의 메뉴 불러오기") {
-                    if let app = selectedApp { catalog.load(app: app) }
-                }.disabled(selectedApp == nil || catalog.loading)
-            }
-            TextField("메뉴 검색", text: $search)
-            if let message = catalog.message { Text(message).font(.caption).foregroundStyle(.secondary) }
-            List {
-                ForEach(catalog.choices.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }) { menu in
-                    HStack {
-                        Text(menu.title).font(.callout).lineLimit(2)
-                        Spacer()
-                        let added = settings.commands.contains { $0.appID == selectedID && $0.path == menu.path }
-                        Button(added ? "등록됨" : "추가") {
-                            if let app = selectedApp { settings.addCommand(MenuCommand(appID: app.id, appName: app.name, path: menu.path)) }
-                        }.disabled(added)
-                    }
-                }
-            }.frame(height: 160)
-            DisclosureGroup("메뉴 경로 직접 입력") {
-                HStack {
-                    TextField("예: 파일 > 내보내기 > PDF로 내보내기…", text: $manualPath)
-                    Button("추가") {
-                        let path = manualPath.components(separatedBy: ">").map { $0.trimmingCharacters(in: .whitespaces) }
-                        if let app = selectedApp, path.count >= 2, path.allSatisfy({ !$0.isEmpty }) {
-                            settings.addCommand(MenuCommand(appID: app.id, appName: app.name, path: path)); manualPath = ""
-                        }
-                    }.disabled(selectedApp == nil || !manualPath.contains(">"))
-                }.padding(.top, 6)
-            }
         }
     }
     private func beginAddition(app: AppItem?) {

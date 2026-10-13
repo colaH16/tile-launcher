@@ -1,6 +1,15 @@
 # 네이티브 빌드 검증
 
-최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.2(9). GitHub 공개본 0.17.1(8).
+최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.3(10). GitHub 공개본 0.17.1(8).
+
+## R112 · 수동 메뉴 검색의 시스템 메뉴 제외·시트 확장
+
+- 자동 수집과 달리 수동 카탈로그는 Apple 루트까지 순회하던 차이를 확인했다. AXMenuBar 첫 시스템 루트를 건너뛰고 경로/최종 후보에서도 공유 Apple 정책을 적용했다. 중복 경로는 기존처럼 후보에서 제외하며 사용자 저장 항목은 변경하지 않았다.
+- 실제 MenuCatalog 결과 경계의 격리 검사 통과: Apple//대소문자·공백 루트, Recent Items/Location 하위 전체 제외, Finder의 Settings 및 File → Apple → Export 보존, 중복 후보 제거. 실제 AX 메뉴 전체 수신은 해당 합성 검사와 구별한다.
+- 부모 콘텐츠 580×760/540×660/900×1100pt에서 시트가 부모 안에 들어가고 높이의 대부분을 사용하는 계산 검사를 통과했다. 실제 메뉴 추가 시트와 동일한 MenuAdditionSheet를 오프스크린 렌더링했다. 기본 540×696pt에서 단일 행 샘플 15개, 작은 500×596pt에서 직접 입력을 펼친 샘플 10개와 다음 행 일부가 보였다. 검색/제목/완료/직접 입력이 잘리지 않음을 이미지로 확인했다. 실제 행 수는 메뉴 줄바꿈과 부모 크기에 따라 달라진다.
+- 렌더링 파일은 /tmp/tile-0173-previews/menu-addition-large.png 및 menu-addition-compact.png, 로그는 /tmp/tile-0173-previews.log다. 이전 클릭/설정 이동/아이콘/재입력/사용 기록/마스크 네이티브 격리 검사도 통과했다. 사용자 화면을 조작하거나 전경 앱의 메뉴를 자동 열지 않았다. 실제 부모 창 리사이즈와 AX 수신은 사용자 실기 확인 범위다.
+- 0.17.3(10) 최적화 빌드·App Intents 추출·ad-hoc 서명 및 strict 검증 통과. 컴파일 경고/오류 없음. /tmp/tile-0173-build.log에 기록했다. 빌드 식별자 a4c109ece3a30dc1477ab51f13811810a96fd2d2ebb503e135ae1c652c03c926.
+- /Applications/launch at Login/Tile Launcher.app의 Contents를 교체하고 서명을 재검증했다. 이전 Contents는 /tmp/tile-before-0173-nbuey5y7.app에 보존했다. 설치 전후 인스턴스 소유자 기록이 동일했다. 앱을 자동 종료/재실행하지 않았고 사용자 데이터/권한은 변경하지 않았다. GitHub 소스만 푸시하며 공개 릴리스는 0.17.1이다.
 
 ## R109–R111 · 클릭 즉시 실행·설정 경로·앱 관리 알림
 
