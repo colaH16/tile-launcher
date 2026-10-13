@@ -2,6 +2,17 @@
 
 최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개인용 0.16.3(6).
 
+## R102 · v0.16.3 정식 GitHub 릴리스 공개
+
+- 사용자 게시 승인·colaH16 GitHub CLI 인증·지정 저장소 PUBLIC을 확인했다. 소스 5388c2c400c8dd9b084538adf6f74385eabfe27b의 깨끗한 git archive를 독립 경로에서 빌드했다. 앱 기능/실행 중 프로세스/사용자 설정은 바꾸지 않았다.
+- 버전 0.16.3(6), arm64, macOS 26 이상, ad-hoc, local_only=false. 코드 서명·실행 권한·아이콘·Focus 메타데이터·버전/소스·ZIP 재추출 트리 해시 검증 통과. 컴파일 경고/오류 없음. ZIP 1,941,375바이트. /tmp/tile-0163-release-prepare.log와 배포 폴더 build.log에 기록했다.
+- 첫 게시 때 태그 조회 REST API가 초안을 반환하지 않아 404로 중단됐다. 인증된 릴리스 목록을 페이지별로 조회하고 중복 초안을 거부하도록 수정했다. asset ID로 내려받아 체크섬을 대조하고 같은 release ID로 게시한다. 새 초안/중복 업로드/태그 변경 없이 기존 초안을 사용했다.
+- 배포 정책 테스트 **14개 통과**. 추가 검사는 뒤 페이지의 초안, 없는 태그, 중복/잘못된 목록 거부다. /tmp/tile-0163-publication-tests.log에 기록했다. 앱 코드는 바꾸지 않아 XCTest/실기 UI를 반복하지 않았다.
+- ZIP·release-metadata.json·SHA256SUMS.txt를 GitHub에서 다시 다운로드해 로컬 해시와 모두 일치함을 확인한 뒤 공개했다. /tmp/tile-0163-release-draft.log와 /tmp/tile-0163-release-publish.log에 기록했다.
+- **2026-10-13 13:59 KST 공개 완료**: https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3 . releases/latest 응답에서 v0.16.3, draft=false, prerelease=false, 자산 3개 uploaded 및 서버 SHA-256을 확인했다. 비인증 API는 공유 IP 한도(403)였지만 별도의 비인증 공개 웹 페이지와 ZIP 다운로드 HEAD는 모두 HTTP 200이었다.
+- ZIP SHA-256: c8a598d4f1d147d846e04480cbbfcf1285bf2d0bc3ab359558289d0b3ae66c0d.
+- 공개 태그는 소스 5388c2c를 유지한다. 이후 배포 도구 수정·공개 완료 문서는 main에 별도 커밋하고 공개 앱/파일/버전을 바꾸지 않는다. Apple Developer ID 서명·공증은 아직 수행하지 않았다.
+
 ## R99–R101 · 버전 재정리·Apple 메뉴 제외·UI 보완
 
 - CHANGELOG.md의 26단계 번호 순서와 현재 release/config.json/릴리스 노트의 0.16.3(6) 일치를 확인했다. 과거 실제 표시 버전과 소급 번호를 구분했다. 잠정 0.20.2 후보는 설치하지 않았으며 공개 태그/Release/ZIP을 만들지 않았다.

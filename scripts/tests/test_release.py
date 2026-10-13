@@ -87,6 +87,20 @@ class ReleasePolicyTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError): r.github(args)
             run.assert_not_called()
 
+    def test_release_lookup_finds_draft_on_later_page(self):
+        draft = {'id': 42, 'tag_name': 'v0.16.3', 'draft': True}
+        pages = [[{'id': 1, 'tag_name': 'v0.1.0', 'draft': False}], [draft]]
+        with mock.patch.object(r, 'run', return_value=json.dumps(pages)) as run:
+            self.assertEqual(r.find_release('v0.16.3'), draft)
+            self.assertIn('--paginate', run.call_args[0][0])
+            self.assertIsNone(r.find_release('v9.9.9'))
+
+    def test_release_lookup_rejects_duplicates_and_malformed_listing(self):
+        draft = {'id': 42, 'tag_name': 'v0.16.3', 'draft': True}
+        for pages in [[draft], [[draft], [dict(draft, id=43)]]]:
+            with mock.patch.object(r, 'run', return_value=json.dumps(pages)):
+                with self.assertRaises(r.ReleaseError): r.find_release('v0.16.3')
+
     def test_interrupted_submission_never_automatically_resubmits(self):
         args = type('Args', (), {'output': Path('/tmp/unused'), 'keychain_profile': 'test', 'submission_id': None})()
         manifest = {'local_only': False, 'signing': 'developer-id', 'notary_pending_submission': True}

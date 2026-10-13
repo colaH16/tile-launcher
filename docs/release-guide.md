@@ -1,10 +1,10 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
-확인일: 2026-10-13, Asia/Seoul. R93–R95에 따라 첫 공개판은 **정식 릴리스**, 현재는 **개발용 ad-hoc 서명/공증 없음**으로 준비한다. 유료 등록은 보류했으며 공개 바이너리 Release/개발자 등록/공증 제출은 아직 실행하지 않았다.
+확인일: 2026-10-13, Asia/Seoul. [v0.16.3 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3)를 **개발용 ad-hoc 서명/공증 없음**으로 공개했다. 유료 등록·Developer ID 서명·공증은 아직 수행하지 않았다.
 
-## R102 · 게시 승인과 버전 정책
+## R102 · 공개 완료와 버전 정책
 
-R96에서 UI 버그로 게시를 보류했으나 R102에서 현재 앱의 GitHub 게시를 다시 승인했다. 기존 v0.2.0(4) 파일은 이번 수정 전 산출물이므로 게시하지 않는다. 직전 실제 모서리 수정본은 0.2.1(5)이었고 이력 재분류·추가 수정 후 현재 준비 대상은 0.16.3(6)이다. 깨끗한 현재 커밋에서 새로 패키징해 개발용 서명·미공증을 명시한 정식 릴리스로 게시한다.
+R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공개했다. 기존 미게시 0.2.0(4) ZIP은 사용하지 않았다. 다음 버전에도 아래 절차를 사용하며 공개된 v0.16.3 자산을 덮어쓰지 않는다.
 
 `release/config.json`은 버그·UI 수정이면 patch, 기능 추가·변경이면 minor를 올리고 patch=0으로 한다. build는 전달 산출물마다 증가하며 [CHANGELOG](../CHANGELOG.md)를 따른다. `scripts/build.sh`도 같은 값을 Info.plist에 넣고 설정은 실행 중인 번들에서 읽는다. 동일 패치의 내부 컴파일 재시도는 번호를 소비하지 않는다. 릴리스 노트 제목도 version과 일치시킨다.
 
@@ -36,7 +36,7 @@ python3 scripts/release.py verify
 
 ## GitHub 초안과 정식 게시
 
-아래 명령은 원격 태그/릴리스를 변경한다. **현재 작업에서는 실행하지 않았다.** 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 자동으로 공개 범위를 바꾸지는 않는다.
+아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
 
 ```sh
 # 개발용 서명/공증 없음으로 배포하기로 정했을 때
@@ -44,7 +44,7 @@ python3 scripts/release.py draft --allow-unnotarized
 python3 scripts/release.py publish --allow-unnotarized
 ```
 
-초안은 검증한 소스 커밋에 v0.16.3 태그를 연결하고 지정한 세 파일만 올린다. 기존 릴리스/다른 커밋의 태그는 덮어쓰지 않는다. 게시 단계는 초안 설명과 자산 목록이 같고, GitHub에서 다시 받은 파일의 체크섬도 일치해야 정식 릴리스로 전환한다. 중단된 업로드나 서로 다른 초안이 있으면 검토 후 처리하며 자동으로 덮어쓰지 않는다.
+초안은 검증한 소스 커밋에 해당 버전 태그를 연결하고 지정한 세 파일만 올린다. 인증된 릴리스 목록을 페이지별로 조회해 기존 초안도 확인하며 태그 조회 API의 404를 초안 부재로 해석하지 않는다. 기존 릴리스/다른 커밋의 태그는 덮어쓰지 않는다. 설명·자산 목록을 확인하고 asset ID로 내려받은 파일의 체크섬까지 일치해야 release ID로 정식 공개한다. 중단된 업로드나 다른 초안을 자동 덮어쓰지 않는다.
 
 [GitHub CLI 릴리스 생성](https://cli.github.com/manual/gh_release_create) · [GitHub 릴리스 관리](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)
 

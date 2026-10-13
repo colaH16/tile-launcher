@@ -2,7 +2,7 @@
 
 최종 기록일: 2026-10-13 (Asia/Seoul)
 
-현재 작업 범위: **R102에서 승인한 0.16.3 정식 GitHub 릴리스 게시**. 제품명 Tile Launcher. R30에 따라 `colaH16/tile-launcher` 커밋·푸시는 승인됨. 기존 MIT 라이선스와 이력을 유지하며 R93–R95에 따라 정식 GitHub 릴리스를 개발용 ad-hoc 서명으로 우선 준비한다. 첫 준비값 v0.2.0(4)는 미게시 이전 산출물이다. R96에서 UI 버그로 게시를 보류했고 R97–R98의 실제 수정본은 v0.2.1(5)이었고 R99–R101의 현재 번호는 v0.16.3(6), Apple Silicon 전용이며 prerelease=false다. 유료 등록은 보류했고 Developer ID/공증은 나중에 선택할 수 있는 단계다. 공개 바이너리 Release는 아직 게시하지 않았다. Sites·App Store·Homebrew 게시/배포는 별도다.
+현재 작업 범위: **R102에서 승인한 0.16.3 정식 GitHub 릴리스 게시**. 제품명 Tile Launcher. R30에 따라 `colaH16/tile-launcher` 커밋·푸시는 승인됨. 기존 MIT 라이선스와 이력을 유지하며 R93–R95에 따라 정식 GitHub 릴리스를 개발용 ad-hoc 서명으로 우선 준비한다. 첫 준비값 v0.2.0(4)는 미게시 이전 산출물이다. R96에서 UI 버그로 게시를 보류했고 R97–R98의 실제 수정본은 v0.2.1(5)이었고 R99–R101의 현재 번호는 v0.16.3(6), Apple Silicon 전용이며 prerelease=false다. 유료 등록은 보류했고 Developer ID/공증은 나중에 선택할 수 있는 단계다. R102에서 0.16.3(6)을 개발용 서명·미공증의 정식 GitHub 릴리스로 게시했다. Sites·App Store·Homebrew 게시/배포는 별도다.
 
 이 문서는 현재 기준이다. 변경 전 요구와 시안 피드백은 [요청 기록](request-log.md)에 보존하며, 코드 구현과 실제 검증 결과는 [검증 기록](validation.md)에서 구별한다.
 
@@ -144,3 +144,5 @@
 - 사용자가 현재 앱을 그대로 GitHub에 릴리스하라고 요청했다. R96의 보류를 해제하고 0.16.3(6)을 개발용 ad-hoc 서명·미공증 상태로 정식(prerelease=false) 게시한다.
 - 깨끗한 현재 커밋에서 ZIP·공개 메타데이터·SHA256SUMS를 새로 만들고 초안 업로드 파일을 다시 내려받아 해시를 확인한 뒤 공개한다. 이전 0.2.0 ZIP은 사용하지 않는다.
 - 기능 변경은 없으므로 앱 버전·빌드는 유지한다. Developer ID 서명/공증이나 별도 배포 채널을 완료/승인한 것으로 확대하지 않는다.
+
+- R102 완료: https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3 에 정식/최신 릴리스 공개. 업로드 3개 파일의 재다운로드 해시 일치와 draft=false/prerelease=false를 확인했다. 이후 업데이트는 새 버전으로 준비하며 공개 자산을 덮어쓰지 않는다.

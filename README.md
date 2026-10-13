@@ -4,9 +4,9 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-개인용 **0.16.3 개발 버전**입니다. 실제 앱별 동작을 검증하는 개발 단계이며, GitHub 정식 릴리스를 우선 개발용 ad-hoc 서명으로 준비하고 있으며, Developer ID 서명·공증은 추후 적용할 수 있습니다. 현재 공개 바이너리 Release, App Store·Homebrew 배포와 Sites 게시를 진행한 상태가 아닙니다.
+**[0.16.3 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3)**를 공개했습니다. Apple Silicon · macOS 26 이상이며, 현재는 **개발용 ad-hoc 서명·Apple 공증 없음**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v0.16.3/Tile-Launcher-0.16.3-arm64-unnotarized.zip) · [설치 안내](docs/installation.md). Developer ID 서명·공증은 추후 적용합니다.
 
-사용자 승인에 따라 0.16.3 정식 GitHub 릴리스를 게시하는 중입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
+GitHub 정식 릴리스 구분과 Apple 개발자 서명·공증 상태는 별개입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
 
 ## 빌드와 실행
 
@@ -122,7 +122,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 
 ## 배포 파일 준비
 
-`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 0.16.3 ZIP은 현재 소스 커밋에서 새로 준비하며 이전 미게시 0.2.0 ZIP과 구별합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
+`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 공개한 0.16.3 ZIP은 태그가 가리키는 깨끗한 커밋에서 만들었으며 이전 미게시 0.2.0 ZIP과 구별합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
 
 ```sh
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py prepare

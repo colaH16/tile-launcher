@@ -326,6 +326,26 @@ def publication_allowed(manifest, allow_unnotarized):
             'This artifact is not notarized. Use --allow-unnotarized only for an explicitly chosen unnotarized release.')
 
 
+def find_release(tag):
+    # GitHub's by-tag endpoint omits drafts. Listing authenticated releases also
+    # prevents a retry from accidentally creating a second draft for this tag.
+    pages = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}/releases?per_page=100', '--paginate', '--slurp']))
+    require(isinstance(pages, list) and all(isinstance(page, list) for page in pages), 'Invalid release listing.')
+    matches = [release for page in pages for release in page if release.get('tag_name') == tag]
+    require(len(matches) <= 1, 'Multiple releases use this tag; inspect before continuing.')
+    return matches[0] if matches else None
+
+
+def download_release_assets(release, directory):
+    for asset in release['assets']:
+        require(isinstance(asset['id'], int), 'Invalid asset ID.')
+        # Asset names were checked against the verified local manifest by caller.
+        with (Path(directory) / asset['name']).open('wb') as destination:
+            result = subprocess.run(['gh', 'api', f'repos/{REPOSITORY}/releases/assets/{asset["id"]}',
+                                     '-H', 'Accept: application/octet-stream'], stdout=destination, stderr=subprocess.PIPE)
+        require(result.returncode == 0, 'Could not download release asset: ' + asset['name'])
+
+
 def github(args):
     manifest = verify(args)
     publication_allowed(manifest, args.allow_unnotarized)
@@ -342,9 +362,7 @@ def github(args):
     refs = dict(line.split()[::-1] for line in remote_tags.splitlines())
     target = refs.get('refs/tags/' + tag + '^{}', refs.get('refs/tags/' + tag))
     if args.command == 'draft':
-        existing = subprocess.run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{tag}'], capture_output=True, text=True)
-        require(existing.returncode != 0, 'A release already exists; nothing overwritten.')
-        require('HTTP 404' in existing.stderr, 'Could not safely determine whether release exists.')
+        require(find_release(tag) is None, 'A release or draft already exists; nothing overwritten.')
         if target is None:
             local = subprocess.run(['git', 'rev-parse', '--verify', 'refs/tags/' + tag + '^{commit}'], cwd=ROOT, capture_output=True, text=True)
             if local.returncode == 0:
@@ -360,15 +378,18 @@ def github(args):
                    '--notes-file', args.output / 'release-notes.md']))
         return
     require(target == revision, 'Remote tag/source mismatch.')
-    release = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}/releases/tags/{tag}']))
-    require(release['draft'] and not release['prerelease'], 'Expected a regular draft release.')
+    release = find_release(tag)
+    require(release is not None and release['draft'] and not release['prerelease'], 'Expected a regular draft release.')
     require(release['body'].strip() == (args.output / 'release-notes.md').read_text().strip(), 'Draft notes differ from verified notes.')
     require({a['name'] for a in release['assets']} == set(manifest['assets']), 'Draft assets differ from prepared assets.')
     with tempfile.TemporaryDirectory(prefix='tile-release-download-') as temporary:
-        run(['gh', 'release', 'download', tag, '--repo', REPOSITORY, '--dir', temporary])
+        download_release_assets(release, temporary)
         require(all(digest(Path(temporary) / name) == sha for name, sha in manifest['assets'].items()), 'Uploaded assets do not match local checksums.')
-    run(['gh', 'release', 'edit', tag, '--repo', REPOSITORY, '--draft=false', '--prerelease=false', '--latest'])
-    print(release['html_url'])
+    require(isinstance(release['id'], int), 'Invalid release ID.')
+    published = json.loads(run(['gh', 'api', '--method', 'PATCH', f'repos/{REPOSITORY}/releases/{release["id"]}',
+                                '-F', 'draft=false', '-F', 'prerelease=false', '-f', 'make_latest=true']))
+    require(published['tag_name'] == tag and not published['draft'] and not published['prerelease'], 'Unexpected publication response; inspect remote state before retrying.')
+    print(published['html_url'])
 
 
 def main():
