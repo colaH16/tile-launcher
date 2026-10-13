@@ -18,12 +18,14 @@ final class DeckPanel: NSPanel {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let runningBuild: AppBuild
     private lazy var replacement = BuildReplacement(running: runningBuild)
-    init(build: AppBuild) {
+    init(build: AppBuild, settings: SettingsStore = SettingsStore()) {
         runningBuild = build
+        self.settings = settings
         super.init()
         _ = AppIdentity.versionLabel
     }
-    let settings = SettingsStore()
+    let settings: SettingsStore
+    private let settingsNavigation = SettingsNavigation()
     let tracker = WindowTracker()
     let hold = HoldMonitor()
     let loginItem = LoginItemManager()
@@ -88,11 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hold.onCancel = { [weak self] in self?.pendingAction = nil; self?.presentation.selection = nil }
         hold.onRelease = { [weak self] in
-            let action = self?.pendingAction
-            self?.pendingAction = nil
-            self?.presentation.selection = nil
-            action?()
-            self?.schedulePinnedRefresh()
+            self?.finishOptionSelection()
         }
         hold.canTriggerHold = { [weak self] in self?.settings.optionTriggerEnabled == true }
         hold.ownsKeyboard = { [weak self] in self?.panel?.isKeyWindow == true }
@@ -233,6 +231,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = AXIsProcessTrustedWithOptions(options)
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
+    private func openAppManagementSettings() {
+        pendingAction = nil
+        hide()
+        // Opens the page only. System authorization remains the user's choice.
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles")!)
+    }
     @objc func openFromMenu() { show(held: false) }
     @objc private func reopenNotification(_ notification: Notification) {
         reopenExistingInterface(settings: notification.userInfo?["settings"] as? Bool == true, checkForUpdate: false)
@@ -306,8 +310,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             openURL: { [weak self] in self?.select(url: $0) },
                             openInFinder: { [weak self] in self?.selectFolderInFinder($0) },
                             openTrash: { [weak self] in self?.selectTrash() },
-                            showSettings: { [weak self] in self?.performAfterRelease { self?.openSettings() } },
-                            requestPermission: { [weak self] in self?.performAfterRelease { self?.requestPermission() } },
+                            showSettings: { [weak self] destination in self?.showSettings(destination, context: content.snapshot.context) },
+                            requestPermission: { [weak self] in self?.performImmediately { self?.requestPermission() } },
                             pinOverlay: { [weak self] in self?.pinOverlay() },
                             dismiss: { [weak self] in
                                 self?.pendingAction = nil
@@ -407,14 +411,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         presentation.reset()
         profileScroll.reset()
     }
-    private func performAfterRelease(_ action: @escaping () -> Void) {
-        if hold.optionDown && (heldPresentation || presentation.isPinned) {
-            pendingAction = action
-            if !presentation.isPinned { hide() }
-        } else {
-            if !presentation.isPinned { hide() }
-            action()
+    private func performImmediately(_ action: () -> Void) {
+        pendingAction = nil
+        presentation.selection = nil
+        if !presentation.isPinned { hide() }
+        action()
+    }
+    private func finishOptionSelection() {
+        let action = pendingAction
+        pendingAction = nil
+        presentation.selection = nil
+        action?()
+        schedulePinnedRefresh()
+    }
+    /// Isolated native verification: synthetic callbacks, no windows or app launch.
+    func verifyClickExecutionForPreview() throws {
+        hold.canTriggerHold = { false }
+        hold.isShowing = true
+        guard let option = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: .option,
+                                            timestamp: 1, windowNumber: 0, context: nil, characters: "",
+                                            charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 60)
         }
+        _ = hold.handle(option, external: false)
+        defer { hold.stop(); hold.onRelease = nil; pendingAction = nil; presentation.reset() }
+        for pinned in [false, true] {
+            presentation.reset()
+            if pinned { presentation.pin() }
+            heldPresentation = true
+            var clicks = 0, queued = 0
+            pendingAction = { queued += 1 }
+            presentation.selection = "pending-number"
+            performImmediately { clicks += 1 }
+            guard hold.optionDown, clicks == 1, queued == 0, pendingAction == nil,
+                  presentation.selection == nil, presentation.isPinned == pinned else {
+                throw NSError(domain: "TileLauncher.Preview", code: 61)
+            }
+            finishOptionSelection()
+            guard clicks == 1, queued == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 62) }
+        }
+        var numbers = 0
+        pendingAction = { numbers += 1 }
+        guard numbers == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 63) }
+        hold.onRelease = { [weak self] in self?.finishOptionSelection() }
+        guard let release = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: [],
+                                             timestamp: 2, windowNumber: 0, context: nil, characters: "",
+                                             charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 63)
+        }
+        _ = hold.handle(release, external: false)
+        _ = hold.handle(release, external: false)
+        guard !hold.optionDown, numbers == 1, pendingAction == nil else {
+            throw NSError(domain: "TileLauncher.Preview", code: 64)
+        }
+        print("AppDelegate: immediate click while Option held, pinned retention, queued-number cancellation and exactly-once deferred number execution passed.")
     }
     private func refreshFocus(completion: (() -> Void)? = nil) {
         Task { @MainActor [weak self] in
@@ -478,13 +528,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func select(pin: PinnedItem) {
         if pin.kind == .trash { selectTrash() }
-        else if pin.kind == .app { select(url: pin.url) }
-        else if pin.opensInOverlay { browser?.open(pin) }
+        else if pin.kind == .app { launchApplication(at: pin.url) }
+        else if pin.opensInOverlay {
+            pendingAction = nil
+            presentation.selection = nil
+            browser?.open(pin)
+        }
         else { selectFolderInFinder(pin.url) }
     }
     private func select(menu: MenuCommand, context: AppItem?, window: WindowItem?) {
         guard let context, context.id == menu.appID else { return }
-        performAfterRelease { [weak self] in
+        performImmediately { [weak self] in
             guard let self else { return }
             guard let running = NSRunningApplication(processIdentifier: context.pid), !running.isTerminated else {
                 self.error("메뉴를 사용할 앱이 종료되었습니다.")
@@ -511,7 +565,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func select(app: AppItem) {
-        performAfterRelease { [weak self] in
+        performImmediately { [weak self] in
             guard let running = NSRunningApplication(processIdentifier: app.pid) else {
                 self?.error("앱이 종료되었습니다.")
                 return
@@ -521,26 +575,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func select(window: WindowItem) {
-        performAfterRelease { [weak self] in
+        performImmediately { [weak self] in
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
             }
         }
     }
     private func select(url: URL) {
-        performAfterRelease { [weak self] in
+        if url.pathExtension.lowercased() == "app" {
+            launchApplication(at: url)
+            return
+        }
+        performImmediately { [weak self] in
             if !NSWorkspace.shared.open(url) { self?.error("항목을 열지 못했습니다. 이동되었거나 삭제되었는지 확인해 주세요.") }
         }
     }
+    private func launchApplication(at url: URL) {
+        performImmediately { [weak self] in
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            configuration.addsToRecentItems = false
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, failure in
+                if let failure {
+                    DispatchQueue.main.async { self?.error("앱을 열지 못했습니다. \(failure.localizedDescription)") }
+                }
+            }
+        }
+    }
     @objc func openSettings() {
+        showSettings(.general, context: lastContext)
+    }
+    private func showSettings(_ destination: SettingsDestination, context: AppItem?) {
         pendingAction = nil
         hide()
+        settingsNavigation.open(destination, app: context)
         if let preferences {
             NSApp.activate()
             preferences.makeKeyAndOrderFront(nil)
             return
         }
-        let view = SettingsView(settings: settings, loginItem: loginItem, preferredApp: lastContext, requestPermission: requestPermission)
+        let view = SettingsView(settings: settings, loginItem: loginItem, navigation: settingsNavigation,
+                                requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 760),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
@@ -562,7 +637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
     private func selectFolderInFinder(_ url: URL) {
-        performAfterRelease { [weak self] in
+        performImmediately { [weak self] in
             guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
                 self?.error("Finder를 찾지 못했습니다.")
                 return
@@ -579,7 +654,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func selectTrash() {
-        performAfterRelease { [weak self] in
+        performImmediately { [weak self] in
             guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
                 self?.error("Finder를 찾지 못했습니다.")
                 return

@@ -189,7 +189,7 @@ struct DeckPreview: View {
                  presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in },
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
-                 showSettings: {}, requestPermission: {}, pinOverlay: {}, dismiss: {})
+                 showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)
@@ -237,6 +237,11 @@ enum PreviewExport {
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
+        let delegate = AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
+                                   settings: verification.settings)
+        try delegate.verifyClickExecutionForPreview()
+        try verifySettingsNavigation()
+        try verifyWebAppIcon()
         try verifyQuickOptionReopen()
         let reopenPreview = PreviewFixture(theme: .glass)
         try save(OptionReopenSettings(settings: reopenPreview.settings).padding(20).frame(width: 570)
@@ -258,6 +263,52 @@ enum PreviewExport {
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported tile layout/color samples; native settings controls and desktop Glass composition are not covered.")
+    }
+
+    @MainActor private static func verifyWebAppIcon() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tile-webapp-icon-\(UUID())")
+        let bundle = directory.appendingPathComponent("Preview.app")
+        let resources = bundle.appendingPathComponent("Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let icon = NSImage(size: NSSize(width: 16, height: 16))
+        icon.lockFocus(); NSColor.systemBlue.setFill(); NSRect(x: 0, y: 0, width: 16, height: 16).fill(); icon.unlockFocus()
+        guard let data = icon.tiffRepresentation else { throw NSError(domain: "TileLauncher.Preview", code: 69) }
+        try data.write(to: resources.appendingPathComponent("ApplicationIcon.tiff"))
+        let infoURL = bundle.appendingPathComponent("Contents/Info.plist")
+        var info = ["CFBundleIdentifier": "com.apple.Safari.WebApp.preview", "CFBundleIconFile": "ApplicationIcon.tiff"]
+        let infoData = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try infoData.write(to: infoURL)
+        guard let loaded = AppIconCache.webAppIcon(bundle), loaded.size == icon.size,
+              try Data(contentsOf: infoURL) == infoData else { throw NSError(domain: "TileLauncher.Preview", code: 70) }
+        info["CFBundleIconFile"] = "../outside.tiff"
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: infoURL)
+        guard AppIconCache.webAppIcon(bundle) != nil else { throw NSError(domain: "TileLauncher.Preview", code: 71) }
+        info["CFBundleIdentifier"] = "preview.native"
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: infoURL)
+        guard AppIconCache.webAppIcon(bundle) == nil else { throw NSError(domain: "TileLauncher.Preview", code: 72) }
+        print("AppIconCache: direct Safari web-app resource loading without bundle changes, safe missing/traversal fallback and native-app separation passed.")
+    }
+
+    @MainActor private static func verifySettingsNavigation() throws {
+        let navigation = SettingsNavigation()
+        let app = AppItem(id: "preview.editor", pid: -1, name: "Preview Editor", url: nil)
+        navigation.open(.addMenu, app: app)
+        guard navigation.tab == .menus, navigation.menuAddition?.app == app else {
+            throw NSError(domain: "TileLauncher.Preview", code: 65)
+        }
+        let first = navigation.menuAddition?.id
+        navigation.open(.addMenu, app: app)
+        guard navigation.menuAddition?.id != first else { throw NSError(domain: "TileLauncher.Preview", code: 66) }
+        navigation.open(.registered, app: app)
+        guard navigation.tab == .registered, navigation.menuAddition == nil else {
+            throw NSError(domain: "TileLauncher.Preview", code: 67)
+        }
+        navigation.open(.general, app: nil)
+        guard navigation.tab == .general, navigation.menuAddition == nil, navigation.preferredApp == nil else {
+            throw NSError(domain: "TileLauncher.Preview", code: 68)
+        }
+        print("SettingsNavigation: General, Registered/Profile, current-app menu addition and repeated requests passed.")
     }
 
     @MainActor private static func verifyQuickOptionReopen() throws {

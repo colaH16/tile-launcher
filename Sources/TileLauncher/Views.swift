@@ -109,7 +109,7 @@ struct DeckView: View {
     let openURL: (URL) -> Void
     let openInFinder: (URL) -> Void
     let openTrash: () -> Void
-    let showSettings: () -> Void
+    let showSettings: (SettingsDestination) -> Void
     let requestPermission: () -> Void
     let pinOverlay: () -> Void
     let dismiss: () -> Void
@@ -200,7 +200,7 @@ struct DeckView: View {
                     .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
                 }
                 Spacer()
-                Button(action: showSettings) {
+                Button { showSettings(.general) } label: {
                     Image(systemName: "slider.horizontal.3").frame(width: 34, height: 34).contentShape(Circle())
                 }
                 .buttonStyle(.plain).help("설정 · ⌘, 또는 ⌥,")
@@ -250,11 +250,11 @@ struct DeckView: View {
             HStack {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
-                Button(action: showSettings) { Image(systemName: "plus") }
+                Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("설정에서 앱별 메뉴 추가")
             }.frame(height: 20)
             if menuItems.isEmpty {
-                Button(action: showSettings) {
+                Button { showSettings(.addMenu) } label: {
                     VStack(alignment: .leading, spacing: 9) {
                         Image(systemName: "command").font(.title2)
                         Text("앱별 메뉴 추가").font(.callout.weight(.medium))
@@ -320,11 +320,11 @@ struct DeckView: View {
                 Text("\(registeredItems.count)개").font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
-                Button(action: showSettings) { Image(systemName: "plus") }
+                Button { showSettings(.registered) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
             }.frame(height: 26)
             if registeredItems.isEmpty {
-                Button("앱이나 폴더 추가", action: showSettings)
+                Button("앱이나 폴더 추가") { showSettings(.registered) }
                     .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {

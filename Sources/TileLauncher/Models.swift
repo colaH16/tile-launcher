@@ -259,12 +259,30 @@ final class AppIconCache {
         guard let url else { return NSImage(systemSymbolName: "app", accessibilityDescription: nil)! }
         let key = url.path as NSString
         if let image = cache.object(forKey: key) { return image }
-        let original = NSWorkspace.shared.icon(forFile: url.path)
+        let original = Self.webAppIcon(url) ?? NSWorkspace.shared.icon(forFile: url.path)
         let image = NSImage(size: NSSize(width: 64, height: 64))
         image.lockFocus()
         original.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
         image.unlockFocus()
         cache.setObject(image, forKey: key)
         return image
+    }
+    /// Safari web-app icon lookup can trigger IconServices bundle maintenance.
+    /// Read the declared resource ourselves; missing icons use a system symbol.
+    static func webAppIcon(_ url: URL) -> NSImage? {
+        guard url.pathExtension.lowercased() == "app",
+              let data = try? Data(contentsOf: url.appendingPathComponent("Contents/Info.plist")),
+              let info = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              (info["CFBundleIdentifier"] as? String)?.hasPrefix("com.apple.Safari.WebApp.") == true else { return nil }
+        if let name = info["CFBundleIconFile"] as? String, !name.isEmpty,
+           !name.contains("/"), !name.contains("\\"), name != ".", name != ".." {
+            let resource = url.appendingPathComponent("Contents/Resources", isDirectory: true)
+                .appendingPathComponent(name)
+            let candidates = resource.pathExtension.isEmpty ? [resource, resource.appendingPathExtension("icns")] : [resource]
+            for candidate in candidates {
+                if let image = NSImage(contentsOf: candidate) { return image }
+            }
+        }
+        return NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage(size: NSSize(width: 32, height: 32))
     }
 }

@@ -5,19 +5,20 @@ import DeckCore
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var loginItem: LoginItemManager
-    let preferredApp: AppItem?
+    @ObservedObject var navigation: SettingsNavigation
     let requestPermission: () -> Void
+    let openAppManagementSettings: () -> Void
     @State private var countText = ""
     @State private var invalidCount = false
     @State private var profileName = ""
 
     var body: some View {
-        TabView {
-            general.tabItem { Label("일반", systemImage: "gearshape") }
-            AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }
-            MenuSettingsView(settings: settings, preferredApp: preferredApp)
-                .tabItem { Label("메뉴", systemImage: "command") }
-            registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }
+        TabView(selection: $navigation.tab) {
+            general.tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
+            AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
+            MenuSettingsView(settings: settings, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition)
+                .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
+            registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
         }.padding(16)
             .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
@@ -62,7 +63,15 @@ struct SettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
-                Button("접근성 권한 설정", action: requestPermission)
+                GroupBox("권한") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button("접근성 권한 설정", action: requestPermission)
+                        Text("창 전환과 앱 메뉴 실행·수집에 사용합니다.").font(.caption).foregroundStyle(.secondary)
+                        Button("앱 관리 설정 보기", action: openAppManagementSettings)
+                        Text("다른 앱을 업데이트·삭제할 수 있는 권한입니다. Tile Launcher에는 해당 기능이 없습니다. 앱 실행 중 이 권한의 차단 알림이 나타날 때 상태를 확인하는 용도로 제공합니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                }
                 Text(AppIdentity.versionLabel).font(.caption).foregroundStyle(.secondary)
             }.padding(16)
         }
@@ -173,6 +182,7 @@ struct SettingsView: View {
 struct MenuSettingsView: View {
     @ObservedObject var settings: SettingsStore
     let preferredApp: AppItem?
+    let additionRequest: MenuAdditionRequest?
     @StateObject private var catalog = MenuCatalog()
     @State private var applications: [AppItem] = []
     @State private var selectedID = ""
@@ -181,10 +191,13 @@ struct MenuSettingsView: View {
     @State private var recentDaysText = ""
     @State private var frequentDaysText = ""
     @State private var invalidHistory = false
+    @State private var showingAddition = false
+    @State private var handledRequestID: UUID?
     private var selectedApp: AppItem? { applications.first { $0.id == selectedID } }
     private var appNames: [(id: String, name: String)] {
         var names = Dictionary(settings.commands.map { ($0.appID, $0.appName) }, uniquingKeysWith: { first, _ in first })
         applications.forEach { names[$0.id] = $0.name }
+        if let preferredApp { names[preferredApp.id] = preferredApp.name }
         for id in settings.menuCapture.excludedApps where names[id] == nil {
             names[id] = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id
         }
@@ -269,8 +282,45 @@ struct MenuSettingsView: View {
                 }
             }.frame(height: 180)
             Divider()
+            Button("메뉴 추가…") { beginAddition(app: nil) }
+        }.padding(16)
+        }.onAppear {
+            refreshApps()
+            handleAdditionRequest()
+        }
+        .onChange(of: additionRequest?.id) { _, _ in handleAdditionRequest() }
+        .sheet(isPresented: $showingAddition) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("메뉴 추가").font(.title2.weight(.semibold))
+                    Spacer()
+                    Button("완료") { showingAddition = false }.keyboardShortcut(.cancelAction)
+                }
+                HStack {
+                    Picker("앱", selection: $selectedID) {
+                        if selectedID.isEmpty { Text("앱 선택").tag("") }
+                        ForEach(appNames, id: \.id) { Text($0.name).tag($0.id) }
+                    }
+                    Button("앱 목록 새로고침") {
+                        refreshApps()
+                        if let app = selectedApp { catalog.load(app: app) }
+                    }
+                }
+                if selectedApp == nil {
+                    Text("메뉴를 추가할 앱을 실행한 뒤 선택해 주세요.").font(.caption).foregroundStyle(.secondary)
+                }
+                additionForm
+            }.padding(20).frame(width: 540)
+                .task(id: selectedID) {
+                    if let app = selectedApp { catalog.load(app: app) } else { catalog.clear() }
+                }
+                .onDisappear { catalog.clear() }
+        }
+    }
+    private var additionForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("메뉴 추가").font(.headline)
+                Text("앱의 메뉴 막대에서 선택").font(.headline)
                 Spacer()
                 Button(catalog.loading ? "읽는 중…" : "선택한 앱의 메뉴 불러오기") {
                     if let app = selectedApp { catalog.load(app: app) }
@@ -301,9 +351,23 @@ struct MenuSettingsView: View {
                     }.disabled(selectedApp == nil || !manualPath.contains(">"))
                 }.padding(.top, 6)
             }
-        }.padding(16)
-        }.onAppear(perform: refreshApps)
-            .onChange(of: selectedID) { _, _ in catalog.clear() }
+        }
+    }
+    private func beginAddition(app: AppItem?) {
+        refreshApps()
+        if let app { selectedID = app.id }
+        search = ""
+        manualPath = ""
+        showingAddition = true
+    }
+    private func handleAdditionRequest() {
+        guard let request = additionRequest else {
+            showingAddition = false
+            return
+        }
+        guard request.id != handledRequestID else { return }
+        handledRequestID = request.id
+        beginAddition(app: request.app)
     }
     private func saveHistory() {
         guard let recent = Int(recentDaysText.trimmingCharacters(in: .whitespaces)),
