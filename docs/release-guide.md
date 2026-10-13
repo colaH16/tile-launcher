@@ -1,6 +1,6 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
-확인일: 2026-10-13, Asia/Seoul. [v0.16.3 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3)를 **개발용 ad-hoc 서명/공증 없음**으로 공개했다. 유료 등록·Developer ID 서명·공증은 아직 수행하지 않았다.
+확인일: 2026-10-13, Asia/Seoul. [v0.17.1 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.1)를 **개발용 ad-hoc 서명/공증 없음**으로 공개했다. 유료 등록·Developer ID 서명·공증은 아직 수행하지 않았다.
 
 ## R102 · 공개 완료와 버전 정책
 
@@ -19,7 +19,7 @@ R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공�
 
 현재 개발 구성은 `release/config.json`의 v0.17.1, 빌드 8, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
 
-R108에서 0.17.1 정식 GitHub 게시를 요청했다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
+R108에서 0.17.1 정식 GitHub 게시를 요청해 공개를 완료했다. 아래는 다음 새 버전의 절차다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer
@@ -36,7 +36,7 @@ python3 scripts/release.py verify
 
 ## GitHub 초안과 정식 게시
 
-아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
+아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3과 v0.17.1은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
 
 ```sh
 # 개발용 서명/공증 없음으로 배포하기로 정했을 때

@@ -1,6 +1,6 @@
 # 네이티브 빌드 검증
 
-최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 0.17.1(8) GitHub 릴리스 준비 중.
+최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 0.17.1(8) GitHub 정식 릴리스 공개 완료.
 
 ## R108 · 기본값 0.6초 패치 및 공개 준비
 
@@ -8,6 +8,10 @@
 - 변경 대상 OptionReopenTests **9개, 실패 0개**. 600ms 경계 포함/초과·일회성 복원·비활성화·설정 누락/손상·기존 0.8초 설정 보존을 확인했다. 로그는 /tmp/tile-0171-tests.log다. 기존 0.17.0 전체 검사 105개 결과와 구별한다.
 - 화면 없는 실제 SettingsStore/HoldMonitor 통합 검사를 통과했다. 기본 0.6초·사용자 지정 값 저장·기존 데이터 보존·550ms 즉시 복원·타이머 중복 열기 없음·중간 입력 취소·정상 호출/단일 실행을 확인했다. /tmp/tile-0171-previews.log에 기록했다. 사용자 전경 앱/키 입력/실행 프로세스를 조작하지 않았다.
 - 깨끗한 소스 커밋에서 별도 배포 폴더로 패키징하고 GitHub 초안에 올린 뒤, 파일 재다운로드·SHA-256 대조를 통과해야 공개한다. 최종 결과는 아래에 추가한다. 기존 v0.16.3 자산과 사용자 설치 앱은 보존한다.
+- 소스 **31133fec941bd3e894c408b45437cda3d3a38e14**를 git archive로 분리해 최적화 빌드·ad-hoc 서명·코드 무결성·아이콘/Focus 메타데이터·버전/소스/arm64 검사와 ZIP 재추출 트리 해시 검사를 통과했다. local_only=false, prerelease=false, 0.17.1(8). 컴파일 경고/오류 없음. /tmp/tile-0171-release-prepare.log 및 배포 폴더 build.log에 기록했다.
+- ZIP 1,958,572바이트, SHA-256 **db7b8ec8ae05e2ad5e0a8e864a73693c75e1a18a821fdd087483fdaa9657020d**. 배포 폴더는 ~/Library/Developer/TileLauncher/releases/v0.17.1이다. 메타데이터·SHA256SUMS.txt와 함께 초안에 올리고 세 파일을 다시 내려받아 각각 대조했다. /tmp/tile-0171-release-draft.log 및 /tmp/tile-0171-release-publish.log에 기록했다.
+- **2026-10-13 14:55 KST 공개 완료**: https://github.com/colaH16/tile-launcher/releases/tag/v0.17.1 . GitHub latest 응답의 tag/draft=false/prerelease=false와 세 자산 uploaded/서버 digest 일치를 재확인했다. 이전 v0.16.3 ZIP의 서버 해시도 c8a598d4…66c0d로 기존 기록과 일치했다.
+- 사용자 설치 앱/프로세스·권한·설정은 변경하지 않았다. Developer ID 서명·공증·Focus 제한 해결이나 모든 지원 OS에서의 실기 검증을 뜻하지 않는다.
 
 ## R104–R107 · 설정 가능한 Option 재입력 보정
 

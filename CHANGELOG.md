@@ -1,6 +1,6 @@
 # Tile Launcher 버전 이력
 
-기준일: 2026-10-13 (Asia/Seoul). 현재 **0.17.1 · 빌드 8**, 개발용 ad-hoc 서명으로 GitHub 릴리스 준비 중. 이전 공개본 [v0.16.3](https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3)의 자산은 보존한다.
+기준일: 2026-10-13 (Asia/Seoul). 현재 **0.17.1 · 빌드 8**, 개발용 ad-hoc 서명·공증 없음으로 [GitHub 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.1) 공개 완료. 이전 공개본 [v0.16.3](https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3)의 자산은 보존한다.
 
 ## 0.17.1 · 위치 복원 기본 시간 보정
 
@@ -79,5 +79,6 @@ R99–R100에서 사용자가 정한 규칙이다. R98의 ‘전달할 때마다
 
 ## 실제 공개 릴리스
 
+- 2026-10-13: **v0.17.1(8)** 최신 정식 릴리스. 기본값 0.6초 패치와 미게시 0.17.0의 재입력 보정·설정을 포함한다. 개발용 ad-hoc 서명·공증 없음. 소스 31133fec941bd3e894c408b45437cda3d3a38e14, ZIP·메타데이터·체크섬을 공개했다.
 - 2026-10-13: **v0.16.3(6)** 정식 릴리스. Apple Silicon, macOS 26 이상, 개발용 ad-hoc 서명·공증 없음. 소스 커밋 5388c2c400c8dd9b084538adf6f74385eabfe27b. ZIP·release-metadata.json·SHA256SUMS.txt를 공개했다.
 - 위 과거 재분류 표의 다른 번호들과 개발본 0.17.0은 공개 릴리스가 아니다. 최초 Developer ID 서명 완료 빌드는 1.0.0이다.

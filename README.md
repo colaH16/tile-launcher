@@ -4,13 +4,13 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-**[0.16.3 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.16.3)**를 공개했습니다. Apple Silicon · macOS 26 이상이며, 현재는 **개발용 ad-hoc 서명·Apple 공증 없음**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v0.16.3/Tile-Launcher-0.16.3-arm64-unnotarized.zip) · [설치 안내](docs/installation.md). Developer ID 서명·공증은 추후 적용합니다.
+**[0.17.1 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.1)**를 공개했습니다. Apple Silicon · macOS 26 이상이며, 현재는 **개발용 ad-hoc 서명·Apple 공증 없음**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v0.17.1/Tile-Launcher-0.17.1-arm64-unnotarized.zip) · [설치 안내](docs/installation.md). Developer ID 서명·공증은 추후 적용합니다.
 
 GitHub 정식 릴리스 구분과 Apple 개발자 서명·공증 상태는 별개입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
 
 ## 빌드와 실행
 
-현재 개발 소스는 **0.17.1(8)**입니다. 선택 없이 Option을 놓아 닫은 뒤 **기본 0.6초 이내에 다시 누르면 직전 위치로 즉시 열리는 보정**을 추가했습니다. 일반 설정에서 끄거나 시간을 조절할 수 있습니다. 0.17.1 GitHub 릴리스를 준비 중이며 위 다운로드는 0.16.3입니다.
+현재 개발 소스는 **0.17.1(8)**입니다. 선택 없이 Option을 놓아 닫은 뒤 **기본 0.6초 이내에 다시 누르면 직전 위치로 즉시 열리는 보정**을 추가했습니다. 일반 설정에서 끄거나 시간을 조절할 수 있습니다. 0.17.1 GitHub 정식 릴리스에 포함했으며 위 다운로드도 같은 버전입니다. 이미 저장한 시간 설정은 유지합니다.
 
 **0.16.3 Focus 제한:** 현재 macOS 27.2 beta에서 Team ID 없는 ad-hoc 앱의 Focus 필터 로딩 실패를 확인했습니다. 아이콘 파일과 일반 아이콘 로딩은 정상이지만 App Intents 앱 식별/연결이 실패합니다. 유효한 Apple 서명 후 재검증이 필요하며, 그동안 수동 프로필·좌우 전환을 사용하세요. [진단 기록](docs/focus-diagnostics.md)
 
@@ -128,7 +128,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 
 ## 배포 파일 준비
 
-`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 공개한 0.16.3 ZIP은 태그가 가리키는 깨끗한 커밋에서 만들었으며 이전 미게시 0.2.0 ZIP과 구별합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
+`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 공개한 0.17.1 ZIP은 태그가 가리키는 깨끗한 커밋에서 만들었으며 이전 미게시 0.2.0 ZIP과 구별합니다. 이전 공개 v0.16.3 자산도 그대로 보존합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
 
 ```sh
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py prepare
