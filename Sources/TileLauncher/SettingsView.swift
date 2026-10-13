@@ -22,7 +22,7 @@ struct SettingsView: View {
                                  additionSize: MenuAdditionLayout.size(for: geometry.size), applicationProvider: applicationProvider)
                     .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
                 registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
-            }.padding(16)
+            }.padding(SettingsWindowLayout.outerPadding)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         }
     }

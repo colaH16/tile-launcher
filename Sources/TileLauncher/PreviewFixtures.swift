@@ -277,8 +277,23 @@ struct SettingsLayoutPreview: View {
 #Preview("사용자 색 · 밝은 화면") { DeckPreview(theme: .classic, customColors: true).preferredColorScheme(.light) }
 #Preview("모양 설정") { AppearancePreview() }
 #Preview("메뉴 사용 횟수") { MenuUsagePreview() }
-#Preview("일반 설정") { SettingsLayoutPreview(tab: .general, size: SettingsWindowLayout.defaultContentSize) }
-#Preview("메뉴 설정") { SettingsLayoutPreview(tab: .menus, size: SettingsWindowLayout.defaultContentSize) }
+#Preview("일반 설정") { FittedSettingsPreview(tab: .general) }
+#Preview("메뉴 설정") { FittedSettingsPreview(tab: .menus) }
+
+struct FittedSettingsPreview: View {
+    @StateObject private var fixture = PreviewFixture(theme: .glass)
+    @StateObject private var loginItem = LoginItemManager()
+    let tab: SettingsTab
+    var body: some View {
+        if tab == .general {
+            GeneralSettingsContent(settings: fixture.settings, loginItem: loginItem,
+                                   requestPermission: {}, openAppManagementSettings: {})
+                .padding(SettingsWindowLayout.outerPadding).frame(width: SettingsWindowLayout.defaultWidth)
+        } else {
+            SettingsLayoutPreview(tab: tab, size: SettingsWindowLayout.fittedContentSize(settings: fixture.settings, loginItem: loginItem))
+        }
+    }
+}
 
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
@@ -293,19 +308,27 @@ enum PreviewExport {
         try verifyWebAppIcon()
         try verifyQuickOptionReopen()
         try verifyMenuCatalogChoices()
-        try verifySettingsWindowLayout()
-        for size in [SettingsWindowLayout.defaultContentSize, CGSize(width: 540, height: 638)] {
-            for tab in [SettingsTab.general, .menus] {
+        let loginItem = LoginItemManager()
+        let fittedSize = SettingsWindowLayout.fittedContentSize(settings: verification.settings, loginItem: loginItem)
+        try verifySettingsWindowLayout(contentSize: fittedSize)
+        try save(GeneralSettingsContent(settings: verification.settings, loginItem: loginItem,
+                                       requestPermission: {}, openAppManagementSettings: {})
+                    .padding(SettingsWindowLayout.outerPadding)
+                    .frame(width: fittedSize.width, height: fittedSize.height, alignment: .topLeading)
+                    .background(Color(nsColor: .windowBackgroundColor)),
+                 to: directory.appendingPathComponent("settings-general-fitted.png"))
+        for size in [fittedSize, CGSize(width: 540, height: 638)] {
+            for tab in [SettingsTab.general, .menus] where size != fittedSize || tab != .general {
                 try save(SettingsLayoutPreview(tab: tab, size: size).environment(\.colorScheme, .dark),
                          to: directory.appendingPathComponent("settings-\(tab)-\(Int(size.width)).png"))
             }
         }
-        try save(SettingsLayoutPreview(tab: .menus, size: SettingsWindowLayout.defaultContentSize, emptyMenus: true)
+        try save(SettingsLayoutPreview(tab: .menus, size: fittedSize, emptyMenus: true)
                     .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("settings-menus-empty.png"))
         try save(SettingsLayoutPreview(tab: .general, size: CGSize(width: 540, height: 638))
                     .environment(\.colorScheme, .dark), scrollToEnd: true,
                  to: directory.appendingPathComponent("settings-general-540-bottom.png"))
-        try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: SettingsWindowLayout.defaultContentSize))
+        try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: fittedSize))
                     .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("menu-addition-large.png"))
         try save(MenuAdditionPreview(size: MenuAdditionLayout.size(for: CGSize(width: 540, height: 660)), manualExpanded: true)
                     .environment(\.colorScheme, .dark), to: directory.appendingPathComponent("menu-addition-compact.png"))
@@ -331,28 +354,28 @@ enum PreviewExport {
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
     }
 
-    @MainActor private static func verifySettingsWindowLayout() throws {
+    @MainActor private static func verifySettingsWindowLayout(contentSize: CGSize) throws {
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 700),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let largeScreen = CGRect(x: 0, y: 0, width: 1920, height: 1400)
-        SettingsWindowLayout.apply(to: window, visibleFrame: largeScreen)
-        guard window.contentLayoutRect.size == SettingsWindowLayout.defaultContentSize,
+        SettingsWindowLayout.apply(to: window, contentSize: contentSize, visibleFrame: largeScreen)
+        guard window.contentLayoutRect.size == contentSize, contentSize.height < 1000,
               window.styleMask.contains(.resizable) else { throw NSError(domain: "TileLauncher.Preview", code: 76) }
         window.setContentSize(CGSize(width: 800, height: 850))
         guard window.contentLayoutRect.width == 800 else { throw NSError(domain: "TileLauncher.Preview", code: 77) }
-        SettingsWindowLayout.apply(to: window, visibleFrame: largeScreen)
-        guard window.contentLayoutRect.size == SettingsWindowLayout.defaultContentSize else {
+        SettingsWindowLayout.apply(to: window, contentSize: contentSize, visibleFrame: largeScreen)
+        guard window.contentLayoutRect.size == contentSize else {
             throw NSError(domain: "TileLauncher.Preview", code: 78)
         }
         let smallScreen = CGRect(x: 0, y: 0, width: 1024, height: 768)
-        SettingsWindowLayout.apply(to: window, visibleFrame: smallScreen)
+        SettingsWindowLayout.apply(to: window, contentSize: contentSize, visibleFrame: smallScreen)
         guard window.frame.width <= smallScreen.width - 48, window.frame.height <= smallScreen.height - 48,
               window.minSize.height <= window.frame.height, !window.isVisible else {
             throw NSError(domain: "TileLauncher.Preview", code: 79)
         }
         window.close()
-        print("Settings window: explicit initial/reopen size, manual resizing and small-screen height clamp passed offscreen.")
+        print("Settings window: General-fitted content \(contentSize), initial/reopen size, manual resizing and small-screen clamp passed offscreen.")
     }
 
     @MainActor private static func verifyMenuCatalogChoices() throws {

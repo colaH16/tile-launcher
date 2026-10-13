@@ -620,7 +620,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let view = SettingsView(settings: settings, loginItem: loginItem, navigation: settingsNavigation,
                                 requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: SettingsWindowLayout.defaultContentSize),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: SettingsWindowLayout.defaultWidth, height: 660),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "\(AppIdentity.name) 설정"
@@ -635,7 +635,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func sizeSettingsWindow(_ window: NSWindow) {
         MainActor.assumeIsolated {
-            SettingsWindowLayout.apply(to: window, visibleFrame: window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)
+            loginItem.refresh()
+            let size = SettingsWindowLayout.fittedContentSize(settings: settings, loginItem: loginItem)
+            SettingsWindowLayout.apply(to: window, contentSize: size,
+                                       visibleFrame: window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)
         }
     }
     private func error(_ message: String) {

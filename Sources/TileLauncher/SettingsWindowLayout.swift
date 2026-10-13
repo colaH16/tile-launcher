@@ -1,10 +1,22 @@
 import AppKit
+import SwiftUI
 
 enum SettingsWindowLayout {
-    static let defaultContentSize = CGSize(width: 580, height: 1000)
-    @MainActor static func apply(to window: NSWindow, visibleFrame: NSRect?) {
+    static let defaultWidth: CGFloat = 580
+    static let outerPadding: CGFloat = 16
+
+    @MainActor static func fittedContentSize(settings: SettingsStore, loginItem: LoginItemManager) -> CGSize {
+        let content = GeneralSettingsContent(settings: settings, loginItem: loginItem,
+                                             requestPermission: {}, openAppManagementSettings: {})
+            .frame(width: defaultWidth - outerPadding * 2)
+            .fixedSize(horizontal: false, vertical: true)
+        let hosting = NSHostingView(rootView: content)
+        return CGSize(width: defaultWidth, height: ceil(hosting.fittingSize.height) + outerPadding * 2)
+    }
+
+    @MainActor static func apply(to window: NSWindow, contentSize: CGSize, visibleFrame: NSRect?) {
         window.minSize = .zero
-        window.setContentSize(defaultContentSize)
+        window.setContentSize(contentSize)
         if let visibleFrame {
             let available = visibleFrame.insetBy(dx: 24, dy: 24)
             var frame = window.frame
