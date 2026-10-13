@@ -129,7 +129,7 @@ final class PreviewFixture: ObservableObject {
         guard SettingsStore(defaults: defaults).optionReopen == OptionReopenPreferences(interval: 0.3) else {
             throw NSError(domain: "TileLauncher.Preview", code: 46)
         }
-        print("SettingsStore: Option recovery default 0.8, disabled/custom interval persistence and existing data preservation passed.")
+        print("SettingsStore: Option recovery default 0.6, disabled/custom interval persistence and existing data preservation passed.")
         let captured = CapturedMenu(appID: "preview.editor", appName: "문서 편집기", path: ["편집", "복사"],
                                     shortcut: "c", commandModifier: true)
         settings.recordCapturedMenu(captured)
@@ -298,7 +298,7 @@ enum PreviewExport {
             _ = monitor.handle(event, external: true)
         }
         memory.record(frame, at: 10, reason: .release, held: true, actionPending: false)
-        try event(.flagsChanged, .option, 10.75)
+        try event(.flagsChanged, .option, 10.55)
         guard quick == 1, ordinary == 0, monitor.isShowing else { throw NSError(domain: "TileLauncher.Preview", code: 41) }
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         guard ordinary == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 42) }

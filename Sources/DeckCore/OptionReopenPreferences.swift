@@ -2,7 +2,7 @@ import Foundation
 
 public struct OptionReopenPreferences: Codable, Equatable {
     public static let intervalRange: ClosedRange<TimeInterval> = 0.1...2.0
-    public static let defaultInterval: TimeInterval = 0.8
+    public static let defaultInterval: TimeInterval = 0.6
     public let enabled: Bool
     public let interval: TimeInterval
 

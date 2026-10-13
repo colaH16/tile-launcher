@@ -20,7 +20,7 @@ struct OptionReopenSettings: View {
                         .monospacedDigit()
                 }
                 .disabled(!settings.optionReopen.enabled)
-                Text("Option을 놓으면 바로 닫힙니다. 설정한 시간 안에 다시 누르면 이전 위치로 즉시 열립니다. 기본 0.8초 · 0.1–2.0초 조절")
+                Text("Option을 놓으면 바로 닫힙니다. 설정한 시간 안에 다시 누르면 이전 위치로 즉시 열립니다. 기본 0.6초 · 0.1–2.0초 조절")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("항목을 실행했거나 닫기·Esc를 누른 경우, 그 사이 다른 키를 누르거나 클릭한 경우에는 적용하지 않습니다.")
                     .font(.caption).foregroundStyle(.secondary)
