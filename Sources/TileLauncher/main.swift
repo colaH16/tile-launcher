@@ -602,6 +602,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // Register with AppKit, then acquire before constructing monitors or the status item.
 let application = NSApplication.shared
+if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+    // Xcode's canvas owns its preview hosts. Never install global monitors,
+    // acquire the user's app instance lock or create a status item here.
+    application.setActivationPolicy(.prohibited)
+    application.run()
+    exit(0)
+}
+if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
+   CommandLine.arguments.indices.contains(index + 1) {
+    application.setActivationPolicy(.prohibited)
+    do {
+        try MainActor.assumeIsolated {
+            try PreviewExport.render(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+        }
+        exit(0)
+    } catch {
+        fputs("Preview export failed: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+}
 let instanceLock: InstanceLock
 let runningBuild: AppBuild
 do {

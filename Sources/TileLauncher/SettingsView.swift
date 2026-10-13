@@ -14,9 +14,10 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             general.tabItem { Label("일반", systemImage: "gearshape") }
-            registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }
+            AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }
             MenuSettingsView(settings: settings, preferredApp: preferredApp)
                 .tabItem { Label("메뉴", systemImage: "command") }
+            registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }
         }.padding(16)
             .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
@@ -26,15 +27,6 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text(AppIdentity.name).font(.title2.weight(.semibold))
                 Text("Option을 0.25초 누르면 커서 근처에 열립니다.").font(.callout).foregroundStyle(.secondary)
-                GroupBox("모양") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Picker("테마", selection: $settings.theme) {
-                            ForEach(DeckTheme.allCases) { Text($0.title).tag($0) }
-                        }.pickerStyle(.radioGroup)
-                        Text("유리·파스텔: 둥근 타일, 노랑·파랑 강조\n클래식·직각: 완전 불투명 타일, 초록·파랑 강조\n배경과 상단 버튼은 두 테마 모두 Liquid Glass를 사용합니다.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }
                 GroupBox("시작") {
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Option을 길게 눌러 오버레이 열기", isOn: $settings.optionTriggerEnabled)
@@ -200,7 +192,9 @@ struct MenuSettingsView: View {
                 }
                 Button("앱 목록 새로고침", action: refreshApps)
             }
-            Text("등록한 메뉴만 표시합니다. 런처에서 3회 이상 실행하면 가로형으로 커지고, 고정한 메뉴는 맨 앞에 표시됩니다.")
+            Text("최근·자주 사용은 Tile Launcher에서 성공한 실행만 기록합니다. Finder 등 다른 앱에서 직접 누른 메뉴는 자동으로 추가되지 않습니다.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("메뉴를 등록한 뒤 고정을 해제하면 최근 실행 순으로 표시됩니다. 3회 이상 실행하면 가로형으로 커지고, 고정 메뉴는 항상 맨 앞에 표시됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             List {
                 ForEach(MenuCommand.ordered(settings.commands, appID: selectedID)) { command in

@@ -122,6 +122,7 @@ final class SettingsStore: ObservableObject {
     @Published var automatic: Bool { didSet { save() } }
     @Published var optionTriggerEnabled: Bool { didSet { save() } }
     @Published var theme: DeckTheme { didSet { save() } }
+    @Published var tileColors: TileColors { didSet { save() } }
     @Published var manualCount: Int { didSet { save() } }
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
@@ -136,6 +137,7 @@ final class SettingsStore: ObservableObject {
         optionTriggerEnabled = defaults.object(forKey: "optionTriggerEnabled") as? Bool ?? true
         theme = defaults.string(forKey: "appearanceTheme").flatMap(DeckTheme.init(rawValue:))
             ?? .glass
+        tileColors = TileColors.restore(defaults.data(forKey: "tileColors"))
         manualCount = max(6, defaults.object(forKey: "manualWindowCount") as? Int ?? 12)
         save()
     }
@@ -151,6 +153,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(automatic, forKey: "automaticWindowCount")
         defaults.set(optionTriggerEnabled, forKey: "optionTriggerEnabled")
         defaults.set(theme.rawValue, forKey: "appearanceTheme")
+        if let data = try? JSONEncoder().encode(tileColors) { defaults.set(data, forKey: "tileColors") }
         defaults.set(manualCount, forKey: "manualWindowCount")
     }
     func addApplications() {

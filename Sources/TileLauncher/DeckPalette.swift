@@ -1,58 +1,39 @@
 import SwiftUI
+import AppKit
 import DeckCore
 
 private struct DeckThemeKey: EnvironmentKey {
     static let defaultValue: DeckTheme = .glass
+}
+private struct TileColorsKey: EnvironmentKey {
+    static let defaultValue = TileColors()
 }
 extension EnvironmentValues {
     var deckTheme: DeckTheme {
         get { self[DeckThemeKey.self] }
         set { self[DeckThemeKey.self] = newValue }
     }
+    var tileColors: TileColors {
+        get { self[TileColorsKey.self] }
+        set { self[TileColorsKey.self] = newValue }
+    }
 }
-
-enum DeckTileTone { case neutral, pinnedMenu, currentDesktop }
-
+extension TileColor {
+    var swiftUIColor: Color { Color(red: red, green: green, blue: blue) }
+    init?(color: Color) {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+        let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
+        guard channels.allSatisfy({ $0.isFinite }) else { return nil }
+        let bytes = channels.map { UInt32((min(1, max(0, $0)) * 255).rounded()) }
+        self.init(bytes[0] << 16 | bytes[1] << 8 | bytes[2])
+    }
+}
 struct DeckPalette {
-    let tone: DeckTileTone
-    let dark: Bool
-    let theme: DeckTheme
-    private func rgb(_ hex: UInt32) -> Color {
-        Color(red: Double((hex >> 16) & 255) / 255,
-              green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255)
+    private let surface: TileSurfaceColors
+    init(section: TileSection, emphasized: Bool = false, dark: Bool, theme: DeckTheme, colors: TileColors) {
+        surface = TileSurfaceColors(section: section, emphasized: emphasized, dark: dark, theme: theme, colors: colors)
     }
-    var fill: Color {
-        if theme.isClassic {
-            switch tone {
-            case .neutral: return rgb(dark ? 0x364A5C : 0xE0E8F0)
-            case .pinnedMenu: return rgb(dark ? 0x247758 : 0xCCECDB)
-            case .currentDesktop: return rgb(dark ? 0x236A9C : 0xCDE8FB)
-            }
-        }
-        switch tone {
-        case .neutral: return rgb(dark ? 0x444C56 : 0xF7F9FC)
-        case .pinnedMenu: return rgb(dark ? 0xEAD390 : 0xFFEAB0)
-        case .currentDesktop: return rgb(dark ? 0xAED3EF : 0xCCE8FC)
-        }
-    }
-    var ink: Color {
-        if theme.isClassic {
-            return dark ? rgb(0xFFFFFF) : rgb(tone == .pinnedMenu ? 0x123F2A : 0x17354F)
-        }
-        switch tone {
-        case .neutral: return dark ? rgb(0xF5F7FA) : rgb(0x252B32)
-        case .pinnedMenu: return rgb(0x493910)
-        case .currentDesktop: return rgb(0x173C57)
-        }
-    }
-    var secondary: Color {
-        if theme.isClassic {
-            return dark ? rgb(0xEBF3FA) : rgb(tone == .pinnedMenu ? 0x295B3E : 0x315570)
-        }
-        switch tone {
-        case .neutral: return dark ? rgb(0xCED5DF) : rgb(0x5A6370)
-        case .pinnedMenu: return rgb(0x62501B)
-        case .currentDesktop: return rgb(0x305873)
-        }
-    }
+    var fill: Color { surface.fill.swiftUIColor }
+    var ink: Color { surface.ink.swiftUIColor }
+    var secondary: Color { surface.secondary.swiftUIColor }
 }

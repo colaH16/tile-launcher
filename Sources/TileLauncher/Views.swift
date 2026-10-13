@@ -30,10 +30,11 @@ private struct RegisteredTileStyle: ButtonStyle {
         @Environment(\.colorScheme) private var scheme
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
         @Environment(\.deckTheme) private var theme
+        @Environment(\.tileColors) private var colors
         @State private var hovering = false
         private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 12, style: .continuous) }
         var body: some View {
-            let palette = DeckPalette(tone: .neutral, dark: scheme == .dark, theme: theme)
+            let palette = DeckPalette(section: .registered, dark: scheme == .dark, theme: theme, colors: colors)
             configuration.label
                 .foregroundStyle(palette.ink, palette.secondary)
                 .contentShape(shape)
@@ -53,14 +54,16 @@ private struct RegisteredTileStyle: ButtonStyle {
     }
 }
 private struct TileStyle: ButtonStyle {
-    var tone: DeckTileTone = .neutral
+    var section: TileSection = .menus
+    var emphasized = false
     var selected = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.deckTheme) private var theme
+    @Environment(\.tileColors) private var colors
     func makeBody(configuration: Configuration) -> some View {
-        let palette = DeckPalette(tone: tone, dark: scheme == .dark, theme: theme)
+        let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark, theme: theme, colors: colors)
         let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 14, style: .continuous)
         configuration.label
             .foregroundStyle(palette.ink, palette.secondary)
@@ -135,6 +138,7 @@ struct DeckView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.deckTheme, settings.theme)
+        .environment(\.tileColors, settings.tileColors)
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.72))
@@ -270,7 +274,7 @@ struct DeckView: View {
                 Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        }.buttonStyle(TileStyle(tone: command.isPinned ? .pinnedMenu : .neutral))
+        }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : ""))
             .contextMenu {
                 Button(command.isPinned ? "고정 해제" : "앞에 고정") {
@@ -355,7 +359,7 @@ struct DeckView: View {
             HStack {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
-                Circle().fill(Color.blue).frame(width: 5, height: 5)
+                Circle().fill(settings.tileColors.seed(for: .windows, theme: settings.theme).swiftUIColor).frame(width: 5, height: 5)
                 Text("현재 데스크탑").font(.caption2).foregroundStyle(.secondary)
                 Spacer(minLength: 4)
                 Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
@@ -390,8 +394,8 @@ struct DeckView: View {
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
         let desktop = presentation.windowDesktops[window.id] ?? .unknown
-        let palette = DeckPalette(tone: desktop == .current ? .currentDesktop : .neutral,
-                                  dark: deckScheme == .dark, theme: settings.theme)
+        let palette = DeckPalette(section: .windows, emphasized: desktop == .current,
+                                  dark: deckScheme == .dark, theme: settings.theme, colors: settings.tileColors)
         return Button { selectWindow(window) } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
@@ -403,7 +407,7 @@ struct DeckView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
-        }.buttonStyle(TileStyle(tone: desktop == .current ? .currentDesktop : .neutral,
+        }.buttonStyle(TileStyle(section: .windows, emphasized: desktop == .current,
                                 selected: presentation.selection == "window:\(window.id)"))
             .help("\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
                 + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
@@ -441,7 +445,7 @@ struct DeckView: View {
                                     Icon(url: entry.url, size: 42)
                                     Text(entry.name).font(.caption).lineLimit(2).multilineTextAlignment(.center)
                                 }.padding(10).frame(maxWidth: .infinity).frame(height: 108)
-                            }.buttonStyle(TileStyle()).help(entry.name)
+                            }.buttonStyle(TileStyle(section: .registered)).help(entry.name)
                         }
                     }
                 }

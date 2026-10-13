@@ -4,7 +4,17 @@
 
 사용자 요구: Apple 지침은 OS와 함께 변할 수 있으므로, 미래 업그레이드 때 최신 자료를 다시 확인하여 앱을 갱신할 수 있게 기록합니다. **이 문서도 고정된 디자인 규격이 아니라 재검토 절차입니다.**
 
-최신 변경: R65–R73에서 실제 색상 적용·고정 중 활성 앱 추종·단일 앱의 두 테마·최종 아이콘을 채택했습니다. R61–R64의 3.3줄과 여백 축소·임시 프로필 순환·Option 명령은 유지하며, 불투명 타일을 시안 전용으로 제한하던 결정은 R68/R70으로 대체되었습니다. 아래 과거 시점의 기록은 현재 requirements.md와 함께 읽습니다.
+최신 변경: R75–R77에서 모양 탭·세 섹션 색 선택·작업 화면을 건드리지 않는 사전 검사를 추가했습니다. R65–R73의 두 테마·활성 앱 추종·최종 아이콘 및 R61–R64의 3.3줄·임시 프로필 순환·Option 명령은 유지합니다. 아래 과거 시점의 기록은 현재 requirements.md와 함께 읽습니다.
+
+## R75–R77 · 섹션별 색상과 사전 검사
+
+- 설정 탭은 일반/모양/메뉴/등록 항목·프로필 순서다. 작은 설정 창에서 네 탭 제목, 각 색 선택기·복원 버튼·타일 샘플을 확인한다. ColorPicker의 플랫폼 색 공간 변환과 alpha 비지원, 한 섹션 변경 시 다른 색/프로필/메뉴 보존, 재실행, 테마 왕복을 검사한다.
+- 세 섹션 기본 타일은 서로 다르며 같은 섹션의 정사각/가로형에는 같은 기본색을 적용한다. 강조는 메뉴 고정·현재 데스크탑 의미를 유지한다. 기본값은 테마에 맞게 달라지고 사용자가 고른 기준 색은 두 테마에 걸쳐 유지한다.
+- 기본/극단/중간 명도 색에서 본문·보조 글자·숫자 배지·선택 테두리와 핀 표시를 검사한다. 현재 순수 RGB 대비 검사에는 216개 RGB 표본과 두 테마/명암/강조 조합이 포함되며 본문·보조 텍스트에 4.5 이상을 확인한다. 이를 반투명 합성·누름/hover·접근성 설정까지 포함한 전체 UI의 실측 대비 보장으로 확대하지 않는다.
+- Xcode 업데이트 시 `PreviewFixtures.swift`의 Canvas와 `scripts/preview.sh`를 먼저 실행한다. 테스트/렌더링은 별도 샘플 suite를 사용하고 사용자 설정·실행 프로세스·인스턴스 소유자 기록을 변경하지 않아야 한다. 미리보기에서 키 감지/AX 관찰/상태 아이템/권한 요청을 시작하지 않는지 확인한다.
+- 화면에 표시하지 않는 NSHostingView 렌더링은 실제 DeckView의 색/기하를 검사한다. 창을 order/makeKey 하지 않으며 데스크탑 이미지를 캡처하지 않는다. ImageRenderer는 AppKit 컨트롤과 스크롤 콘텐츠를 빠뜨릴 수 있어 전체 화면 검사에 사용하지 않는다. 네이티브 ColorPicker/라디오 컨트롤도 화면 밖 PNG에 완전히 나타나지 않을 수 있으므로 Canvas 또는 이후 실제 UI 검증과 구분한다.
+- 실제 WindowServer의 Glass 합성, 전역 Option, Space 이동, 드래그/프레임 성능은 가짜 데이터나 이미지로 판정하지 않는다. 사용자의 작업을 방해하는 반복 자동 입력보다 먼저 위 검사를 마치고 필요한 실제 검사의 시점을 조율한다.
+- 2026-10-13 확인한 [Xcode 미리보기](https://developer.apple.com/documentation/xcode/adding-previews-to-your-interface-files), [ImageRenderer 범위](https://developer.apple.com/documentation/swiftui/imagerenderer), [AXObserverAddNotification 실패 종류](https://developer.apple.com/documentation/applicationservices/1462089-axobserveraddnotification)를 다음 SDK에서 다시 확인한다. SDK의 AXMenuItemSelected 알림 존재만으로 모든 앱의 메뉴 실행/성공 수집을 보장하지 않는다. 현재 제품은 런처 내부에서 성공한 등록 메뉴만 기록하며 외부 메뉴 자동 관찰은 별도 기능 검토 사항이다.
 
 ## R65–R73 · 두 테마·활성 앱 추종·브랜드
 
