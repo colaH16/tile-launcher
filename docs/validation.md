@@ -1,5 +1,14 @@
 # 네이티브 빌드 검증
 
+## R142 · 활성 모니터·앱 묶기 비교 시안
+
+- DesktopWindows.refresh가 모든 display의 Current Space ID를 activeSpaces 합집합에 넣고 resolve에 전달하는 것을 확인했다. 현재 모든 모니터의 보이는 데스크탑을 강조하는 이유다. 이 production 코드는 수정하지 않았다.
+- 동일 23개 합성 창·앱/등록 18개/1120×729pt의 monitor-current / monitor-grouped-active / monitor-grouped-terminal을 공유 DeckView로 화면 없이 렌더했다. 첫 창은 활성 모니터 4×2/다른 모니터·Space 2×2, 이후 같은 앱은 1×1이며 기존 작은 쌍 세로 스택/이전 줄 미채우기를 유지한다. iTerm의 두 창이 맨 앞으로 모이고 A의 앱 첫 창이 2×2로 바뀌는 모습을 확인했다.
+- A는 제공된 Mission Control 기준, B는 이전 오버레이의 visible 색에 따른 가정이다. Safari/Finder 새 창은 두 시점의 캡처를 보완한 합성 샘플이며 실제 AX/CG 목록이 아니다. 개인 문서/계정 제목은 일반화했고 아이콘은 로컬 앱 리소스에서 읽었다. 사용자 설정·화면 조작/새 권한 요청은 하지 않았다.
+- native 개발 빌드 5.06초, 프로필 이름 보정 후 2.05초 통과. /tmp/tile-monitor-preview-build.log, tile-monitor-preview-final-build.log. 지원 중단 예정 도구 경고는 앱 오류와 구별한다. 전체 --render-previews의 키/클릭 정책·메뉴 카탈로그·설정/표면 마스크·최근 100개 끝 스크롤도 통과했다(/tmp/tile-monitor-previews.log). XCTest/Python을 새로 실행했다고 기록하지 않는다.
+- 전달 PNG는 ~/.codex/visualizations/2026/10/12/01a12d92-b01c-7760-b0c2-ef84fe97ea6c/monitor-current-20261014.png, monitor-grouped-active-20261014.png, monitor-grouped-terminal-20261014.png다. 정적 합성 렌더이며 실제 Glass 데스크탑 합성/실시간 모니터 분류/앱 선택 MRU 갱신을 구현·검증했다고 하지 않는다.
+- 시안 입력은 nil 기본이며 실제 DeckView 호출의 .consecutiveSmall/순서/강조 판정은 유지한다. 앱 적용/서명·공증/설치/새 버전/릴리스는 하지 않았다. 설치 1.1.5(20)의 번들 해시가 기존 v1.1.5 manifest와 일치하는 것을 읽기 검사로 확인했다.
+
 ## R141 · 1.1.5 정식 공개 및 공개 재다운로드 검증
 
 - 실제 공개 목록의 직전 정식 버전v1.1.3과 CHANGELOG/요청·검증 기록/Git v1.1.3..3485794 차이를 대조했다. 중간 미게시1.1.4의 색상 예시·등록 앱과 폴더 구분,1.1.5의 열 정렬을 모두 노트에 포함했다. 범위/버전 검사 통과이며 원문은 기존 준비된 파일과 같아서 refresh-notes/재빌드/서명·공증 재수행은 하지 않았다.

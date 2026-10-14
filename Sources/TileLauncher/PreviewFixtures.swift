@@ -501,6 +501,13 @@ enum PreviewExport {
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("menu-realistic-\(name).png"))
         }
+        for (name, grouped, terminal): (String, Bool, Bool) in [
+            ("current", false, false), ("grouped-active", true, false), ("grouped-terminal", true, true)
+        ] {
+            try save(MonitorGroupingPreview(grouped: grouped, terminalSelected: terminal)
+                        .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("monitor-\(name).png"))
+        }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")

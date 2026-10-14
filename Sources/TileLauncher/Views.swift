@@ -134,6 +134,10 @@ struct DeckView: View {
     var quitApplication: (WindowItem) -> Void = { _ in }
     var recentAppearance: RecentAppearance = .consecutiveSmall
     var menuAppearance: MenuAppearance = .selected
+    // Synthetic comparison inputs only; production callers keep all defaults.
+    var previewWindowSizes: [RecentTileSize]? = nil
+    var previewEmphasizedWindows: Set<UUID>? = nil
+    var previewRecentLegend: String? = nil
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -448,7 +452,7 @@ struct DeckView: View {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
                 Circle().fill(settings.tileColors.seed(for: .windows, theme: settings.theme).swiftUIColor).frame(width: 5, height: 5)
-                Text("현재 데스크탑").font(.caption2).foregroundStyle(.secondary)
+                Text(previewRecentLegend ?? "현재 데스크탑").font(.caption2).foregroundStyle(.secondary)
                 Spacer(minLength: 4)
                 Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
             }.frame(height: 20)
@@ -463,9 +467,9 @@ struct DeckView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let identities = snapshot.windows.map { $0.appURL?.path ?? String($0.pid) }
-                let sizes = recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
+                let sizes = previewWindowSizes ?? (recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
                     : RecentTileArrangement.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
-                                                 consecutiveSmall: recentAppearance == .consecutiveSmall)
+                                                 consecutiveSmall: recentAppearance == .consecutiveSmall))
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
                 let micro = (geometry.unit - geometry.gap) / 2
                 let bottom = packed.map { $0.row + $0.height }.max() ?? 0
@@ -492,9 +496,10 @@ struct DeckView: View {
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false) -> some View {
         let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
+        let emphasized = previewEmphasizedWindows?.contains(window.id) ?? (desktop == .current)
         var colors = settings.tileColors
         if window.isApplication && recentAppearance.neutralApplications { colors.windows = TileColor(0x777777) }
-        let palette = DeckPalette(section: .windows, emphasized: desktop == .current,
+        let palette = DeckPalette(section: .windows, emphasized: emphasized,
                                   dark: deckScheme == .dark, theme: settings.theme, colors: colors)
         return Button { selectWindow(window) } label: {
             Group {
@@ -517,7 +522,7 @@ struct DeckView: View {
               }
             }
                 .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
-        }.buttonStyle(TileStyle(section: .windows, emphasized: desktop == .current,
+        }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)"))
             .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
                 + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
