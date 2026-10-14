@@ -141,6 +141,7 @@ struct DeckView: View {
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     var previewLargeWindowIcons = false
     var previewBalancedWindowLabels = false
+    var previewStartTileLabels = false
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -339,6 +340,20 @@ struct DeckView: View {
             colors.menus = TileColor(0x777777)
         }
         return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
+            if previewStartTileLabels {
+                ZStack(alignment: .bottomLeading) {
+                    Image(systemName: "command").font(.system(size: small ? 26 : 52, weight: .light))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, small ? 12 : 22)
+                    Text(command.title).font(.system(size: small ? 8 : 12, weight: .medium)).lineLimit(1)
+                        .padding(small ? 3 : 8)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .topTrailing) {
+                        VStack(spacing: 3) {
+                            if command.isPinned { Image(systemName: "pin.fill") }
+                            Text("\(command.totalUseCount)회")
+                        }.font(.system(size: 9)).padding(8)
+                    }
+            } else {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .top) {
                     Image(systemName: "command").font(.system(size: small ? 12 : 20))
@@ -362,6 +377,7 @@ struct DeckView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }.padding(small ? 4 : 10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : "") + "\n" + command.usageDescription)
             .accessibilityValue(command.usageDescription)
@@ -399,6 +415,16 @@ struct DeckView: View {
                               spacing: grid.gap) {
                         ForEach(Array(registeredItems.enumerated()), id: \.element.id) { index, pin in
                             Button { selectPin(pin) } label: {
+                                if previewStartTileLabels {
+                                    ZStack(alignment: .bottomLeading) {
+                                        Group {
+                                            if pin.kind == .trash { Image(systemName: "trash").font(.system(size: 34)) }
+                                            else { Icon(url: pin.url, size: 36) }
+                                        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 14)
+                                        Text(pin.name).font(.system(size: 9, weight: .medium)).lineLimit(1).padding(5)
+                                    }.frame(width: grid.side, height: grid.side)
+                                        .overlay(alignment: .topTrailing) { numberBadge(index).padding(3) }
+                                } else {
                                 VStack(spacing: 4) {
                                     Group {
                                         if pin.kind == .trash {
@@ -409,6 +435,7 @@ struct DeckView: View {
                                         .lineLimit(1).truncationMode(.middle)
                                 }.padding(6).frame(width: grid.side, height: grid.side)
                                     .overlay(alignment: .topTrailing) { numberBadge(index).padding(3) }
+                                }
                             }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)",
                                                               emphasized: pin.kind == .app))
                                 .help(pinHelp(pin, index: index))
@@ -441,11 +468,11 @@ struct DeckView: View {
         let shortcut = NumberShortcutAssignment.digit(for: index).map { " · \(snapshot.shortcuts.registeredPrefix)\($0)" } ?? ""
         return pin.name + shortcut + (pin.kind == .trash ? " · 통합 휴지통은 Finder에서만 열 수 있습니다." : "")
     }
-    @ViewBuilder private func numberBadge(_ index: Int) -> some View {
+    @ViewBuilder private func numberBadge(_ index: Int, side: CGFloat = 16) -> some View {
         if let digit = NumberShortcutAssignment.digit(for: index) {
-            Text(digit).font(.system(size: 10, weight: .medium, design: .rounded)).monospacedDigit()
+            Text(digit).font(.system(size: side == 16 ? 10 : 8, weight: .medium, design: .rounded)).monospacedDigit()
                 .foregroundStyle(Color(nsColor: .labelColor))
-                .frame(width: 16, height: 16).background(Color(nsColor: .controlBackgroundColor), in: Circle())
+                .frame(width: side, height: side).background(Color(nsColor: .controlBackgroundColor), in: Circle())
                 .accessibilityHidden(true)
         }
     }
@@ -526,7 +553,19 @@ struct DeckView: View {
                                   dark: deckScheme == .dark, theme: settings.theme, colors: colors)
         return Button { selectWindow(window) } label: {
             Group {
-              if previewLargeWindowIcons {
+              if previewStartTileLabels {
+                let compactTile = window.isApplication || small
+                ZStack(alignment: .bottomLeading) {
+                    Icon(url: window.appURL, size: compactTile ? 26 : 58)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: compactTile && NumberShortcutAssignment.digit(for: index) != nil ? .leading : .center)
+                        .padding(.leading, compactTile ? 3 : 0)
+                        .padding(.bottom, compactTile ? 12 : 22)
+                    Text(window.isApplication ? window.appName : window.title)
+                        .font(.system(size: compactTile ? 8 : 12, weight: .medium)).lineLimit(1)
+                        .padding(compactTile ? 3 : 8)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+              } else if previewLargeWindowIcons {
                 if window.isApplication || small {
                     VStack(alignment: .leading, spacing: 1) {
                         Icon(url: window.appURL, size: 24)
@@ -568,7 +607,11 @@ struct DeckView: View {
               }
             }
                 .overlay(alignment: .topTrailing) {
-                    numberBadge(index).padding(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5)
+                    if previewStartTileLabels && (small || window.isApplication) {
+                        numberBadge(index, side: 12).padding(2)
+                    } else {
+                        numberBadge(index).padding(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5)
+                    }
                 }
         }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)"))

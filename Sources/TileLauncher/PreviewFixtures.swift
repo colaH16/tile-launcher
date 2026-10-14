@@ -16,9 +16,9 @@ enum PreviewIconAssets {
         let resource = resourceName.map { bundle.appendingPathComponent("Contents/Resources").appendingPathComponent($0) }
         let original = resource.flatMap { NSImage(contentsOf: $0) ?? NSImage(contentsOf: $0.appendingPathExtension("icns")) }
             ?? NSImage(systemSymbolName: fallback, accessibilityDescription: nil)!
-        let bitmap = NSImage(size: NSSize(width: 64, height: 64))
+        let bitmap = NSImage(size: NSSize(width: 256, height: 256))
         bitmap.lockFocus()
-        original.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
+        original.draw(in: NSRect(x: 0, y: 0, width: 256, height: 256))
         bitmap.unlockFocus()
         images[key.path] = bitmap
         return key
@@ -27,10 +27,10 @@ enum PreviewIconAssets {
         let key = "/Preview/Realistic/\(name)"
         let image = NSImage(contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericFolderIcon.icns")
             ?? NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)!
-        let bitmap = NSImage(size: NSSize(width: 64, height: 64))
+        let bitmap = NSImage(size: NSSize(width: 256, height: 256))
         bitmap.lockFocus()
         NSColor.systemBlue.set()
-        image.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
+        image.draw(in: NSRect(x: 0, y: 0, width: 256, height: 256))
         bitmap.unlockFocus()
         images[key] = bitmap
         return PinnedItem(kind: .folder, path: key, bundleID: nil, name: name)
@@ -546,6 +546,20 @@ enum PreviewExport {
                                         largeIcons: true, relaxedSpacing: true, fittedColumns: true)
                     .environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("desktop-fitted-columns-full.png"))
+        let captionFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let threeCharacters = 8 + ("가나다" as NSString).size(withAttributes: [.font: captionFont]).width
+        let fourCharacters = 8 + ("가나다라" as NSString).size(withAttributes: [.font: captionFont]).width
+        guard threeCharacters <= 98.4 / 2, fourCharacters >= 98.4 / 2 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 81,
+                          userInfo: [NSLocalizedDescriptionKey: "Start-style caption must reach the square tile midpoint between three and four Korean characters."])
+        }
+        print("Start-style caption: 3 Korean characters end at \(threeCharacters), 4 at \(fourCharacters), square midpoint=49.2; 1.4x preserves the ratio.")
+        for enlarged in [false, true] {
+            for canvas in [false, true] {
+                try save(OverlayScalePreview(enlarged: enlarged, canvas: canvas).environment(\.colorScheme, .dark),
+                         to: directory.appendingPathComponent("overlay-start-\(enlarged ? "large" : "base")-\(canvas ? "canvas" : "native").png"))
+            }
+        }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")

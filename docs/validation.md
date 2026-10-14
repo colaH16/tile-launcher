@@ -1,5 +1,13 @@
 # 네이티브 빌드 검증
 
+## R154–R155 · 1.2 배치의 아이콘 비율·기존/확대 크기 비교
+
+- previewStartTileLabels 기본false, MonitorGroupingPreview production=true의 공유 DeckView 경로를 사용한다.1.2의 그룹/대표 크기·번호·실시간 색 입력을 유지하고 새 라벨만비교 입력으로 적용했다. 확대안은 동일한 SwiftUI 뷰를1.4배로 렌더한 개념 시안이며 실제 패널 정책을 새로 구현한 것이 아니다.
+- 대표2×2는98.4pt/아이콘58pt/제목12pt/하단·왼쪽8pt다. 메뉴 기호52pt, 등록 아이콘36pt도 확대했고 모든 제목은왼쪽 아래한 줄이다. 작은 타일은26pt 아이콘·8pt 제목/12pt 번호로 겹침을 피했다. 기존 툴팁·접근성 이름은 유지한다. 긴 제목은 한 줄 생략 표시라는 절충을 기록한다.
+- 실제 AppKit.systemFont12pt medium의 ‘가나다’ 끝39.14pt/‘가나다라’ 끝49.52pt(왼쪽8포함)가정사각 중앙49.2를 감싸는 검사를 통과했다. 확대1.4배에서도 상대 비율은 같다. wide4×2나small1×1에서같은3~4글자중앙관계를 주장하지 않는다.
+- native 개발 빌드4.79초와 글꼴 검사 추가 후2.23초, 전체 비표시 렌더 통과. /tmp/tile-start-scale-build.log, /tmp/tile-start-scale-previews.log. XCTest/Python을 새로 쓰거나 반복하지 않았다. PNG 헤더로두비교바탕1640×1120, 원본1120×729/1568×1021을확인했다. 바탕크기를맞춰채팅자동축소로두앱이같은크기처럼보이는문제를피했다.
+- 실제 렌더에서 메뉴/최근/등록 아이콘과 하단 제목·숫자·회색/파스텔을 확인했다. PreviewIconAssets의 합성 캐시만64→256px로 늘려 확대안에서 원래 아이콘 리소스의 해상도를 사용한다. 사용자 화면/실행 목록/설정은 변경하지 않았고 설치1.2.0/공개1.1.5·버전·노트는 유지한다. 산출물은 dist/previews/20261014/overlay-start-{base,large}-{canvas,native}.png다.
+
 ## R153 · 내용에 맞춘 열 너비 비교
 
 - DesktopColumnsPreviewData.fittingGroups는 비교용으로만 각 열의 최대 그룹 폭을 계산해2–4칸으로 제한한다. 동일한 작은 타일 세로 쌍 기준이며 회색 앱은최대3칸이다. fixedModule/preferredWidth가 없는 기존 시안/production 기본은 유지한다. 새 렌더만 fixedModule45.2와 열 간격24pt를 사용하고 제목을primary 대비로 표시한다.

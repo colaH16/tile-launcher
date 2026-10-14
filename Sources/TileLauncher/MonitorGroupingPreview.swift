@@ -17,16 +17,18 @@ struct MonitorGroupingPreview: View {
     private let detail: Bool
     private let largeIcons: Bool
     private let relaxedSpacing: Bool
+    private let startTileLabels: Bool
 
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
          production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
          threeColumns: Bool = false, squareColumnHeads: Bool = false, largeIcons: Bool = false,
-         relaxedSpacing: Bool = false, fittedColumns: Bool = false) {
+         relaxedSpacing: Bool = false, fittedColumns: Bool = false, startTileLabels: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
         self.largeIcons = largeIcons
         self.relaxedSpacing = relaxedSpacing
+        self.startTileLabels = startTileLabels
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
         fixture.settings.tileColors.windows = TileColor(0x2FA3E7)
@@ -194,7 +196,7 @@ struct MonitorGroupingPreview: View {
                  previewEmphasizedWindows: production ? nil : emphasized,
                  previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil,
                  previewDesktopColumns: columns, previewLargeWindowIcons: largeIcons,
-                 previewBalancedWindowLabels: relaxedSpacing, dismiss: {})
+                 previewBalancedWindowLabels: relaxedSpacing, previewStartTileLabels: startTileLabels, dismiss: {})
     }
 
     var body: some View {
@@ -207,6 +209,32 @@ struct MonitorGroupingPreview: View {
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)
+        }
+    }
+}
+
+/// Compare actual sizes on an identical neutral canvas, with no live UI.
+struct OverlayScalePreview: View {
+    let enlarged: Bool
+    var canvas = true
+    private var scale: CGFloat { enlarged ? 1.4 : 1 }
+    private var overlay: some View {
+        MonitorGroupingPreview(grouped: true, production: true, startTileLabels: true)
+            .frame(width: 1120, height: 729)
+            .scaleEffect(scale, anchor: .topLeading)
+            .frame(width: 1120 * scale, height: 729 * scale, alignment: .topLeading)
+    }
+    var body: some View {
+        if canvas {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(enlarged ? "확대안 · 1.2 배치 · 1568 × 1021 · 전체 1.4배" : "기존 크기 · 1.2 배치 · 1120 × 729")
+                    .font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                    .frame(height: 48).padding(.horizontal, 24)
+                overlay.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(width: 1640, height: 1120)
+                .background(Color(red: 0.055, green: 0.065, blue: 0.085))
+        } else {
+            overlay
         }
     }
 }
