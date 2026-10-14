@@ -4,13 +4,13 @@ A native macOS tile launcher with Liquid Glass. Hold Option to switch windows, l
 
 Option을 누르면 커서 근처에 열리는 macOS 네이티브 런처. 앱별 메뉴와 모든 앱의 최근 창을 나란히 보여주며, 아래에 앱·폴더를 작은 정사각 타일로 등록합니다. SwiftUI와 AppKit의 Liquid Glass를 사용합니다.
 
-**[0.17.6 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.6)**를 공개했습니다. Apple Silicon · macOS 26 이상이며, 현재는 **개발용 ad-hoc 서명·Apple 공증 없음**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v0.17.6/Tile-Launcher-0.17.6-arm64-unnotarized.zip) · [설치 안내](docs/installation.md). Developer ID 서명·공증은 추후 적용합니다.
+**[1.0.0 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.0.0)**를 공개했습니다. Apple Silicon · macOS 26 이상이며 **Developer ID 서명·Apple 공증 완료**입니다. [ZIP 다운로드](https://github.com/colaH16/tile-launcher/releases/download/v1.0.0/Tile-Launcher-1.0.0-arm64.zip) · [설치 안내](docs/installation.md). 이전 0.x 릴리스는 개발용 ad-hoc 서명·미공증이며 기존 자산을 보존합니다.
 
 GitHub 정식 릴리스 구분과 Apple 개발자 서명·공증 상태는 별개입니다. 버그·UI 수정은 패치, 기능 추가·변경은 마이너로 올립니다. Developer ID 서명 완료 첫 빌드는 **1.0.0**입니다. 설정 → 일반에서 실제 실행 버전을 확인할 수 있습니다. 개발용/배포용 버전은 `release/config.json`에서 함께 관리합니다.
 
 ## 빌드와 실행
 
-현재 개발 소스는 **1.0.0(14) 서명 대기 후보**입니다. 현재 공개본은 위 0.17.6이며 Developer ID 서명·공증·검증을 완료하기 전에는 1.0.0 공개로 보지 않습니다. 초기 설정 창의 폭은 580pt, 높이는 일반 탭의 실제 내용에 맞춰 정합니다. 1000pt 고정 높이 때문에 남던 하단 여백을 줄였습니다. 메뉴 목록은 남은 공간을 모두 쓰며 ‘메뉴 추가…’는 하단에 고정합니다. 설정 아이콘·메뉴 +·등록 +는 각각 일반·현재 앱 메뉴 추가·등록 항목/프로필 화면을 엽니다. R120에 따라 이 버전을 GitHub 최신 정식 릴리스로 공개했습니다. R123에서 네 탭의 공통 상단/일반 버전 간격과 오버레이 여백을 정리했습니다.
+현재 공개본은 **1.0.0(14)**입니다. 초기 설정 창의 폭은 580pt, 높이는 일반 탭의 실제 내용에 맞춰 정합니다. 메뉴 목록은 남은 공간을 모두 쓰며 ‘메뉴 추가…’는 하단에 고정합니다. 설정 아이콘·메뉴 +·등록 +는 각각 일반·현재 앱 메뉴 추가·등록 항목/프로필 화면을 엽니다. R123에서 네 탭의 공통 상단/일반 버전 간격과 오버레이 여백을 정리하고 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 업로드 후 재다운로드 검증을 거쳐 공개했습니다.
 
 **0.16.3 Focus 제한:** 현재 macOS 27.2 beta에서 Team ID 없는 ad-hoc 앱의 Focus 필터 로딩 실패를 확인했습니다. 아이콘 파일과 일반 아이콘 로딩은 정상이지만 App Intents 앱 식별/연결이 실패합니다. 유효한 Apple 서명 후 재검증이 필요하며, 그동안 수동 프로필·좌우 전환을 사용하세요. [진단 기록](docs/focus-diagnostics.md)
 
@@ -65,7 +65,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 
 **Option 재입력 보정:** 선택 없이 Option을 놓아 닫힌 뒤 기본 0.6초 안에 다시 누르면 커서가 이동했어도 직전 위치·크기로 바로 엽니다. 설정 → 일반 → Option 재입력 보정에서 켜기/끄기와 0.1–2.0초(0.1초 단위)를 조절합니다. 그보다 늦으면 기존처럼 0.25초 누른 후 커서 근처에 엽니다. 닫기는 즉시 처리합니다. Esc/닫기/설정·항목 실행·중간의 다른 키/보조키/클릭·화면/데스크탑 변경은 복원을 취소합니다. 정상 단축키와 고정 상태는 기존 동작을 유지합니다. 위치만 복원하므로 임시 프로필·폴더 탐색·선택은 일반 재호출과 같이 초기화됩니다.
 
-**설정 이동(개발본 0.17.6):** 설정 아이콘/단축키는 일반, 메뉴 +는 현재 앱의 메뉴 추가 시트, 등록 +는 등록 항목·프로필을 바로 엽니다. **일반 → 권한**에서 접근성·앱 관리 설정을 각각 확인할 수 있습니다. 앱 관리는 다른 앱 업데이트/삭제용이며 런처에는 해당 기능이 없습니다. 일부 웹 앱에서 나온 차단 알림의 보완 경로는 넣었지만 실제 해소 여부는 별도 확인이 필요합니다.
+**설정 이동:** 설정 아이콘/단축키는 일반, 메뉴 +는 현재 앱의 메뉴 추가 시트, 등록 +는 등록 항목·프로필을 바로 엽니다. **일반 → 권한**에서 접근성·앱 관리 설정을 각각 확인할 수 있습니다. 앱 관리는 다른 앱 업데이트/삭제용이며 런처에는 해당 기능이 없습니다. 일부 웹 앱에서 나온 차단 알림의 보완 경로는 넣었지만 실제 해소 여부는 별도 확인이 필요합니다.
 
 설정 네 탭은 바깥/가로 16pt 기준을 공유하고 내부 상단 여백을 중복으로 두지 않습니다. 일반 권한→버전은 12pt, 버전 아래는 바깥 16pt입니다. 오버레이는 바깥 24pt·두 열 사이 24pt·제목→타일 12pt를 공유하며 최근 창 3.3줄과 등록 행 공간 계산도 같은 값을 씁니다. 설정 창의 기본 폭은 580pt이며 일반의 시작·재입력·숫자·최근 창·권한·버전 내용을 실제 SwiftUI 뷰로 측정해 높이를 맞춥니다. 마지막 버전 아래에는 설정의 기본 여백만 남깁니다. 작은 화면에서는 작업 영역 안으로 줄입니다. 처음 열거나 닫았다 다시 열면 이 기본 크기를 적용합니다. 창 크기는 계속 직접 조절할 수 있고, 이미 열린 창에서 탭만 바꿀 때는 조절한 크기를 유지합니다. 일반 탭은 작은 창에서 스크롤할 수 있고, 메뉴 탭은 추가 버튼을 하단에 유지한 채 자동 수집·고정 목록에 남는 높이를 배정합니다. 수집·표시의 자세한 설명은 ‘수집과 표시 안내’에서 펼쳐볼 수 있습니다.
 
@@ -132,14 +132,14 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" ./script
 
 ## 배포 파일 준비
 
-`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 현재 앱은 개발용 서명이며 Apple 공증을 받지 않았습니다. 공개한 0.17.1 ZIP은 태그가 가리키는 깨끗한 커밋에서 만들었으며 이전 미게시 0.2.0 ZIP과 구별합니다. 이전 공개 v0.16.3 자산도 그대로 보존합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
+`release/config.json`에 버전/빌드/지원 플랫폼을 두고 `scripts/release.py`로 독립 배포 ZIP을 만듭니다. 공개 1.0.0은 깨끗한 태그 소스의 Developer ID 서명·공증 앱이며, 로컬 build.sh의 ad-hoc 빌드와 구별합니다. 이전 공개 자산을 보존합니다. 첫 실행과 접근성 허용은 [설치 안내](docs/installation.md)를 확인하세요.
 
 ```sh
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py prepare
 DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer python3 scripts/release.py verify
 ```
 
-깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 현재 구성 기준 `~/Library/Developer/TileLauncher/releases/v0.17.6`에 생성합니다. Desktop/문서/클라우드 동기화 폴더는 서명 작업 경로로 사용하지 않습니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
+깨끗한 Git 커밋에서 빌드하며 기존 실행 앱을 교체하지 않습니다. ZIP/체크섬/릴리스 메타데이터는 현재 구성 기준 `~/Library/Developer/TileLauncher/releases/v1.0.0`에 생성합니다. Desktop/문서/클라우드 동기화 폴더는 서명 작업 경로로 사용하지 않습니다. 서명·공증·GitHub 초안/게시 절차와 현재 검증 범위는 [배포 준비 문서](docs/release-guide.md)에 있습니다. 자격 증명이나 인증서 개인 키를 저장소에 넣지 않습니다.
 
 ## 라이선스
 

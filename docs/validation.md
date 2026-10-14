@@ -1,17 +1,22 @@
 # 네이티브 빌드 검증
 
-최종 검증 기록일: 2026-10-14, Asia/Seoul. 제품명 Tile Launcher, 1.0.0(14) 후보. GitHub 공개본 0.17.6(13).
+최종 검증 기록일: 2026-10-14, Asia/Seoul. 제품명 Tile Launcher, Developer ID 서명·공증 완료 1.0.0(14) GitHub 공개.
 
-## R122–R123 · 공통 여백 및 서명 준비
+## R122–R123 · 공통 여백·Developer ID 서명·공증·공개 완료
 
-- 가입 완료는 사용자 보고다. 초기 valid identity는 0개였고 Xcode에서 생성 후 유효 Developer ID Application identity 1개를 확인했다. 인증서 유형/유효성만 확인하고 개인 키·계정 암호를 내보내거나 출력하지 않았다. 공증 자격 증명은 별도 사용자 Keychain profile 준비 단계다.
+- Developer ID Application: WonJoon Seok (VV2W9U5XT3)로 1.0.0(14)을 실제 서명했다. Apple Root CA까지의 인증서 체인, TeamIdentifier VV2W9U5XT3, 강화된 런타임 flags=0x10000, 보안 타임스탬프와 deep/strict 검증을 통과했다. entitlement는 기존 Apple Events 한 개만 유지한다. ZIP 재추출 후 서명/번들 트리/소스 5aab3564279c28e3384ffa71000ab54b3c452fea를 대조했다.
+- 사용자가 공증 자격 증명의 검증·Keychain 저장 성공을 알렸고 notarytool history로 프로필을 확인했다. 개인 키·앱 암호는 채팅/파일로 받거나 출력하지 않았다. 제출 ID 913be6a2-f267-4162-a6b0-f719b717db75는 Accepted이며 stapler staple/validate와 Gatekeeper source=Notarized Developer ID를 통과했다. 제출은 한 번이며 같은 ID로 조회했다.
+- 가입 완료는 사용자 보고다. 초기 valid identity는 0개였고 Xcode에서 생성 후 유효 Developer ID Application identity 1개를 확인했다. 개인 키·계정 암호를 내보내거나 출력하지 않았다. 공증 자격 증명은 별도 사용자 Keychain profile로 설정했다.
 - 네 설정 탭에 공통 SettingsPaneInsets를 적용해 중복 상단 16pt를 없앴다. 같은 창/스크롤 시작의 실제 공유 SettingsView 렌더링에서 일반 첫 안내와 모양/메뉴/프로필 제목의 시작 높이를 함께 확인했다. 일반 권한→버전 간격 12pt와 바깥 여백 16pt를 사용한다. 일반 fitted 콘텐츠 샘플은 580×849pt이며 폰트/로그인 상태에 따라 달라진다.
 - 기본/작은 540×638pt 창의 네 탭과 일반 하단 스크롤·빈/많은 메뉴를 렌더링했다. 비표시 native TabView는 inline 제목 영역을 추가하므로 기본 일반 본문은 별도 공유 콘텐츠 렌더링으로도 확인했다. 실제 도구 막대/ColorPicker/Glass 합성은 Xcode canvas 또는 실기 확인 범위로 구별한다.
 - DeckSpacing으로 바깥 24pt·열 간 24pt·제목 아래 12pt·섹션 간격과 sizing 계산을 통일했다. 기본 오버레이 1040×719pt에서 최근 창 3줄+다음 일부와 등록 35개 3행을 확인했다. 작은 512×341pt 샘플도 렌더링했다. 타일 비율/순서·폰트·클릭/드래그 기능·기존 테마/색은 바꾸지 않았다.
 - 변경된 헤더 높이에 맞춰 행 경계 검사를 수정했다. 가용 높이 570pt의 등록 3행, 560pt의 완전한 2행 및 작은 화면의 최소 두 창 행/한 등록 행을 검증했다. 극소 부동소수점 경계는 0.001pt 허용 오차로 비교한다.
 - 최종 scripts/test.sh 통과: XCTest 105개, Python release 정책 14개, 실패 없음. 기존 SettingsStore/AppDelegate/HoldMonitor/메뉴/Focus 모델/사용 횟수/마스크 격리 검사도 통과했다. 컴파일 경고/오류 없음.
 - 로그 /tmp/tile-100-tests.log, /tmp/tile-100-previews.log; 이미지 /tmp/tile-100-previews/settings-general-fitted.png, settings-general-580.png, settings-appearance-580.png, settings-menus-580.png, settings-registered-580.png 및 각 -540.png, classic-dark.png, glass-dark.png, compact-dark.png. 사용자 전경 앱/입력/권한을 자동 조작하지 않았다.
-- config의 1.0.0(14)은 후보다. 서명·공증·배포 결과를 이어서 기록하며 현재 공개 v0.17.6은 변경하지 않는다.
+- 1.0.0(14)을 2026-10-14 10:01:27 KST 최신 정식 GitHub 릴리스로 공개했다. 초안에 최종 세 자산만 업로드하고 asset ID로 다시 내려받아 SHA-256을 확인한 뒤 공개했다. latest API의 tag=v1.0.0, draft=false, prerelease=false, 각 이름/크기/digest 일치와 원격 annotated tag의 peeled source 5aab3564279c28e3384ffa71000ab54b3c452fea를 확인했다. 기존 v0.17.6과 이전 공개 자산을 보존했다.
+- 최종 ZIP Tile-Launcher-1.0.0-arm64.zip은 2,042,543 bytes, SHA-256 5701494a39badc522deaae10ca044695e9d1a2f911ac7304571b05d62329111e다. release-metadata.json은 7892d8d8281e86b838aa60f2820576fd9985fda5b50cb4a4dc465aa2ff31fb57, SHA256SUMS.txt는 b7031df8e90231d381ee4922c574ed28ce767b695ea5bd41e2e3a7597acf740e다. 결과 ~/Library/Developer/TileLauncher/releases/v1.0.0, 로그 /tmp/tile-100-prepare.log, sign.log, notarize.log, draft.log, publish.log(모두 tile-100- 접두사), 공개 확인 /tmp/tile-100-public-release.json 및 public-tag.txt.
+- Developer ID 서명된 실제 배포 실행 파일의 --render-previews 경로도 실행해 격리된 저장/모델/키 이벤트 정책/설정 크기/메뉴 카탈로그/마스크 및 네 탭/오버레이 렌더링이 통과했다. /tmp/tile-100-signed-previews.log 및 /tmp/tile-100-signed-previews. 사용자 인스턴스 잠금·상태 아이콘·전역 입력을 시작하지 않는 경로이며 실제 접근성/Focus/드래그 검증을 대신하지 않는다.
+- /Applications/launch at Login/Tile Launcher.app에 최종 공증 앱을 설치하고 codesign/stapler/Gatekeeper를 재검증했다. 기존 Contents는 /tmp/tile-before-100-kvppetd3.app에 보존했다. /tmp/tile-100-install.json에 기록하며 설치 전후 인스턴스 소유자 파일 동일, 자동 재시작·사용자 설정/권한 변경 없음. 다음 앱 열기에서 새 빌드로 전환한다. 접근성은 Developer ID 전환 후 사용자 실기 확인 대상이다.
 
 ## R120 · 0.17.6 GitHub 공개 완료
 

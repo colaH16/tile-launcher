@@ -2,6 +2,10 @@
 
 확인일: 2026-10-13 (Asia/Seoul), R103. 현재 환경은 Apple Silicon / macOS 27.2 beta다.
 
+## 2026-10-14 · R123 서명 이후 상태
+
+1.0.0(14)을 TeamIdentifier VV2W9U5XT3의 유효한 Developer ID Application으로 서명하고 Apple 공증 Accepted·티켓·Gatekeeper를 통과했다. 같은 번들 ID와 Focus 메타데이터를 유지한 채 /Applications/launch at Login/Tile Launcher.app에 설치했다. 아직 사용자 앱을 자동 재시작하거나 시스템 Focus를 조작하지 않았다. 아래의 identity 0개/Team ID 없음은 0.16.3 당시 증거이며 현재 배포 앱의 상태가 아니다. 실제 필터 로딩·프로필 적용·해제는 서명 이후 별도 실기 확인이 남는다.
+
 ## 사용자 증상
 
 GitHub에서 받은 0.16.3(6)을 `/Applications/launch at Login/Tile Launcher.app`에 넣고 실행했다. 시스템 설정의 Focus 앱 필터에 아이콘이 없고, 필터를 선택하면 로딩 후 **Could not load Focus Filter**가 표시됐다.

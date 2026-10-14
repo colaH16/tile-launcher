@@ -1,6 +1,6 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
-확인일: 2026-10-13, Asia/Seoul. [v0.17.1 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v0.17.1)를 **개발용 ad-hoc 서명/공증 없음**으로 공개했다. 유료 등록·Developer ID 서명·공증은 아직 수행하지 않았다.
+확인일: 2026-10-14, Asia/Seoul. [v1.0.0 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.0.0)를 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 업로드 후 재다운로드 검증을 거쳐 10:01 KST 공개했다. 이전 개발용 ad-hoc 0.x 배포를 보존한다.
 
 ## R102 · 공개 완료와 버전 정책
 
@@ -15,11 +15,11 @@ R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공�
 - 개인 제작자로 배포하면 일반 Apple Developer Program의 개인 등록을 사용할 수 있다. 법인의 이름으로 등록하려면 조직 요건과 D-U-N-S 확인이 필요하다. 개인 등록은 법적 실명을 사용하며 App Store에 배포할 경우 판매자 이름도 실명이다. [개인/조직 등록 요건](https://developer.apple.com/kr/programs/enroll/)
 - Developer ID를 이용한 Mac App Store 외부 배포가 이 프로그램의 기능이다. 현재 Tile Launcher의 GitHub 배포 방향에 해당한다. [Developer ID 안내](https://developer.apple.com/kr/developer-id/)
 
-## 지금 준비하는 개발용 서명 배포
+## 독립 배포 빌드 준비
 
-현재 개발 구성은 `release/config.json`의 v1.0.0, 빌드 14, Apple Silicon, 정식 릴리스(prerelease=false) 후보다. R123에 따라 Developer ID 서명/공증을 준비하며 아직 서명·공개 완료 상태가 아니다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
+현재 공개/개발 구성은 `release/config.json`의 v1.0.0, 빌드 14, Apple Silicon, 정식 릴리스(prerelease=false)다. R123에 따라 실제 Developer ID 서명·공증·검증·게시를 완료했다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개이며 실제 manifest의 상태를 확인한다.
 
-R108의 0.17.1 공개는 완료했다. R120에서 0.17.6 공개를 요청해 R113의 보류를 해제했고 2026-10-13 17:03 KST 게시를 완료했다. R119의 여백 수정은 다음 UI 작업이다. 아래 단계는 이후 새 버전에 적용하며 이미 공개한 0.17.6을 다시 게시/덮어쓰지 않는다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
+R108의 0.17.1 공개는 완료했다. R120에서 0.17.6 공개를 요청해 R113의 보류를 해제했고 2026-10-13 17:03 KST 게시를 완료했다. R123에서 R119/R121의 여백 작업도 재개했다. 아래 단계는 이후 새 버전에 적용하며 이미 공개한 릴리스를 다시 게시/덮어쓰지 않는다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Develop/Xcode-beta.app/Contents/Developer
@@ -29,14 +29,14 @@ python3 scripts/release.py verify
 ```
 
 - `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
-- `~/Library/Developer/TileLauncher/releases/v1.0.0/downloads`에 `Tile-Launcher-1.0.0-arm64.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `~/Library/Developer/TileLauncher/releases/v1.0.0/downloads`에 ZIP, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. prepare/sign 단계는 `Tile-Launcher-1.0.0-arm64-unnotarized.zip`, 공증/티켓 검증 후는 `Tile-Launcher-1.0.0-arm64.zip`이다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
 - `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
-- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v1.0.0/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
+- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v1.0.0/release-notes.md`에 생성한다. manifest의 실제 서명·공증 상태에 맞는 안내가 자동으로 포함된다.
 - 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v1.0.0`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
 
 ## GitHub 초안과 정식 게시
 
-아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3, v0.17.1, v0.17.6은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
+아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3, v0.17.1, v0.17.6, v1.0.0은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
 
 ```sh
 # 개발용 서명/공증 없음으로 배포하기로 정했을 때
@@ -48,7 +48,7 @@ python3 scripts/release.py publish --allow-unnotarized
 
 [GitHub CLI 릴리스 생성](https://cli.github.com/manual/gh_release_create) · [GitHub 릴리스 관리](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)
 
-## 나중에 Developer ID·공증으로 전환
+## Developer ID 서명·공증
 
 **Developer ID Application 서명 완료·검증 첫 빌드는 1.0.0**이다. 후보를 준비할 때 버전/빌드/노트를 맞추고 실제 서명 검증 전에는 완료/공개로 기록하지 않는다. 가입·인증서 생성·ad-hoc 서명만으로 전환하지 않는다. 공증은 서명 뒤 별도로 수행한다.
 
@@ -62,6 +62,8 @@ xcrun notarytool store-credentials tile-launcher-notary
 python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 ```
 
+- Apple ID 방식에서는 API private key 경로를 빈 채로 Enter를 누른다. 앱 암호는 [Apple 계정 웹사이트](https://account.apple.com)의 로그인 및 보안 → 앱 암호에서 생성한다. 계정의 일반 로그인 암호를 대신 쓰지 않으며 생성한 앱 암호는 터미널의 보안 프롬프트에 직접 입력한다. Team ID를 확인하고 `Credentials saved to Keychain` 성공 뒤 같은 프로필 이름을 사용한다. [Apple 앱 암호 안내](https://support.apple.com/ko-kr/102654)
+- 공증된 1.0.0 이후 배포는 `python3 scripts/release.py draft` → `python3 scripts/release.py publish`를 사용한다. 위 개발용 배포 예시의 `--allow-unnotarized`를 붙이지 않는다.
 - sign은 Developer ID Application 유형·팀·강화된 런타임·보안 타임스탬프와 지정 권한을 검사한다. 실패 시 기존 개발용 앱을 보존하도록 임시 사본에 서명한다.
 - 현재 선언하는 권한은 Finder의 통합 휴지통을 여는 Apple Events 요청을 위한 항목이다. get-task-allow/JIT/라이브러리 검증 해제 같은 예외는 넣지 않는다. 실제 Developer ID 환경에서 Finder/접근성/Space/Focus 동작을 재검증해야 한다. [Apple Events 권한](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.automation.apple-events)
 - 공증을 한 번 제출하면 ID를 저장한다. 진행 중에는 같은 notarize 명령을 다시 실행하여 그 제출만 조회한다. 제출 응답이 끊긴 경우 자동 재업로드하지 않으며, `notarytool history`에서 ID를 확인한 뒤 `--submission-id`로 복구한다.
@@ -89,7 +91,7 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 
 목표 순서: **릴리스 빌드 → Developer ID Application 서명 → Apple 공증 → 티켓 첨부·검증 → GitHub Release**.
 
-- Xcode 또는 개발자 계정에서 **Developer ID Application** 서명 인증서를 만든다. 현재 빌드는 `codesign --sign -`인 ad-hoc 서명이며 정식 배포 서명이 아니다.
+- Xcode 또는 개발자 계정에서 **Developer ID Application** 서명 인증서를 만든다. 로컬 build.sh는 `codesign --sign -`인 ad-hoc 서명이며 공개한 1.0.0의 Developer ID 서명과 구별한다.
 - 배포 버전/빌드 번호를 정하고 해당 소스 커밋에 연결한다. 같은 코드에 서명만 바꾸는 첫 전환에서도 앱의 교체 판단이 분명하도록 빌드 번호를 갱신한다.
 - 현재 `scripts/build.sh`는 로컬 개발용이다. `scripts/release.py`는 이를 독립 소스/출력 경로에서 호출하고 서명·공증·검증·GitHub 초안/게시를 분리한다. Developer ID 경로에서는 강화된 런타임과 보안 타임스탬프를 적용하고 필요한 권한만 선언한 뒤 기능을 다시 검증한다. 인증서 이름을 하드코딩하거나 키를 저장소에 넣지 않는다.
 - 배포 파일은 ZIP 또는 DMG로 패키징한다. `notarytool`로 공증을 제출하고 승인 결과를 확인한 뒤 `stapler`로 앱/DMG에 티켓을 첨부한다. 공증 후 바뀐 파일은 최종 형태로 다시 패키징한다.
@@ -97,7 +99,7 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 
 공증은 Apple의 자동 보안 검사다. App Store 제출 심사와 구분하며 서명/공증만으로 앱 기능의 호환성을 보장하지 않는다. [Apple의 서명·강화된 런타임·공증 절차](https://developer.apple.com/kr/developer-id/)
 
-## 첫 공개 릴리스 전에 남은 확인
+## 공개 후에도 남은 플랫폼 실기 확인
 
 - 현재 개인용 빌드는 Apple Silicon/macOS 27.2 beta 환경에서 주로 확인했다. 선언된 최소 macOS 26과 지원할 실제 OS/CPU에서 시험하고, 공개 배포 빌드에 사용할 정식 Xcode/SDK를 정한다.
 - 집중 모드 필터 추가·프로필 변경·필터 해제·앱 재시작을 실제 시스템에서 확인한다. 메타데이터가 있다는 사실만으로 추종 성공이라고 하지 않는다.
@@ -107,7 +109,7 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 
 ## 집중 모드 진단 기록과 다음 확인
 
-**R103에서 확인된 새 증거:** GitHub 0.16.3을 Applications 아래에서 실행했지만 Focus 필터 로딩이 시간 초과됐다. linkd는 `Unable to get teamId from dev.cola16.TileLauncher`를 반복했고 실제 서명은 TeamIdentifier 없음이었다. 아이콘 파일·NSWorkspace 아이콘 로딩·메타데이터 읽기는 정상이다. 현재 Mac의 유효한 코드 서명 identity는 0개라 서명 A/B 검사는 아직 할 수 없다. 자세한 근거와 다음 검증은 [Focus 진단](focus-diagnostics.md)을 따른다. 아래 R91 당시의 캐시/설정 점검은 이 오류가 해결됐다는 기록이 아니다.
+**R103에서 확인된 새 증거:** GitHub 0.16.3을 Applications 아래에서 실행했지만 Focus 필터 로딩이 시간 초과됐다. linkd는 `Unable to get teamId from dev.cola16.TileLauncher`를 반복했고 실제 서명은 TeamIdentifier 없음이었다. 아이콘 파일·NSWorkspace 아이콘 로딩·메타데이터 읽기는 정상이다. 당시 유효한 코드 서명 identity는 0개였다. R123에서 Team ID 있는 Developer ID 서명/공증을 완료했으나 실제 Focus 필터의 전환/해제는 별도 확인이 남는다. 자세한 근거와 다음 검증은 [Focus 진단](focus-diagnostics.md)을 따른다. 아래 R91 당시의 캐시/설정 점검은 이 오류가 해결됐다는 기록이 아니다.
 
 2026-10-13 읽기 점검에서 현재 개발 앱에는 AppIcon.icns, LauncherFocusIntent, ProfileEntity, 프로필 query 메타데이터가 모두 있었다. 서명은 ad-hoc이며 Team ID는 없었다.
 
