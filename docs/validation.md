@@ -1,5 +1,11 @@
 # 네이티브 빌드 검증
 
+## R144 · 작은 창도 모든 보이는 데스크탑 기준으로 강조
+
+- MonitorGroupingPreview의 색상 대상에서 첫 창 조건을 제거하고 isApplication=false/desktop=current만 사용했다. 크기/모니터/묶음 순서 로직은 그대로이며 범례도 현재 보이는 데스크탑으로 정정했다. 실제 WindowTracker/DesktopWindows 및 production 입력 nil은 유지한다.
+- native 개발 빌드 1.79초 및 전체 --render-previews 통과. /tmp/tile-visible-colors-build.log, tile-visible-colors-previews.log. 두 시안에서 Safari/iTerm/Finder/Docmost의 보이는 작은 창은 진한색, ChatGPT/Claude의 보이지 않는 작은 창은 파스텔, 앱 전용 항목은 회색을 확인했다. iTerm 선택 전후 색은 유지되고 묶음 순서·첫 창 크기만 달라진다.
+- 같은 23개/모니터 B 가정의 합성 정적 공유 뷰 렌더다. 새 전달 PNG는 monitor-all-visible-active-20261014.png / monitor-all-visible-terminal-20261014.png이며 앞선 시안 파일을 보존한다. 실제 모니터 분류/MRU 갱신 기능을 구현했다고 기록하지 않는다. 기존 XCTest/Python을 다시 실행하지 않았고 설치/공개 앱 1.1.5(20)의 번들 해시를 보존했다.
+
 ## R143 · 보이는 데스크탑의 첫 창만 강조하는 시안
 
 - 비교 fixture의 강조 대상만 정정했다. 모니터와 무관하게 visible 데스크탑의 앱 묶음 첫 실제 창을 강조하며 후속 창/보이지 않는 데스크탑은 파스텔, 앱 전용 항목은 회색이다. 크기는 기존 시안의 활성 모니터 첫 창 4×2/그 외 첫 창 2×2/후속·앱 1×1을 유지한다.
