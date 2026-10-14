@@ -1,5 +1,10 @@
 # 네이티브 빌드 검증
 
+## R157 · 저장소 상위 ZIP 복사
+
+- git rev-parse --show-toplevel과 manifest의version1.2.1/signing developer-id를 확인했다. Git 저장소 부모에 Tile-Launcher-1.2.1-arm64-unnotarized.zip을 원본 그대로 복사했다. 크기2,224,935바이트, 복사 전후 SHA256은25d1c8769c8135d199beb74492b75b88a47a310edce5a0879e9367d1d7f63ffb로 원본 manifest와 같다.
+- 복사 목적지는 사용자가 지정한 iCloud 동기화용 폴더이며 실제 서버 업로드나 다른 기기 수신은 검사하지 않았다. ZIP 내용 재압축·서명 변경·버전 증가·앱 설치/실행·공증 재시도·키체인 변경은 하지 않았다. 설치1.2.0/공개1.1.5는 그대로다.
+
 ## R156 · 1.2.1 실제 확대 UI와 배포 검증
 
 - 서명 산출물: 소스fe12c66afea5c15ed0b15048dc61173eb5e888df의격리빌드/Developer ID서명/실제서명실행파일렌더통과. /tmp/tile-121-prepare.log, tile-121-sign.log, tile-121-signed-previews.log. 서명번들SHA256은290739b70c121c79bdab3b11ab25339da3754afef32a113946de0a57f83ce550, 미공증ZIP은25d1c8769c8135d199beb74492b75b88a47a310edce5a0879e9367d1d7f63ffb다. 공증 후최종해시는별도로기록한다.
