@@ -212,8 +212,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appRecency.retain(Set(index.keys))
         apps = appRecency.sorted(unique.map(\.id)).compactMap { index[$0] }
     }
+    private func windowTrackingItem(_ app: NSRunningApplication) -> AppItem? {
+        if let regular = item(app) { return regular }
+        guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              !app.isTerminated, app.activationPolicy == .accessory else { return nil }
+        let registered = settings.profiles.flatMap(\.items).filter { $0.kind == .app }
+        guard registered.contains(where: {
+            ($0.bundleID != nil && $0.bundleID == app.bundleIdentifier)
+                || app.bundleURL?.standardizedFileURL.path == URL(fileURLWithPath: $0.path).standardizedFileURL.path
+        }) else { return nil }
+        return AppItem(id: app.bundleIdentifier ?? app.bundleURL?.path ?? String(app.processIdentifier),
+                       pid: app.processIdentifier, name: app.localizedName ?? "앱", url: app.bundleURL)
+    }
     private func refreshWindows() {
-        let all = NSWorkspace.shared.runningApplications.compactMap(item)
+        let all = NSWorkspace.shared.runningApplications.compactMap(windowTrackingItem)
         tracker.synchronize(apps: all, active: lastContext?.pid, trusted: trusted)
     }
     private func checkPermission(force: Bool = false) {
@@ -272,11 +284,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
             ?? NSScreen.main else { return }
         let layout: PanelLayout
-        if let previousLayout, NSScreen.screens.contains(where: { $0.visibleFrame.contains(previousLayout.frame) }) {
-            layout = previousLayout
+        if let previousLayout, let previousScreen = NSScreen.screens.first(where: { $0.visibleFrame.contains(previousLayout.frame) }) {
+            layout = previousLayout.refittingContent(registeredCount: settings.activeProfile.items.count,
+                                                       visibleFrame: previousScreen.visibleFrame)
         } else {
             layout = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point)
-                .fittingContent(registeredCount: settings.profiles.map { $0.items.count }.max() ?? 0)
+                .fittingContent(registeredCount: settings.activeProfile.items.count)
         }
         guard layout.supported else {
             error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.")
@@ -285,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
         let menuNow = Date()
         let snapshot = OverlaySnapshot(context: lastContext,
-                                       contextWindowTitle: windows.first { $0.pid == lastContext?.pid }?.title,
+                                       contextWindowTitle: windows.first { $0.pid == lastContext?.pid && !$0.isApplication }?.title,
                                        apps: Array(apps.prefix(3)),
                                        windows: Array(windows.prefix(count)), layout: layout, permission: trusted,
                                        pins: settings.pins, profileID: settings.activeProfile.id,
@@ -313,6 +326,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             showSettings: { [weak self] destination in self?.showSettings(destination, context: content.snapshot.context) },
                             requestPermission: { [weak self] in self?.performImmediately { self?.requestPermission() } },
                             pinOverlay: { [weak self] in self?.pinOverlay() },
+                            resizeForProfile: { [weak self] count in self?.resizeOverlay(registeredCount: count) },
+                            quitApplication: { [weak self] window in self?.requestQuit(windowless: window) },
                             dismiss: { [weak self] in
                                 self?.pendingAction = nil
                                 self?.hide()
@@ -500,6 +515,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browser?.close()
         profileChangeRevision += 1
         presentation.profile = profile
+        resizeOverlay(registeredCount: profile.items.count)
+    }
+    private func resizeOverlay(registeredCount: Int) {
+        guard let panel, panel.isVisible, let content = visibleContent,
+              let screen = panel.screen ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) else { return }
+        let old = content.snapshot.layout
+        let current = PanelLayout(frame: panel.frame, compact: old.compact, supported: old.supported)
+        let fitted = current.refittingContent(registeredCount: registeredCount, visibleFrame: screen.visibleFrame)
+        guard fitted != old || fitted.frame != panel.frame else { return }
+        content.snapshot.layout = fitted
+        panel.setFrame(fitted.frame, display: true)
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.invalidateShadow()
     }
     private func cycleProfile(_ step: Int) {
         guard let currentID = presentation.profile?.id ?? visibleSnapshot?.profileID,
@@ -579,6 +607,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
             }
+        }
+    }
+    private func requestQuit(windowless window: WindowItem) {
+        guard window.isApplication else { return }
+        // Menu selection is immediate even while Option is held. A pinned
+        // overlay remains open; no force termination or app-file changes occur.
+        performImmediately { [weak self] in
+            if let message = ApplicationTermination.request(window.runningApplication) { self?.error(message) }
         }
     }
     private func select(url: URL) {

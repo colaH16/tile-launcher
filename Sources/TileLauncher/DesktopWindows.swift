@@ -9,6 +9,8 @@ struct ServerWindow {
     let title: String?
     let bounds: CGRect
     let onScreen: Bool
+    let alpha: Double
+    var isCandidate: Bool { WindowPresence.serverCandidate(alpha: alpha, bounds: bounds) }
 }
 
 /// No images or screen capture. Public WindowServer metadata supplies the full
@@ -74,7 +76,8 @@ final class DesktopWindows {
                   let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary), !bounds.isEmpty else { continue }
             let title = (row[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 }
             records[id] = ServerWindow(id: id, pid: pid, title: title, bounds: bounds,
-                                       onScreen: row[kCGWindowIsOnscreen as String] as? Bool ?? false)
+                                       onScreen: row[kCGWindowIsOnscreen as String] as? Bool ?? false,
+                                       alpha: (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1)
         }
     }
     func id(for element: AXUIElement, pid: pid_t) -> CGWindowID? {

@@ -21,6 +21,7 @@ final class WindowTracker {
     private var activePID: pid_t = 0
     private var enabled = false
     private var pending: [pid_t: DispatchWorkItem] = [:]
+    private var applicationIDs: [pid_t: UUID] = [:]
     private let windowEvents = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
                                 kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification]
 
@@ -65,6 +66,16 @@ final class WindowTracker {
                 return
             }
             self.desktops.refresh()
+            if target.item.isApplication {
+                DispatchQueue.main.async {
+                    guard let app = target.item.runningApplication, !app.isTerminated else {
+                        completion("앱이 종료되었습니다."); return
+                    }
+                    NSApp.yieldActivation(to: app)
+                    completion(app.activate(options: []) ? nil : "앱을 활성화하지 못했습니다.")
+                }
+                return
+            }
             if let number = target.item.windowID, self.desktops.valid,
                self.desktops.records[number]?.pid != target.item.pid {
                 DispatchQueue.main.async { completion("이 창이 닫혔습니다.") }
@@ -192,7 +203,10 @@ final class WindowTracker {
         guard enabled, let appInfo = apps[pid] else { return }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
-        let elements = value(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        var rawWindows: CFTypeRef?
+        let readResult = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows)
+        let elements = rawWindows as? [AXUIElement] ?? []
+        let axComplete = (readResult == .success && rawWindows is [AXUIElement]) || readResult == .noValue
         let old = windows[pid] ?? []
         var next: [TrackedWindow] = []
         if desktops.valid {
@@ -225,9 +239,11 @@ final class WindowTracker {
         }
         // Preserve off-Space AX handles/titles and MRU IDs until there is positive
         // evidence of closure. A timeout or an incomplete app list is not closure.
-        for var missing in old where !next.contains(where: { $0.item.id == missing.item.id }) {
+        for var missing in old where !missing.item.isApplication && !next.contains(where: { $0.item.id == missing.item.id }) {
             let number = missing.item.windowID
-            let exists = desktops.valid ? number.map { desktops.records[$0]?.pid == pid } : nil
+            let exists = desktops.valid ? number.map {
+                desktops.records[$0]?.pid == pid && (missing.element != nil || desktops.records[$0]?.isCandidate == true)
+            } : nil
             guard WindowRetention.keepMissing(serverStillContains: exists,
                                                axInvalid: missing.element.map(isInvalid) ?? false,
                                                destroyed: number.map { destroyed[pid, default: []].contains($0) } ?? false) else {
@@ -244,23 +260,36 @@ final class WindowTracker {
         for server in desktops.records.values.sorted(by: { $0.id < $1.id }) where server.pid == pid {
             guard !next.contains(where: { $0.item.windowID == server.id }),
                   !destroyed[pid, default: []].contains(server.id),
-                  server.bounds.width >= 80, server.bounds.height >= 50,
+                  server.isCandidate,
                   desktops.desktop(for: server.id) == .other else { continue }
             next.append(TrackedWindow(element: nil, item: WindowItem(
                 id: UUID(), pid: pid, appName: appInfo.name, appURL: appInfo.url,
                 title: server.title ?? "다른 데스크탑의 창", minimized: false,
                 windowID: server.id, desktop: .other)))
         }
+        let serverCandidates = desktops.records.values.filter { $0.pid == pid && $0.isCandidate }.count
+        if WindowPresence.applicationOnly(axComplete: axComplete, inventoryComplete: desktops.valid,
+                                          accessibleWindows: next.count, serverCandidates: serverCandidates) {
+            let id = applicationIDs[pid] ?? UUID()
+            applicationIDs[pid] = id
+            next.append(TrackedWindow(element: nil, item: WindowItem(
+                id: id, pid: pid, appName: appInfo.name, appURL: appInfo.url,
+                title: "", minimized: false, isApplication: true,
+                runningApplication: NSRunningApplication(processIdentifier: pid))))
+        }
         windows[pid] = next
         if focusEvent, let focused = value(app, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(),
            let match = next.first(where: { $0.element.map { CFEqual($0, focused) } ?? false }) {
             recency.touch(match.item.id)
+        } else if focusEvent, let application = next.first(where: { $0.item.isApplication }) {
+            recency.touch(application.item.id)
         }
     }
     private func remove(_ pid: pid_t) {
         pending.removeValue(forKey: pid)?.cancel()
         windows[pid] = nil
         destroyed[pid] = nil
+        applicationIDs[pid] = nil
         if let observer = observers.removeValue(forKey: pid) {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         }

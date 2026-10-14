@@ -10,7 +10,7 @@ final class PreviewFixture: ObservableObject {
     let browser = FolderBrowser()
     private let suite: String
     private let defaults: UserDefaults
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false) {
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35) {
         suite = "dev.cola16.TileLauncher.preview.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         settings = SettingsStore(defaults: defaults)
@@ -20,7 +20,7 @@ final class PreviewFixture: ObservableObject {
             settings.tileColors.windows = TileColor(0x7651AA)
             settings.tileColors.registered = TileColor(0x297D76)
         }
-        let pins = (1...35).map { PinnedItem(kind: .app, path: "/Preview/App\($0).app", bundleID: nil, name: "앱 \($0)") }
+        let pins = (0..<registeredCount).map { PinnedItem(kind: .app, path: "/Preview/App\($0).app", bundleID: nil, name: "앱 \($0 + 1)") }
         settings.pins = pins
         let app = AppItem(id: "preview.editor", pid: -1, name: "문서 편집기", url: nil)
         var commands = [
@@ -38,11 +38,13 @@ final class PreviewFixture: ObservableObject {
         var windows: [WindowItem] = []
         for index in 0..<16 {
             let pid: pid_t = index < 2 ? 1 : Int32(index)
-            let name = index < 2 ? "Terminal" : "앱 \(index + 1)"
+            let applicationOnly = [2, 3, 7].contains(index)
+            let name = index == 2 ? "USBClean" : index < 2 ? "Terminal" : "앱 \(index + 1)"
             let title = index == 0 ? "cc2" : (index == 1 ? "se3" : "프로젝트 문서 \(index + 1)")
             let desktop: WindowDesktop = index < 4 ? .current : .other
             windows.append(WindowItem(id: UUID(), pid: pid, appName: name, appURL: nil,
-                                      title: title, minimized: false, desktop: desktop))
+                                      title: applicationOnly ? "" : title, minimized: false,
+                                      desktop: applicationOnly ? .unknown : desktop, isApplication: applicationOnly))
         }
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: compact ? 560 : 1440,
                                                                 height: compact ? 468 : 1000),
@@ -181,8 +183,9 @@ final class PreviewFixture: ObservableObject {
 
 struct DeckPreview: View {
     @StateObject var fixture: PreviewFixture
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false) {
-        _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors, compact: compact))
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35) {
+        _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
+                                                          compact: compact, registeredCount: registeredCount))
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
@@ -349,6 +352,10 @@ enum PreviewExport {
                  to: directory.appendingPathComponent("custom-dark.png"))
         try save(DeckPreview(theme: .classic, compact: true).environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("compact-dark.png"))
+        for count in [0, 18, 36, 200] {
+            try save(DeckPreview(theme: .classic, registeredCount: count).environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("profile-\(count).png"))
+        }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")

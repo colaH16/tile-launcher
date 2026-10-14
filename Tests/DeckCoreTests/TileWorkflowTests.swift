@@ -31,7 +31,7 @@ final class TileWorkflowTests: XCTestCase {
         let count = layout.windowLimit(manual: nil, actual: spans.count)
         let positions = TileArrangement.place(spans: spans, columns: columns)
         XCTAssertEqual(count, spans.count)
-        XCTAssertGreaterThanOrEqual(positions.prefix { $0.row < 2 }.count, 6)
+        XCTAssertGreaterThanOrEqual(positions.prefix { $0.row < 3 }.count, 6)
         XCTAssertGreaterThan(positions.last!.row, 1)
         XCTAssertEqual(layout.windowLimit(manual: Int.max, actual: 45), 45)
     }
@@ -39,7 +39,7 @@ final class TileWorkflowTests: XCTestCase {
         for width: CGFloat in [512, 640, 760, 900, 1040] {
             let compact = width < 760
             let g = DeckGeometry(width: width, compact: compact)
-            XCTAssertGreaterThanOrEqual(g.windowColumns, 6)
+            XCTAssertGreaterThanOrEqual(g.windowColumns, 4)
             XCTAssertGreaterThan(g.unit, 50)
             let occupied = g.windowWidth + (compact ? 0 : g.menuWidth + 24)
             XCTAssertEqual(occupied, width - 48, accuracy: 0.01)

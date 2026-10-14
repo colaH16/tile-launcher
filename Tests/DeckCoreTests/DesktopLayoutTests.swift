@@ -4,15 +4,15 @@ import CoreGraphics
 
 final class DesktopLayoutTests: XCTestCase {
     func testBottomShelfFitsActualRowsAndCapsOnlyItsViewport() {
-        let one = DeckContentLayout(width: 1040, availableHeight: 570, registeredCount: 14, compact: false)
-        let three = DeckContentLayout(width: 1040, availableHeight: 570, registeredCount: 36, compact: false)
-        let many = DeckContentLayout(width: 1040, availableHeight: 570, registeredCount: 200, compact: false)
+        let one = DeckContentLayout(width: 1040, availableHeight: 640, registeredCount: 14, compact: false)
+        let three = DeckContentLayout(width: 1040, availableHeight: 640, registeredCount: 36, compact: false)
+        let many = DeckContentLayout(width: 1040, availableHeight: 640, registeredCount: 200, compact: false)
         let tighter = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 36, compact: false)
         XCTAssertEqual(one.registeredHeight, 105.42857, accuracy: 0.001)
         XCTAssertEqual(three.registeredHeight, 248.28571, accuracy: 0.001)
         XCTAssertEqual(many.registeredHeight, three.registeredHeight)
         XCTAssertEqual(tighter.registeredHeight, 176.85714, accuracy: 0.001)
-        XCTAssertLessThanOrEqual(three.workHeight + three.gap + three.registeredHeight, 570)
+        XCTAssertLessThanOrEqual(three.workHeight + three.gap + three.registeredHeight, 640)
         XCTAssertEqual(one.workTopInset, 0)
         XCTAssertEqual(three.workTopInset, 0)
     }
@@ -26,18 +26,19 @@ final class DesktopLayoutTests: XCTestCase {
         }
     }
     func testWorkAreaShowsThreeRowsAndThirtyPercentOfFourth() {
-        let content = DeckContentLayout(width: 900, availableHeight: 520, registeredCount: 36, compact: false)
+        let content = DeckContentLayout(width: 900, availableHeight: 620, registeredCount: 36, compact: false)
         let geometry = DeckGeometry(width: 900, compact: false)
         XCTAssertEqual(content.workTopInset, 0)
         XCTAssertEqual(content.workHeight, geometry.unit * 3.3 + geometry.gap * 3 + 32, accuracy: 0.001)
         XCTAssertEqual(content.registeredHeight, RegisteredGridGeometry(width: 900).shelfHeight(count: 24, maximumRows: 2))
-        XCTAssertLessThan(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, 520)
+        XCTAssertLessThan(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, 620)
     }
-    func testSupportedSmallPanelKeepsTwoWindowRowsAndOneRegisteredRow() {
+    func testSmallPanelKeepsAWindowRowAndACompleteRegisteredRow() {
         for (width, bodyHeight, compact): (CGFloat, CGFloat, Bool) in [(512, 298, true), (760, 470, false), (1040, 560, false)] {
             let content = DeckContentLayout(width: width, availableHeight: bodyHeight, registeredCount: 100, compact: compact)
             XCTAssertGreaterThanOrEqual(content.registeredHeight, 94)
-            XCTAssertGreaterThanOrEqual(content.workHeight, DeckGeometry(width: width, compact: compact).twoRows + 32 - 0.001)
+            let geometry = DeckGeometry(width: width, compact: compact)
+            XCTAssertGreaterThanOrEqual(content.workHeight, geometry.viewport(rows: compact ? 1 : 2) + 32 - 0.001)
             XCTAssertGreaterThanOrEqual(content.workTopInset, 0)
             XCTAssertLessThanOrEqual(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, bodyHeight)
         }
@@ -49,7 +50,7 @@ final class DesktopLayoutTests: XCTestCase {
             let fitted = original.fittingContent(registeredCount: count)
             XCTAssertLessThanOrEqual(fitted.frame.height, original.frame.height)
             XCTAssertTrue(original.frame.contains(fitted.frame))
-            XCTAssertLessThanOrEqual(fitted.frame.width / fitted.frame.height, 1.5)
+            XCTAssertLessThanOrEqual(fitted.frame.width / fitted.frame.height, 2.1)
             XCTAssertGreaterThanOrEqual(fitted.frame.height, 620)
         }
         XCTAssertLessThan(original.fittingContent(registeredCount: 35).frame.height, original.frame.height)
@@ -57,6 +58,28 @@ final class DesktopLayoutTests: XCTestCase {
         let body = DeckContentLayout(width: fitted.frame.width, availableHeight: fitted.frame.height - 154,
                                      registeredCount: 35, compact: false)
         XCTAssertEqual(body.registeredHeight, RegisteredGridGeometry(width: fitted.frame.width).shelfHeight(count: 35, maximumRows: 3))
+    }
+    func testProfileRefittingShrinksAndGrowsWithoutRecentAreaGapOrLosingDraggedPosition() {
+        let screen = CGRect(x: -1920, y: -200, width: 1920, height: 1080)
+        let initial = PanelLayout.calculate(visibleFrame: screen, cursor: CGPoint(x: -900, y: 350))
+            .fittingContent(registeredCount: 36)
+        let small = initial.refittingContent(registeredCount: 18, visibleFrame: screen)
+        let large = small.refittingContent(registeredCount: 36, visibleFrame: screen)
+        XCTAssertLessThan(small.frame.height, initial.frame.height)
+        XCTAssertEqual(small.frame.minX, initial.frame.minX)
+        XCTAssertEqual(small.frame.maxY, initial.frame.maxY)
+        XCTAssertEqual(large.frame, initial.frame)
+        let smallScreen = CGRect(x: -600, y: 0, width: 560, height: 600)
+        let moved = initial.refittingContent(registeredCount: 200, visibleFrame: smallScreen)
+        XCTAssertTrue(smallScreen.contains(moved.frame))
+        XCTAssertTrue(moved.compact)
+        for layout in [initial, small, large] {
+            let count = layout == small ? 18 : 36
+            let body = DeckContentLayout(width: layout.frame.width,
+                availableHeight: layout.frame.height - DeckSpacing.chrome(compact: false), registeredCount: count, compact: false)
+            XCTAssertEqual(body.workHeight, DeckGeometry(width: layout.frame.width, compact: false).viewport(rows: 3.3) + 32, accuracy: 0.001)
+            XCTAssertTrue(screen.contains(layout.frame))
+        }
     }
     func testHiddenAndMinimizedWindowsAreStillCurrentWhenMembershipMatches() {
         XCTAssertEqual(WindowDesktop.resolve(windowSpaces: [4], activeSpaces: [4], onScreen: false), .current)

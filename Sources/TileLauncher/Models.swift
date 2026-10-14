@@ -17,6 +17,8 @@ struct WindowItem: Identifiable, Equatable {
     let minimized: Bool
     var windowID: CGWindowID? = nil
     var desktop: WindowDesktop = .unknown
+    var isApplication = false
+    var runningApplication: NSRunningApplication? = nil
 }
 extension PinnedItem {
     var url: URL {
@@ -34,7 +36,7 @@ struct OverlaySnapshot: Equatable {
     let contextWindowTitle: String?
     let apps: [AppItem]
     let windows: [WindowItem]
-    let layout: PanelLayout
+    var layout: PanelLayout
     let permission: Bool
     let pins: [PinnedItem]
     let profileID: String
@@ -52,7 +54,7 @@ final class OverlayContent: ObservableObject {
         let old = snapshot
         let count = old.layout.windowLimit(manual: manualCount, actual: windows.count)
         let next = OverlaySnapshot(context: context,
-                                   contextWindowTitle: windows.first { $0.pid == context?.pid }?.title,
+                                   contextWindowTitle: windows.first { $0.pid == context?.pid && !$0.isApplication }?.title,
                                    apps: Array(apps.prefix(3)), windows: Array(windows.prefix(count)),
                                    layout: old.layout, permission: trusted, pins: old.pins,
                                    profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,

@@ -112,6 +112,8 @@ struct DeckView: View {
     let showSettings: (SettingsDestination) -> Void
     let requestPermission: () -> Void
     let pinOverlay: () -> Void
+    var resizeForProfile: (Int) -> Void = { _ in }
+    var quitApplication: (WindowItem) -> Void = { _ in }
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -132,8 +134,9 @@ struct DeckView: View {
                                                         registeredCount: registeredItems.count, compact: compact)
                         VStack(spacing: 0) {
                             workArea(height: content.workHeight)
-                            Spacer(minLength: content.gap)
+                            Color.clear.frame(height: content.gap)
                             registeredSection.frame(height: content.registeredHeight)
+                            Spacer(minLength: 0)
                         }
                     }
                 }
@@ -160,6 +163,7 @@ struct DeckView: View {
             Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.28)
         }
         .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
+        .onChange(of: registeredItems.count) { _, count in resizeForProfile(count) }
     }
 
     private var header: some View {
@@ -401,30 +405,40 @@ struct DeckView: View {
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let spans = TileArrangement.spans(for: snapshot.windows.map { $0.appURL?.path ?? String($0.pid) })
-                let packed = rows(spans, columns: geometry.windowColumns)
+                let sizes = RecentTileArrangement.sizes(apps: snapshot.windows.map { $0.appURL?.path ?? String($0.pid) },
+                                                        applications: snapshot.windows.map(\.isApplication))
+                let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
+                let micro = (geometry.unit - geometry.gap) / 2
+                let bottom = packed.map { $0.row + $0.height }.max() ?? 0
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: geometry.gap) {
-                        ForEach(packed.indices, id: \.self) { row in
-                            HStack(spacing: geometry.gap) {
-                                ForEach(packed[row], id: \.index) { place in
-                                    windowTile(snapshot.windows[place.index], index: place.index, wide: place.span == 2)
-                                        .frame(width: tileWidth(place.span), height: geometry.unit)
-                                }
-                                Spacer(minLength: 0)
-                            }
+                    ZStack(alignment: .topLeading) {
+                        ForEach(packed, id: \.index) { place in
+                            windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4)
+                                .frame(width: micro * CGFloat(place.width) + geometry.gap * CGFloat(place.width - 1),
+                                       height: micro * CGFloat(place.height) + geometry.gap * CGFloat(place.height - 1))
+                                .offset(x: CGFloat(place.column) * (micro + geometry.gap),
+                                        y: CGFloat(place.row) * (micro + geometry.gap))
                         }
-                    }
+                    }.frame(width: geometry.windowWidth,
+                            height: CGFloat(bottom) * micro + CGFloat(max(0, bottom - 1)) * geometry.gap,
+                            alignment: .topLeading)
                 }.scrollIndicators(.visible).id(snapshot.windows.map(\.id))
             }
         }.frame(height: height)
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
-        let desktop = presentation.windowDesktops[window.id] ?? .unknown
+        let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
         let palette = DeckPalette(section: .windows, emphasized: desktop == .current,
                                   dark: deckScheme == .dark, theme: settings.theme, colors: settings.tileColors)
         return Button { selectWindow(window) } label: {
-            VStack(alignment: .leading, spacing: 5) {
+            Group {
+              if window.isApplication {
+                VStack(alignment: .leading, spacing: 2) {
+                    Icon(url: window.appURL, size: 20).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(window.appName).font(.system(size: 9, weight: .medium)).lineLimit(1)
+                }.padding(4).frame(maxWidth: .infinity, maxHeight: .infinity)
+              } else {
+                VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Icon(url: window.appURL, size: 22)
                     if wide { Text(window.appName).font(.caption2).foregroundStyle(palette.secondary).lineLimit(1) }
@@ -432,13 +446,20 @@ struct DeckView: View {
                 }.padding(.trailing, 12)
                 Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-            }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+              }
+            }
                 .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
         }.buttonStyle(TileStyle(section: .windows, emphasized: desktop == .current,
                                 selected: presentation.selection == "window:\(window.id)"))
-            .help("\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
+            .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
                 + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
-            .accessibilityLabel("\(index + 1). \(window.appName), \(window.title)" + (desktop == .current ? ", 현재 데스크탑" : desktop == .other ? ", 다른 데스크탑" : ""))
+            .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title)" + (desktop == .current ? ", 현재 데스크탑" : desktop == .other ? ", 다른 데스크탑" : ""))
+            .contextMenu {
+                if window.isApplication {
+                    Button("\(window.appName) 종료") { quitApplication(window) }
+                }
+            }
     }
 
     private var folderContents: some View {

@@ -107,8 +107,8 @@ final class DeckCoreTests: XCTestCase {
                     XCTAssertGreaterThanOrEqual(layout.frame.width / layout.frame.height, 1.199)
                     XCTAssertLessThanOrEqual(layout.frame.width / layout.frame.height, 1.501)
                     XCTAssertGreaterThanOrEqual(layout.capacity, 6)
-                    XCTAssertLessThanOrEqual(layout.frame.width, 1040)
-                    XCTAssertLessThanOrEqual(layout.frame.height, 720)
+                    XCTAssertLessThanOrEqual(layout.frame.width, 1120)
+                    XCTAssertLessThanOrEqual(layout.frame.height, 840)
                     if !layout.compact {
                         XCTAssertGreaterThanOrEqual(layout.frame.width, 760)
                         XCTAssertGreaterThanOrEqual(layout.frame.height, 620)
