@@ -79,6 +79,48 @@ def config():
     return value
 
 
+def version_tuple(value):
+    require(isinstance(value, str) and re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', value), 'Invalid release-note version.')
+    return tuple(map(int, value.split('.')))
+
+
+def validate_notes_range(plan, version, notes, changelog):
+    require(isinstance(plan, dict) and set(plan) == {'previous_release', 'included_versions'}, 'Invalid release/notes-range.json.')
+    base = plan['previous_release']
+    require(base is None or isinstance(base, str) and base.startswith('v'), 'Previous release must be a tag or null for the first release.')
+    lower = version_tuple(base[1:]) if base else (-1, -1, -1)
+    upper = version_tuple(version)
+    require(lower < upper, 'Previous release must precede this version.')
+    included = plan['included_versions']
+    require(isinstance(included, list) and included and all(isinstance(v, str) for v in included), 'List all intermediate release-note versions.')
+    ordered = sorted(set(included), key=version_tuple)
+    require(included == ordered and included[-1] == version, 'Included versions must be unique, ordered and end at the target.')
+    recorded = re.findall(r'^## (\d+\.\d+\.\d+)(?=\s|$)', changelog, re.MULTILINE)
+    expected = sorted({v for v in recorded if lower < version_tuple(v) <= upper}, key=version_tuple)
+    require(included == expected, 'Release notes omit or add versions relative to CHANGELOG.md: expected ' + ', '.join(expected))
+    marker = f'업데이트 범위: **{base or "첫 공개"} → v{version}**'
+    require(marker in notes and re.search(r'^# Tile Launcher ' + re.escape(version) + r'\s*$', notes, re.MULTILINE), 'Release-note title or previous-release range is missing.')
+    for item in included:
+        section = re.search(r'^### ' + re.escape(item) + r'(?=\s|$)(?:[^\n]*)\n(.*?)(?=\n#{1,3} |\Z)', notes, re.MULTILINE | re.DOTALL)
+        require(section and section[1].strip(), 'Release notes need a non-empty change section for ' + item)
+    return plan
+
+
+def current_notes():
+    source = (ROOT / 'release/notes.md').read_text()
+    plan = json.loads((ROOT / 'release/notes-range.json').read_text())
+    validate_notes_range(plan, config()['version'], source, (ROOT / 'CHANGELOG.md').read_text())
+    return source, plan
+
+
+def render_notes(status, source):
+    status_text = ('**Developer ID 서명 및 Apple 공증 완료.**' if status == 'notarized' else
+                   '**Apple 공증 없음. 개발용 ad-hoc 서명입니다.**' if status == 'adhoc' else
+                   '**Developer ID 서명 완료, Apple 공증은 아직 받지 않았습니다.**')
+    warning = '' if status == 'notarized' else '\n첫 실행이 차단되면 신뢰하는 원본 파일인지 확인한 후 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기로 허용해야 할 수 있습니다.\n'
+    return status_text + '\n' + warning + '\n' + source
+
+
 def load(output):
     value = json.loads((output / 'manifest.json').read_text())
     require(value['signing'] in ['adhoc', 'developer-id', 'notarized'] and type(value['local_only']) is bool, 'Invalid signing/local-only state.')
@@ -143,11 +185,7 @@ def archive(output, manifest):
     manifest['assets']['SHA256SUMS.txt'] = digest(downloads / 'SHA256SUMS.txt')
     manifest['bundle_sha256'] = tree_digest(bundle)
     write_json(output / 'manifest.json', manifest)
-    status_text = ('**Developer ID 서명 및 Apple 공증 완료.**' if status == 'notarized' else
-                   '**Apple 공증 없음. 개발용 ad-hoc 서명입니다.**' if status == 'adhoc' else
-                   '**Developer ID 서명 완료, Apple 공증은 아직 받지 않았습니다.**')
-    warning = '' if status == 'notarized' else '\n첫 실행이 차단되면 신뢰하는 원본 파일인지 확인한 후 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기로 허용해야 할 수 있습니다.\n'
-    notes = status_text + '\n' + warning + '\n' + (output / 'notes-source.md').read_text()
+    notes = render_notes(status, (output / 'notes-source.md').read_text())
     (output / 'release-notes.md').write_text(notes)
     manifest['notes_sha256'] = digest(output / 'release-notes.md')
     write_json(output / 'manifest.json', manifest)
@@ -164,6 +202,7 @@ def validate_output_path(output):
 
 def prepare(args):
     cfg = config()
+    _, notes_range = current_notes()
     output = args.output
     validate_output_path(output)
     require(not output.exists() or not any(output.iterdir()), 'Output directory is not empty; choose a new directory.')
@@ -199,6 +238,7 @@ def prepare(args):
     run(['/usr/bin/codesign', '--force', '--sign', '-', bundle])
     manifest = dict(repository=REPOSITORY, config=cfg, source_revision=revision, signing='adhoc',
                     local_only=bool(args.local_check), toolchain=run(['xcodebuild', '-version']),
+                    notes_range=notes_range, notes_revision=revision,
                     created_at=datetime.now(timezone.utc).isoformat())
     check_bundle(bundle, manifest)
     archive(output, manifest)
@@ -326,14 +366,54 @@ def publication_allowed(manifest, allow_unnotarized):
             'This artifact is not notarized. Use --allow-unnotarized only for an explicitly chosen unnotarized release.')
 
 
-def find_release(tag):
+def list_releases():
     # GitHub's by-tag endpoint omits drafts. Listing authenticated releases also
     # prevents a retry from accidentally creating a second draft for this tag.
     pages = json.loads(run(['gh', 'api', f'repos/{REPOSITORY}/releases?per_page=100', '--paginate', '--slurp']))
     require(isinstance(pages, list) and all(isinstance(page, list) for page in pages), 'Invalid release listing.')
-    matches = [release for page in pages for release in page if release.get('tag_name') == tag]
+    require(all(isinstance(release, dict) for page in pages for release in page), 'Invalid release entries.')
+    return [release for page in pages for release in page]
+
+
+def find_release(tag):
+    matches = [release for release in list_releases() if release.get('tag_name') == tag]
     require(len(matches) <= 1, 'Multiple releases use this tag; inspect before continuing.')
     return matches[0] if matches else None
+
+
+def check_published_base(plan, releases, target):
+    public = [r for r in releases if not r.get('draft') and not r.get('prerelease')
+              and r.get('published_at') and r.get('tag_name') != target]
+    previous = max(public, key=lambda r: r['published_at'])['tag_name'] if public else None
+    require(plan['previous_release'] == previous, 'Previous public release changed. Review the full interval before publishing: ' + str(previous))
+
+
+def refresh_notes(args):
+    manifest = verify(args)
+    require(not manifest['local_only'], 'Local rehearsals cannot become release descriptions.')
+    require(not run(['git', 'status', '--porcelain']), 'Commit reviewed release notes before refreshing an artifact.')
+    source, plan = current_notes()
+    require(manifest['config']['version'] == config()['version'], 'Reviewed notes must match the prepared artifact version.')
+    releases = list_releases()
+    target = 'v' + manifest['config']['version']
+    require(not any(r.get('tag_name') == target for r in releases), 'An existing release/draft must be explicitly reviewed; do not silently change its prepared notes.')
+    check_published_base(plan, releases, target)
+    backup = args.output / 'notes-history' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    backup.mkdir(parents=True)
+    names = ['notes-source.md', 'release-notes.md', 'manifest.json']
+    for name in names: shutil.copy2(args.output / name, backup / name)
+    try:
+        (args.output / 'notes-source.md').write_text(source)
+        (args.output / 'release-notes.md').write_text(render_notes(manifest['signing'], source))
+        manifest['notes_range'] = plan
+        manifest['notes_revision'] = run(['git', 'rev-parse', 'HEAD'])
+        manifest['notes_sha256'] = digest(args.output / 'release-notes.md')
+        write_json(args.output / 'manifest.json', manifest)
+        verify(args)
+    except Exception:
+        for name in names: shutil.copy2(backup / name, args.output / name)
+        raise
+    print('Refreshed cumulative notes; app, archive, metadata and checksums unchanged.')
 
 
 def download_release_assets(release, directory):
@@ -349,12 +429,16 @@ def download_release_assets(release, directory):
 def github(args):
     manifest = verify(args)
     publication_allowed(manifest, args.allow_unnotarized)
+    require('notes_range' in manifest, 'Prepared notes lack an update range. Review notes and run refresh-notes first.')
+    validate_notes_range(manifest['notes_range'], manifest['config']['version'],
+                         (args.output / 'release-notes.md').read_text(), (ROOT / 'CHANGELOG.md').read_text())
     run(['gh', 'auth', 'status'])
     remote = run(['git', 'remote', 'get-url', 'origin'])
     require(remote in [f'git@github.com:{REPOSITORY}.git', f'https://github.com/{REPOSITORY}.git'], 'Unexpected origin repository.')
     repo = json.loads(run(['gh', 'repo', 'view', REPOSITORY, '--json', 'nameWithOwner,visibility']))
     require(repo['nameWithOwner'] == REPOSITORY and repo['visibility'] == 'PUBLIC', 'Expected public repository; visibility is never changed automatically.')
     tag = 'v' + manifest['config']['version']
+    check_published_base(manifest['notes_range'], list_releases(), tag)
     revision = manifest['source_revision']
     run(['git', 'fetch', 'origin', 'main', '--no-tags'])
     run(['git', 'merge-base', '--is-ancestor', revision, 'origin/main'])
@@ -395,7 +479,7 @@ def github(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ['prepare', 'verify', 'sign', 'notarize', 'draft', 'publish']:
+    for name in ['prepare', 'verify', 'sign', 'notarize', 'refresh-notes', 'draft', 'publish']:
         command = sub.add_parser(name)
         command.add_argument('--output', type=Path, default=Path.home() / 'Library/Developer/TileLauncher/releases' / ('v' + config()['version']))
         if name == 'prepare': command.add_argument('--local-check', action='store_true')
@@ -410,7 +494,7 @@ def main():
     args.output = args.output.expanduser().resolve()
     try:
         {'prepare': prepare, 'verify': verify, 'sign': sign, 'notarize': notarize,
-         'draft': github, 'publish': github}[args.command](args)
+         'refresh-notes': refresh_notes, 'draft': github, 'publish': github}[args.command](args)
     except (ReleaseError, OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
         print('Release stopped:', error, file=sys.stderr)
         return 1

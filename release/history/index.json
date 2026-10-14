@@ -1,0 +1,35 @@
+[
+  {
+    "tag": "v0.16.3",
+    "previous_release": null,
+    "included_versions": [
+      "0.16.3"
+    ]
+  },
+  {
+    "tag": "v0.17.1",
+    "previous_release": "v0.16.3",
+    "included_versions": [
+      "0.17.0",
+      "0.17.1"
+    ]
+  },
+  {
+    "tag": "v0.17.6",
+    "previous_release": "v0.17.1",
+    "included_versions": [
+      "0.17.2",
+      "0.17.3",
+      "0.17.4",
+      "0.17.5",
+      "0.17.6"
+    ]
+  },
+  {
+    "tag": "v1.0.0",
+    "previous_release": "v0.17.6",
+    "included_versions": [
+      "1.0.0"
+    ]
+  }
+]

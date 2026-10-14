@@ -13,6 +13,88 @@ SPEC.loader.exec_module(r)
 
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_current_notes_cover_full_changelog_interval(self):
+        _, plan = r.current_notes()
+        self.assertEqual(plan['included_versions'][-1], r.config()['version'])
+        self.assertGreater(len(plan['included_versions']), 0)
+
+    def test_skipped_public_versions_must_all_have_change_sections(self):
+        log = '## 0.17.6 · final\n## 0.17.5 · intermediate\n## 0.17.2 · fix\n## 0.17.1 · published\n'
+        plan = {'previous_release': 'v0.17.1', 'included_versions': ['0.17.2', '0.17.5', '0.17.6']}
+        notes = '# Tile Launcher 0.17.6\n업데이트 범위: **v0.17.1 → v0.17.6**\n' + ''.join(f'### {v}\n- change\n' for v in plan['included_versions'])
+        r.validate_notes_range(plan, '0.17.6', notes, log)
+        missing = dict(plan, included_versions=['0.17.2', '0.17.6'])
+        with self.assertRaises(r.ReleaseError): r.validate_notes_range(missing, '0.17.6', notes, log)
+        with self.assertRaises(r.ReleaseError): r.validate_notes_range(plan, '0.17.6', notes.replace('### 0.17.5\n- change\n', ''), log)
+        with self.assertRaises(r.ReleaseError): r.validate_notes_range(plan, '0.17.6', notes.replace('### 0.17.5\n- change', '### 0.17.5\n'), log)
+        with self.assertRaises(r.ReleaseError): r.validate_notes_range(plan, '0.17.6', notes.replace('### 0.17.5\n', '### 0.17.50\n'), log)
+
+    def test_previous_public_release_excludes_drafts_and_prereleases(self):
+        releases = [{'tag_name': 'v0.17.1', 'published_at': '2026-10-01T00:00:00Z'},
+                    {'tag_name': 'v0.17.6', 'published_at': '2026-10-02T00:00:00Z', 'draft': True},
+                    {'tag_name': 'v0.18.0', 'published_at': '2026-10-03T00:00:00Z', 'prerelease': True}]
+        r.check_published_base({'previous_release': 'v0.17.1'}, releases, 'v1.0.0')
+        with self.assertRaises(r.ReleaseError): r.check_published_base({'previous_release': 'v0.16.3'}, releases, 'v1.0.0')
+        releases.append({'tag_name': 'v1.0.0', 'published_at': '2026-10-04T00:00:00Z'})
+        r.check_published_base({'previous_release': 'v0.17.1'}, releases, 'v1.0.0')
+
+    def test_notes_range_rejects_future_duplicate_unordered_and_invalid_versions(self):
+        for versions in [['1.1.0', '1.1.0'], ['1.2.0', '1.1.0'], ['1.1.0', '1.2.0'], [None], [{'version': '1.1.0'}]]:
+            plan = {'previous_release': 'v1.0.0', 'included_versions': versions}
+            with self.assertRaises(r.ReleaseError): r.validate_notes_range(plan, '1.1.0', '', '## 1.1.0\n')
+
+    def test_first_release_needs_no_previous_published_tag(self):
+        plan = {'previous_release': None, 'included_versions': ['0.1.0']}
+        r.check_published_base(plan, [], 'v0.1.0')
+        r.validate_notes_range(plan, '0.1.0', '# Tile Launcher 0.1.0\n업데이트 범위: **첫 공개 → v0.1.0**\n### 0.1.0\n- initial functionality\n', '## 0.1.0\n')
+
+    def test_refresh_notes_refuses_to_modify_an_existing_release_or_draft(self):
+        args = type('Args', (), {'output': Path('/tmp/unused')})()
+        manifest = {'local_only': False, 'config': {'version': '1.1.0'}}
+        with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', return_value=''), mock.patch.object(r, 'current_notes', return_value=('notes', {})), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.1.0', 'draft': True}]):
+            with self.assertRaises(r.ReleaseError): r.refresh_notes(args)
+
+    def test_refresh_notes_refuses_a_different_artifact_version(self):
+        args = type('Args', (), {'output': Path('/tmp/unused')})()
+        manifest = {'local_only': False, 'config': {'version': '0.17.6'}}
+        with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', return_value=''), mock.patch.object(r, 'current_notes', return_value=('notes', {})), mock.patch.object(r, 'config', return_value={'version': '1.1.0'}), mock.patch.object(r, 'list_releases') as listing:
+            with self.assertRaises(r.ReleaseError): r.refresh_notes(args)
+            listing.assert_not_called()
+
+    def test_refresh_notes_changes_only_description_files_and_preserves_originals(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            originals = {'notes-source.md': b'old source', 'release-notes.md': b'old description', 'manifest.json': b'old manifest',
+                         'app.zip': b'signed zip', 'release-metadata.json': b'metadata', 'SHA256SUMS.txt': b'checksums'}
+            for name, data in originals.items(): (root / name).write_bytes(data)
+            args = type('Args', (), {'output': root})()
+            manifest = {'local_only': False, 'config': {'version': '1.1.0'}, 'signing': 'notarized'}
+            plan = {'previous_release': 'v1.0.0', 'included_versions': ['1.1.0']}
+            with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', side_effect=['', 'a' * 40]), mock.patch.object(r, 'current_notes', return_value=('reviewed changes', plan)), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.0.0', 'published_at': '2026-10-01T00:00:00Z'}]), mock.patch.object(r, 'archive') as archive, mock.patch('builtins.print'):
+                r.refresh_notes(args)
+                archive.assert_not_called()
+            for name in ['app.zip', 'release-metadata.json', 'SHA256SUMS.txt']:
+                self.assertEqual((root / name).read_bytes(), originals[name])
+            saved = json.loads((root / 'manifest.json').read_text())
+            self.assertEqual(saved['notes_range'], plan)
+            self.assertEqual(saved['notes_revision'], 'a' * 40)
+            self.assertEqual(saved['notes_sha256'], r.digest(root / 'release-notes.md'))
+            backup = next((root / 'notes-history').iterdir())
+            for name in ['notes-source.md', 'release-notes.md', 'manifest.json']:
+                self.assertEqual((backup / name).read_bytes(), originals[name])
+
+    def test_failed_description_refresh_restores_all_prior_description_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            originals = {name: ('original ' + name).encode() for name in ['notes-source.md', 'release-notes.md', 'manifest.json']}
+            for name, data in originals.items(): (root / name).write_bytes(data)
+            args = type('Args', (), {'output': root})()
+            manifest = {'local_only': False, 'config': {'version': '1.1.0'}, 'signing': 'notarized'}
+            plan = {'previous_release': 'v1.0.0', 'included_versions': ['1.1.0']}
+            with mock.patch.object(r, 'verify', side_effect=[manifest, r.ReleaseError('verification failed')]), mock.patch.object(r, 'run', side_effect=['', 'a' * 40]), mock.patch.object(r, 'current_notes', return_value=('new source', plan)), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.0.0', 'published_at': '2026-10-01T00:00:00Z'}]):
+                with self.assertRaises(r.ReleaseError): r.refresh_notes(args)
+            for name, data in originals.items(): self.assertEqual((root / name).read_bytes(), data)
+
     def test_signing_output_rejects_synced_folders(self):
         for folder in ['Desktop', 'Documents', 'Library/Mobile Documents', 'Library/CloudStorage']:
             with self.assertRaises(r.ReleaseError): r.validate_output_path((Path.home() / folder / 'release').resolve())
