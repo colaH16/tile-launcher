@@ -8,6 +8,11 @@
 - 실제 공유 뷰의 최종 --render-previews 통과(/tmp/tile-112-previews.log). 비교 전용 연두색은 비교/현실 샘플에만 쓰도록 분리해 기본 유리 메뉴 노랑/클래식 기본 초록/사용자 색을 유지하는 샘플을 검토했다. 회색 최근 2×2·자주 파스텔 2×2·고정 4×2 및 두 테마·명암·작은 화면/설정 예시·100개 최근 스크롤 끝을 확인했다. /tmp/tile-112-previews, 재빌드 /tmp/tile-112-preview-build.log. 비표시 탭 제목/네이티브 선택 컨트롤/실제 데스크탑 Glass 합성은 별도 실기 범위다.
 - UI patch 1.1.2(17)의 노트 범위는 공개 v1.0.0 이후 1.1.0/1.1.1/1.1.2 모두 포함한다. 아직 태그/공개 릴리스는 만들지 않았다. 독립 서명·공증·설치 결과는 이어 기록한다.
 - 실제 기본 메뉴는 기존 LazyVStack 행을 유지하고 고정만 span=2로 표시한다. 1×1 비교 전용 안의 ZStack을 생산 기본 경로로 사용하지 않아 많은 메뉴의 모든 버튼을 한꺼번에 만드는 회귀를 피한다. 기본 큰 줄의 단위/순서는 같은 기존 TileArrangement를 사용한다. 보정 후 115개 XCTest/23개 배포 정책 재검사 통과와 최종 렌더를 기록한다(/tmp/tile-112-final-previews.log).
+- 소스 bfbc3b61431fe305d93ffead92e872df981bf655에서 독립 최적화 빌드·App Intents 추출·Developer ID Team VV2W9U5XT3/강화된 런타임/타임스탬프/strict 검증·ZIP 재추출 통과. /tmp/tile-112-prepare.log, tile-112-sign.log. 서명된 실제 배포 실행 파일의 --render-previews 격리 검사/메뉴/설정/스크롤/표면 마스크도 통과했다(/tmp/tile-112-signed-previews.log). 실제 전경 앱·사용자 입력을 조작하지 않았다.
+- 기존 Keychain 프로필의 읽기 조회가 정상이고 새 제출 ID 6598c2e3-a5fa-40da-9fa3-466e099022a7 하나로 Accepted를 확인했다. 같은 ID를 조회해 티켓 첨부/검증·Gatekeeper source=Notarized Developer ID·최종 ZIP 검증을 완료했다. /tmp/tile-112-notary-history.json, tile-112-notarize.log, tile-112-notarize-final.log. 자격 증명/개인 키를 출력하지 않았다.
+- 최종 번들 SHA-256 d26d8fb5fc9fd226b4be49d46cc77fa58c6416443db92c5c25f67cd4896e965b; Tile-Launcher-1.1.2-arm64.zip 3f272e48fc7420bad1cddd432b76f942b1ffe78f4a3e4c3e50f1f91cee827721; release-metadata.json 240a8beb713182b227d10691ebd14da1d3f729ee709ec2d9b8a3a1c1c3dea334; SHA256SUMS.txt c5c39b148cd77663ef319cf0bc41dee1e739214c07f104d306a75124bc11fbb6. 결과 ~/Library/Developer/TileLauncher/releases/v1.1.2.
+- /Applications/launch at Login/Tile Launcher.app에 설치 후 1.1.2(17)/소스·번들 해시·서명·stapler·Gatekeeper 재검증 통과. 이전 1.1.1 백업 /var/folders/cy/rhl7z2sn7mv4yjlmfy7xsl8c0000gp/T/tile-before-112-hq70yx8n.app; receipt /tmp/tile-112-install.json; 로그 /tmp/tile-112-install.log. 실행 소유자 파일 설치 전후 동일이며 자동 재시작/사용자 설정·프로필·권한 변경 없음. 다음 다시 열기에서 새 빌드로 전환한다. 사용자 실제 오버레이/Focus/메뉴 수신은 별도 확인 범위다.
+- 소스·검증 기록을 main에 푸시하고 새 GitHub 태그/릴리스는 만들지 않았다. 현재 공개본 v1.0.0 및 기존 자산/이력은 유지한다. 실제 앱 버전은 1.1.2(17)이며 문서 결과 기록을 위한 빌드 재생성은 하지 않는다.
 
 ## R134 · 현실적인 최근 창으로 메뉴 세 안 비교
 
