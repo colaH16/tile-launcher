@@ -34,12 +34,14 @@ struct Icon: View {
 }
 private struct RegisteredTileStyle: ButtonStyle {
     let selected: Bool
+    let emphasized: Bool
     func makeBody(configuration: Configuration) -> some View {
-        Surface(configuration: configuration, selected: selected)
+        Surface(configuration: configuration, selected: selected, emphasized: emphasized)
     }
     private struct Surface: View {
         let configuration: ButtonStyleConfiguration
         let selected: Bool
+        let emphasized: Bool
         @Environment(\.colorSchemeContrast) private var contrast
         @Environment(\.colorScheme) private var scheme
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -48,7 +50,8 @@ private struct RegisteredTileStyle: ButtonStyle {
         @State private var hovering = false
         private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 12, style: .continuous) }
         var body: some View {
-            let palette = DeckPalette(section: .registered, dark: scheme == .dark, theme: theme, colors: colors)
+            let palette = DeckPalette(section: .registered, emphasized: emphasized,
+                                      dark: scheme == .dark, theme: theme, colors: colors)
             configuration.label
                 .foregroundStyle(palette.ink, palette.secondary)
                 .contentShape(shape)
@@ -399,7 +402,8 @@ struct DeckView: View {
                                         .lineLimit(1).truncationMode(.middle)
                                 }.padding(6).frame(width: grid.side, height: grid.side)
                                     .overlay(alignment: .topTrailing) { numberBadge(index).padding(3) }
-                            }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)"))
+                            }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)",
+                                                              emphasized: pin.kind == .app))
                                 .help(pinHelp(pin, index: index))
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }

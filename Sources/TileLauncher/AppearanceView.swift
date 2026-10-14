@@ -55,12 +55,12 @@ struct AppearanceView: View {
             sample("자주 사용", section: section, emphasized: false, width: 56)
             sample("고정 메뉴", section: section, emphasized: true, width: 120)
         case .windows:
-            sample("진한색", section: section, emphasized: true, width: 56).help("현재 데스크탑 창")
-            sample("연한색", section: section, emphasized: false, width: 56).help("다른 데스크탑 창")
             smallWindowSample()
+            sample("연한색", section: section, emphasized: false, width: 56).help("다른 데스크탑 창")
+            sample("진한색", section: section, emphasized: true, width: 56).help("현재 데스크탑 창")
         case .registered:
-            sample("기본", section: section, emphasized: false, width: 56)
-            sample("기본 · 긴 타일", section: section, emphasized: false, width: 120)
+            sample("폴더", section: section, emphasized: false, width: 56, symbol: "folder.fill")
+            sample("앱", section: section, emphasized: true, width: 56, symbol: "app.fill")
         }
     }
     private func smallWindowSample() -> some View {
@@ -70,13 +70,13 @@ struct AppearanceView: View {
         }.frame(width: 64, alignment: .leading).help("창 없는 앱")
     }
     private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat,
-                        height: CGFloat = 56, gray: Bool = false) -> some View {
+                        height: CGFloat = 56, gray: Bool = false, symbol: String? = nil) -> some View {
         var colors = settings.tileColors
         if gray { colors[section] = TileColor(0x777777) }
         let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark,
                                   theme: settings.theme, colors: colors)
         return VStack(alignment: .leading, spacing: 5) {
-            Image(systemName: emphasized && section == .menus ? "pin.fill" : "square.fill")
+            Image(systemName: symbol ?? (emphasized && section == .menus ? "pin.fill" : "square.fill"))
                 .font(height < 56 ? .caption2 : .body)
             if !title.isEmpty { Text(title).font(.caption2).lineLimit(2) }
         }
