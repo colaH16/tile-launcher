@@ -2,6 +2,10 @@
 
 ## R156 · 1.2.1 실제 확대 UI와 배포 검증
 
+- 서명 산출물: 소스fe12c66afea5c15ed0b15048dc61173eb5e888df의격리빌드/Developer ID서명/실제서명실행파일렌더통과. /tmp/tile-121-prepare.log, tile-121-sign.log, tile-121-signed-previews.log. 서명번들SHA256은290739b70c121c79bdab3b11ab25339da3754afef32a113946de0a57f83ce550, 미공증ZIP은25d1c8769c8135d199beb74492b75b88a47a310edce5a0879e9367d1d7f63ffb다. 공증 후최종해시는별도로기록한다.
+- 공증은저장된tile-launcher-notary항목을찾지못해진행하지못했다. 기본경로와명시적login.keychain-db의notarytool history가같은오류다. 현재기본키체인은login.keychain-db이며잠금해제프롬프트는발생하지않았다. /tmp/tile-121-notarize.log, tile-121-notary-history.err. 비밀값조회/키체인검색목록변경은하지않았다.
+- 재저장을요청한상태이며notary_id는없고notary_pending_submission=true가남았다. 인증복구후제출이력을확인하고없는경우에만플래그를해제해새제출한다. 앱1.2.1공증·설치완료로표시하지않으며디스크설치본의Info.plist는1.2.0/21임을확인했다.
+
 - PanelLayout.scale/contentSize와 최대1.4배 계산을 추가했다. 기본 단위 정책은 보존하고 실제 호출에서 preferredScale을 사용한다. 화면 안 배율/프레임 제한, 프로필/Option 복원, 전체 목록/완전한 등록 최소 한 줄을 검사한다. UI patch1.2.1(22)이며 새로운 데스크탑별 열을 적용하지 않는다.
 - native XCTest128개/Python23개 통과: /tmp/tile-121-tests.log, tile-121-python-tests.log. 추가4개 테스트는 큰 화면의 동일 논리 크기·배율, 여러 화면/음수 원점/0·18·36·200개 프로필, 프로필 축소/복원·윗변과 배율, 작은 화면 재맞춤/전체 목록 보존이다. 처음 정확한CGRect 비교가약1e-13pt 소수 오차로 실패해 좌표별0.001pt 허용으로 바로잡았고 전체 재검증을 통과했다.
 - 실제NSHostingView/DeckSurfaceView를 표시하지 않은 상태에서1568×1020.6pt·배율1.4, 헤더의 실제 좌표 크기, 두34pt 버튼의1.4배 앵커, 버튼 중앙 제외/빈 헤더 드래그 hitTest와 비표시 상태를 확인했다. 실제 사용자의 마우스/키 입력을 수행하지 않았다.
