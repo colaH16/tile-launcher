@@ -758,6 +758,32 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
         exit(1)
     }
 }
+// Targeted read-only inventory diagnostics bypass the production instance and all UI.
+if let index = CommandLine.arguments.firstIndex(of: "--diagnose-window-inventory") {
+    application.setActivationPolicy(.prohibited)
+    let ids = Set(CommandLine.arguments.dropFirst(index + 1))
+    guard !ids.isEmpty, AXIsProcessTrusted() else {
+        fputs("Inventory diagnostics need bundle IDs and existing AX trust; no prompt is shown.\n", stderr)
+        exit(2)
+    }
+    let targets = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier.map(ids.contains) == true }
+    let probe = WindowTracker()
+    probe.onChange = { items in
+        let rows: [[String: Any]] = items.map {
+            ["app": $0.appName, "pid": $0.pid, "applicationOnly": $0.isApplication,
+             "windowID": $0.windowID.map { NSNumber(value: $0) } ?? NSNull(), "desktop": $0.desktop.rawValue]
+        }
+        let data = try! JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys])
+        print(String(data: data, encoding: .utf8)!)
+        exit(0)
+    }
+    probe.synchronize(apps: targets.map { AppItem(id: $0.bundleIdentifier!, pid: $0.processIdentifier,
+                                                 name: $0.localizedName ?? "", url: $0.bundleURL) },
+                      active: nil, trusted: true)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { fputs("Inventory diagnostic timeout.\n", stderr); exit(3) }
+    withExtendedLifetime(probe) { application.run() }
+    exit(0)
+}
 let instanceLock: InstanceLock
 let runningBuild: AppBuild
 do {

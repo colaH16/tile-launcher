@@ -1,5 +1,14 @@
 # 네이티브 빌드 검증
 
+## R136 · 1.1.3(18) 닫힌 보조 창 판정
+
+- 사용자 요청에 따라 CUA로 실제 오버레이의 Developer 세 타일과 Developer의 실제 Discover 창을 확인했다. 현재 작업의 화면 조작은 명시적 승인 범위이며 보통의 무조작 검증 선호를 일반적으로 철회한 것으로 취급하지 않는다. 개인 문서 제목/사용자 목록은 공개 기록에 복사하지 않는다.
+- 읽기 진단 /tmp/tile-window-metadata-before.log, tile-window-order.log에서 Developer AXWindows=1, Discover ordered-in=1, General/Account ordered-in=0/alpha=1/큰 bounds를 대조했다. USBclean/Keychain Access는 AXWindows 성공·0개지만 ordered-out 큰 표면이 남아 있었다. Developer를 닫은 뒤 AXWindows=0/세 서버 표면 ordered-out도 확인했다(/tmp/tile-window-closed.log). CG의 .optionAll 잔존을 실제 창으로 오판한 원인이다.
+- runtime-checked SLSWindowIsOrderedIn/CGSWindowIsOrderedIn의 UInt8 출력/성공/0 또는 1만 사용한다. 참고 선언/사용은 macos-upgrade-guide.md의 yabai 1차 소스 링크다. 값이 false인 CG-only 후보/캐시를 제외하고 AX 목록에서 사라진 캐시는 최소화·숨김·AX 실패·nil 상태를 보존한다. 현재 최소화 AX 값이 캐시보다 우선한다. 실제 AX 목록에 있는 창은 ordered-out만으로 제거하지 않는다.
+- XCTest 117개/Python 배포 정책 23개 통과, /tmp/tile-113-tests.log. 새 두 회귀는 큰 alpha=1 ordered-out 표면 제외/true·nil 보존, 누락 AX 캐시의 정상/최소화/숨김/조회 실패/미지원 보존 조건이다. 기존 Space·MRU·프로필·배치·사용 통계도 통과했다.
+- 수정된 실제 생산 WindowTracker의 별도 --diagnose-window-inventory에서 Developer/USBclean/Keychain Access 앱 항목 각각 1개, 다른 Space 두 창을 포함한 실제 문서 창 3개 보존을 확인했다(/tmp/tile-113-live-closed.json). 실제 Developer 최소화 후에는 앱 항목이 아니라 실제 창 1개로 보존됐다(/tmp/tile-113-live-minimized.json). 제목/문서 내용을 출력하지 않았다. 이미 실행 중인 앱을 새 추적기에서 읽는 검사여서 앱 시작 순서 때문인 것으로 취급하지 않는다.
+- 기존 화면 없는 렌더/설정/키 정책/메뉴·최근/100개 스크롤/마스크 통과(/tmp/tile-113-previews.log). 최종 최소화 캐시 우선순위 보정 빌드 로그 /tmp/tile-113-final-debug-build.log. 서명·공증·설치/최종 실제 오버레이 검증은 이어 기록한다. 새 GitHub 릴리스는 별도다.
+
 ## R135 · 1.1.2(17) 선택한 메뉴 기본 적용
 
 - 사용자가 두 번째 메뉴 안의 실제 적용·공증·설치를 승인해 DeckView/DeckPreview의 공통 MenuAppearance.selected를 recentGraySquare로 정했다. 고정 강조색 4×2/자주 파스텔 2×2/최근 회색 2×2이며 기본 창과 같은 모듈·8pt 간격/줄 배치를 쓴다. 최근 창/등록 프로필의 동작은 유지한다.

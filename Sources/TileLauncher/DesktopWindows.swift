@@ -10,7 +10,8 @@ struct ServerWindow {
     let bounds: CGRect
     let onScreen: Bool
     let alpha: Double
-    var isCandidate: Bool { WindowPresence.serverCandidate(alpha: alpha, bounds: bounds) }
+    let orderedIn: Bool?
+    var isCandidate: Bool { WindowPresence.serverCandidate(alpha: alpha, bounds: bounds, orderedIn: orderedIn) }
 }
 
 /// No images or screen capture. Public WindowServer metadata supplies the full
@@ -22,6 +23,7 @@ final class DesktopWindows {
     private typealias Spaces = @convention(c) (UInt32, Int32, CFArray) -> Unmanaged<CFArray>?
     private typealias SelectSpace = @convention(c) (UInt32, CFString, UInt64) -> Void
     private typealias WindowNumber = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> Int32
+    private typealias OrderedIn = @convention(c) (UInt32, CGWindowID, UnsafeMutablePointer<UInt8>) -> Int32
     private let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
     private let ax = dlopen("/System/Library/Frameworks/ApplicationServices.framework/Frameworks/HIServices.framework/HIServices", RTLD_LAZY)
     private var connection: UInt32?
@@ -29,6 +31,7 @@ final class DesktopWindows {
     private var spaces: Spaces?
     private var selectSpace: SelectSpace?
     private var windowNumber: WindowNumber?
+    private var orderedIn: OrderedIn?
     private(set) var records: [CGWindowID: ServerWindow] = [:]
     private(set) var valid = false
     private var activeSpaces: Set<UInt64> = []
@@ -43,6 +46,9 @@ final class DesktopWindows {
             if let p = dlsym(sky, "CGSCopyManagedDisplaySpaces") { displays = unsafeBitCast(p, to: Displays.self) }
             if let p = dlsym(sky, "CGSCopySpacesForWindows") { spaces = unsafeBitCast(p, to: Spaces.self) }
             if let p = dlsym(sky, "CGSManagedDisplaySetCurrentSpace") { selectSpace = unsafeBitCast(p, to: SelectSpace.self) }
+            if let p = dlsym(sky, "SLSWindowIsOrderedIn") ?? dlsym(sky, "CGSWindowIsOrderedIn") {
+                orderedIn = unsafeBitCast(p, to: OrderedIn.self)
+            }
         }
         if let ax, let p = dlsym(ax, "_AXUIElementGetWindow") { windowNumber = unsafeBitCast(p, to: WindowNumber.self) }
     }
@@ -77,8 +83,15 @@ final class DesktopWindows {
             let title = (row[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 }
             records[id] = ServerWindow(id: id, pid: pid, title: title, bounds: bounds,
                                        onScreen: row[kCGWindowIsOnscreen as String] as? Bool ?? false,
-                                       alpha: (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1)
+                                       alpha: (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1,
+                                       orderedIn: ordering(for: id))
         }
+    }
+    private func ordering(for id: CGWindowID) -> Bool? {
+        guard let connection, let orderedIn else { return nil }
+        var result: UInt8 = 255
+        guard orderedIn(connection, id, &result) == 0, result <= 1 else { return nil }
+        return result == 1
     }
     func id(for element: AXUIElement, pid: pid_t) -> CGWindowID? {
         var id: CGWindowID = 0

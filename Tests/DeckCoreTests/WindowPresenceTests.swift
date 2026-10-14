@@ -28,6 +28,20 @@ final class WindowPresenceTests: XCTestCase {
         XCTAssertTrue(WindowPresence.serverCandidate(alpha: 1, bounds: bounds))
         XCTAssertFalse(WindowPresence.serverCandidate(alpha: 1, bounds: CGRect(x: 0, y: 0, width: 20, height: 20)))
     }
+    func testOrderedOutServerSurfacesAreNotWindowCandidates() {
+        let bounds = CGRect(x: 100, y: 100, width: 530, height: 530)
+        XCTAssertFalse(WindowPresence.serverCandidate(alpha: 1, bounds: bounds, orderedIn: false))
+        XCTAssertTrue(WindowPresence.serverCandidate(alpha: 1, bounds: bounds, orderedIn: true))
+        XCTAssertTrue(WindowPresence.serverCandidate(alpha: 1, bounds: bounds, orderedIn: nil))
+    }
+    func testOrderedOutAXCacheIsRemovedOnlyWithCompleteNonMinimizedVisibleAppRead() {
+        XCTAssertFalse(WindowPresence.retainMissingAX(orderedIn: false, axComplete: true, minimized: false, applicationHidden: false))
+        XCTAssertTrue(WindowPresence.retainMissingAX(orderedIn: true, axComplete: true, minimized: false, applicationHidden: false))
+        XCTAssertTrue(WindowPresence.retainMissingAX(orderedIn: nil, axComplete: true, minimized: false, applicationHidden: false))
+        XCTAssertTrue(WindowPresence.retainMissingAX(orderedIn: false, axComplete: false, minimized: false, applicationHidden: false))
+        XCTAssertTrue(WindowPresence.retainMissingAX(orderedIn: false, axComplete: true, minimized: true, applicationHidden: false))
+        XCTAssertTrue(WindowPresence.retainMissingAX(orderedIn: false, axComplete: true, minimized: false, applicationHidden: true))
+    }
     func testMixedSizePackingPreservesOrderAndDoesNotOverlap() {
         let sizes = RecentTileArrangement.sizes(apps: ["T", "T", "USB", "S", "Other"], applications: [false, false, true, false, true])
         XCTAssertEqual(sizes, [.wide, .square, .application, .wide, .application])

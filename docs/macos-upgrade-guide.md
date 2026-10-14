@@ -1,5 +1,12 @@
 # macOS 업그레이드 및 Apple 디자인 지침 대응
 
+## R136 · 창 목록 잔존과 ordered-in 판정
+
+- CGWindowList의 .optionAll에는 닫힌 NSWindow의 표면도 남을 수 있다. alpha=1·큰 bounds·Space 배정만으로 실제 창이라 하지 않는다. SLSWindowIsOrderedIn/CGSWindowIsOrderedIn은 기존 SkyLight 핸들에서 runtime lookup하고 UInt8 출력/CGError=0/0 또는 1을 확인한다. 실패/미지원은 nil로 보수적 대체하며 OS의 공개 지원 계약으로 설명하지 않는다.
+- ABI 확인 참고는 [yabai 선언](https://github.com/asmvik/yabai/blob/master/src/misc/extern.h)과 [실제 visibility 사용](https://github.com/asmvik/yabai/blob/master/src/window.c)이다. 2026-10-14 macOS 27.2 beta에서 실제 Developer General/Account·USBclean·Keychain Access의 ordered-out 상태와 AX 개수를 대조했다. 본 제품은 SIP/보안 설정을 변경하지 않는다.
+- CG-only 후보/기존 CG 캐시는 ordered-out을 제외한다. 오래된 AX가 목록에서 사라졌어도 최소화/숨김/AX 실패/ordered 상태 미지원은 보존한다. 실제 창을 최소화/숨김/다른 Space로 둔 경우와 모든 창 닫기→앱 타일→재열기의 같은 프로세스 전환을 검사한다.
+- --diagnose-window-inventory는 지정한 bundle ID만 읽는 개발 진단이다. 사용자 인스턴스 잠금/상태 아이콘/전역 입력/설정을 시작하지 않으며 제목/문서 내용을 출력하지 않는다. 이미 주어진 AX trust가 없으면 요청 없이 종료한다. 화면 조작은 R136처럼 사용자에게 명시적으로 승인된 작업에만 사용한다.
+
 ## R131 · 작은 창 세로 스택과 줄 순서
 
 - 최근 창 기본은 앱 전환점 2×2/같은 앱 연속 1×1, 창 없는 앱은 회색 1×1이다. 작은 실제 창의 제목/툴팁/번호/선택은 유지한다. 작은 타일 둘을 같은 열 위·아래로 쌓고 큰 타일 높이의 줄을 왼쪽에서 오른쪽으로 채운다. 전체 목록을 열 우선 정렬하거나 아래 줄 항목으로 이전 줄 구멍을 메우지 않는다.

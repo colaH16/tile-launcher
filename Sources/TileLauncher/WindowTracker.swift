@@ -241,8 +241,14 @@ final class WindowTracker {
         // evidence of closure. A timeout or an incomplete app list is not closure.
         for var missing in old where !missing.item.isApplication && !next.contains(where: { $0.item.id == missing.item.id }) {
             let number = missing.item.windowID
+            let record = number.flatMap { desktops.records[$0] }
+            let minimized = missing.element.flatMap { value($0, kAXMinimizedAttribute) as? Bool } ?? missing.item.minimized
+            let retainedAX = missing.element != nil && WindowPresence.retainMissingAX(
+                orderedIn: record?.orderedIn, axComplete: axComplete,
+                minimized: minimized,
+                applicationHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true)
             let exists = desktops.valid ? number.map {
-                desktops.records[$0]?.pid == pid && (missing.element != nil || desktops.records[$0]?.isCandidate == true)
+                desktops.records[$0]?.pid == pid && (retainedAX || desktops.records[$0]?.isCandidate == true)
             } : nil
             guard WindowRetention.keepMissing(serverStillContains: exists,
                                                axInvalid: missing.element.map(isInvalid) ?? false,
