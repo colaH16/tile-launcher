@@ -139,6 +139,7 @@ struct DeckView: View {
     var previewEmphasizedWindows: Set<UUID>? = nil
     var previewRecentLegend: String? = nil
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
+    var previewLargeWindowIcons = false
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -524,7 +525,23 @@ struct DeckView: View {
                                   dark: deckScheme == .dark, theme: settings.theme, colors: colors)
         return Button { selectWindow(window) } label: {
             Group {
-              if window.isApplication || small {
+              if previewLargeWindowIcons {
+                if window.isApplication || small {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Icon(url: window.appURL, size: 24)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(window.isApplication ? window.appName : window.title)
+                            .font(.system(size: 8.5, weight: .medium)).lineLimit(1)
+                    }.padding(3).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 0) {
+                        Icon(url: window.appURL, size: 42).frame(maxWidth: .infinity)
+                        Spacer(minLength: 4)
+                        Text(window.title).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }.padding(8).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+              } else if window.isApplication || small {
                 VStack(alignment: .leading, spacing: 2) {
                     Icon(url: window.appURL, size: 20)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -542,7 +559,9 @@ struct DeckView: View {
                 }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
               }
             }
-                .overlay(alignment: .topTrailing) { numberBadge(index).padding(5) }
+                .overlay(alignment: .topTrailing) {
+                    numberBadge(index).padding(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5)
+                }
         }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)"))
             .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")

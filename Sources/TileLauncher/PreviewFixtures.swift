@@ -534,6 +534,9 @@ enum PreviewExport {
             try save(MonitorGroupingPreview(grouped: true, detail: detail, threeColumns: true, squareColumnHeads: true)
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("desktop-square-columns-\(detail ? "full" : "overlay").png"))
+            try save(MonitorGroupingPreview(grouped: true, detail: detail, threeColumns: true, squareColumnHeads: true, largeIcons: true)
+                        .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("desktop-large-icons-\(detail ? "full" : "overlay").png"))
         }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.

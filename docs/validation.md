@@ -1,5 +1,12 @@
 # 네이티브 빌드 검증
 
+## R151 · 큰 앱 아이콘 시안
+
+- DeckView의 previewLargeWindowIcons는 기본false이며 MonitorGroupingPreview의 명시적largeIcons 입력에서만 켠다. 기존 production·이전 시안의 타일 라벨과 아이콘 크기는 유지한다. 원래 앱 실행/선택/툴팁/접근성/정상 종료 경로를 공유한다.
+- 대표98.4pt 정사각에서42pt 중앙 아이콘·8pt 안쪽 여백·11pt 창 제목 최대2줄을 사용한다. 별도 앱 이름 행은 제거한다.45.2pt 작은 타일은24pt 아이콘·3pt 여백·8.5pt 제목/앱 이름1줄이고 번호는 모서리2pt 여백으로 옮겼다. 대표 번호는 기존5pt다. 아이콘/번호·제목이 겹치거나 잘리지 않는지 실제 렌더를 확인했다.
+- native 개발 빌드4.19초 및 전체 비표시 --render-previews 통과. /tmp/tile-large-icons-build.log, /tmp/tile-large-icons-previews.log. desktop-large-icons-overlay/full.png에서42pt 실제 앱 아이콘, 창 이름·작은 후속/회색 앱, 동일23개/색/배치/번호를 확인했다. 새 XCTest/Python을 작성하거나 반복 실행하지 않았다.
+- 사용자 작업 화면은 건드리지 않았고 이전 캡처 기반 합성 목록과 로컬 아이콘 리소스로 비교했다. 아이콘 확대가 실제 사용성을 개선했다고 측정한 결과는 아니다. 앱 버전·설치·공개 자산은 유지하며 비교 결과는 dist/previews/20261014에 로컬 보관한다.
+
 ## R150 · 4·4·3칸·대표 창2×2 비교
 
 - MonitorGroupingPreview의 새 비교 입력squareColumnHeads만 첫 두 열을4·4칸으로 만들고 모든 앱 대표를square로 정한다. 기본값false로 R149와 기존 production 경로를 유지하며 실제 데스크탑 판정·앱 버전은 변경하지 않는다.

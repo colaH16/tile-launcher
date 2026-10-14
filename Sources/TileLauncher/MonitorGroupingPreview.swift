@@ -15,13 +15,15 @@ struct MonitorGroupingPreview: View {
     private let production: Bool
     private let columns: DesktopColumnsPreviewData?
     private let detail: Bool
+    private let largeIcons: Bool
 
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
          production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
-         threeColumns: Bool = false, squareColumnHeads: Bool = false) {
+         threeColumns: Bool = false, squareColumnHeads: Bool = false, largeIcons: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
+        self.largeIcons = largeIcons
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
         fixture.settings.tileColors.windows = TileColor(0x2FA3E7)
@@ -181,7 +183,7 @@ struct MonitorGroupingPreview: View {
                  previewWindowSizes: production ? nil : sizes,
                  previewEmphasizedWindows: production ? nil : emphasized,
                  previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil,
-                 previewDesktopColumns: columns, dismiss: {})
+                 previewDesktopColumns: columns, previewLargeWindowIcons: largeIcons, dismiss: {})
     }
 
     var body: some View {
