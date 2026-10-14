@@ -72,6 +72,16 @@ public struct RecentTilePlacement: Equatable {
 
 /// Sequential two-dimensional packing; later entries never fill an earlier gap.
 public enum RecentTileArrangement {
+    public static func visible(_ placements: [RecentTilePlacement], module: CGFloat, gap: CGFloat,
+                               offset: CGFloat, viewport: CGFloat) -> [RecentTilePlacement] {
+        let stride = module + gap
+        let lower = max(0, offset - stride * 2)
+        let upper = offset + viewport + stride * 2
+        return placements.filter {
+            let top = CGFloat($0.row) * stride
+            return top < upper && top + CGFloat($0.height) * stride - gap > lower
+        }
+    }
     public static func sizes<App: Equatable>(apps: [App], applications: [Bool]) -> [RecentTileSize] {
         precondition(apps.count == applications.count)
         return apps.indices.map { index in

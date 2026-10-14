@@ -356,6 +356,8 @@ enum PreviewExport {
             try save(DeckPreview(theme: .classic, registeredCount: count).environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("profile-\(count).png"))
         }
+        try save(DeckPreview(theme: .classic, registeredCount: 36).environment(\.colorScheme, .dark),
+                 scrollToEnd: true, to: directory.appendingPathComponent("recent-scroll-bottom.png"))
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
@@ -597,7 +599,7 @@ enum PreviewExport {
             scroll.reflectScrolledClipView(scroll.contentView)
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
             hosting.layoutSubtreeIfNeeded()
-            print("Small General settings: overflow scroll view reaches the bottom offscreen.")
+            print("Offscreen scroll view reaches the bottom: \(url.lastPathComponent)")
         }
         guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             throw NSError(domain: "TileLauncher.Preview", code: 1,

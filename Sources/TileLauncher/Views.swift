@@ -105,6 +105,7 @@ struct DeckView: View {
     let changeProfile: (String?) -> Void
     let cycleProfile: (Int) -> Void
     @State private var editedMenus: [MenuCommand]?
+    @State private var recentOffset: CGFloat = 0
     let selectWindow: (WindowItem) -> Void
     let openURL: (URL) -> Void
     let openInFinder: (URL) -> Void
@@ -163,6 +164,7 @@ struct DeckView: View {
             Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.28)
         }
         .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
+        .onChange(of: snapshot.windows.map(\.id)) { _, _ in recentOffset = 0 }
         .onChange(of: registeredItems.count) { _, count in resizeForProfile(count) }
     }
 
@@ -410,9 +412,11 @@ struct DeckView: View {
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
                 let micro = (geometry.unit - geometry.gap) / 2
                 let bottom = packed.map { $0.row + $0.height }.max() ?? 0
+                let visible = RecentTileArrangement.visible(packed, module: micro, gap: geometry.gap,
+                                                            offset: recentOffset, viewport: max(0, height - DeckSpacing.workHeader))
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
-                        ForEach(packed, id: \.index) { place in
+                        ForEach(visible, id: \.index) { place in
                             windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4)
                                 .frame(width: micro * CGFloat(place.width) + geometry.gap * CGFloat(place.width - 1),
                                        height: micro * CGFloat(place.height) + geometry.gap * CGFloat(place.height - 1))
@@ -422,7 +426,10 @@ struct DeckView: View {
                     }.frame(width: geometry.windowWidth,
                             height: CGFloat(bottom) * micro + CGFloat(max(0, bottom - 1)) * geometry.gap,
                             alignment: .topLeading)
-                }.scrollIndicators(.visible).id(snapshot.windows.map(\.id))
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { value in max(0, value.visibleRect.minY) }
+                action: { _, offset in recentOffset = offset }
+                .scrollIndicators(.visible).id(snapshot.windows.map(\.id))
             }
         }.frame(height: height)
     }

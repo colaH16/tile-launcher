@@ -2,6 +2,19 @@ import XCTest
 @testable import DeckCore
 
 final class WindowPresenceTests: XCTestCase {
+    func testLargeInventoryRendersOnlyViewportAndOverscanWithoutTruncatingHistory() {
+        let placements = RecentTileArrangement.place(sizes: Array(repeating: .wide, count: 1000), columns: 12)
+        let start = RecentTileArrangement.visible(placements, module: 45, gap: 8, offset: 0, viewport: 350)
+        let middle = RecentTileArrangement.visible(placements, module: 45, gap: 8, offset: 2500, viewport: 350)
+        XCTAssertLessThan(start.count, 30)
+        XCTAssertLessThan(middle.count, 30)
+        XCTAssertEqual(start.first?.index, 0)
+        XCTAssertGreaterThan(middle.first!.index, start.last!.index)
+        let lastOffset = CGFloat(placements.last!.row) * 53
+        let end = RecentTileArrangement.visible(placements, module: 45, gap: 8, offset: lastOffset, viewport: 350)
+        XCTAssertEqual(end.last?.index, 999)
+        XCTAssertEqual(placements.count, 1000)
+    }
     func testWindowlessNeedsSuccessfulAXAndCompleteInventory() {
         XCTAssertTrue(WindowPresence.applicationOnly(axComplete: true, inventoryComplete: true, accessibleWindows: 0, serverCandidates: 0))
         for (ax, inventory, windows, server) in [(false, true, 0, 0), (true, false, 0, 0), (true, true, 1, 0), (true, true, 0, 1)] {
