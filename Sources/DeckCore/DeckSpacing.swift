@@ -9,10 +9,14 @@ public enum DeckSpacing {
     public static let toolbarBottom: CGFloat = 12
     public static let toolbarHorizontal: CGFloat = 12
     public static let toolbarButton: CGFloat = 32
+    public static let footerTop: CGFloat = 12
+    public static let footerLine: CGFloat = 14
+    public static let footerBottom: CGFloat = 8
+    /// Larger tiles do not reopen the gaps approved at 1.3x.
+    public static func tileGap(scale: CGFloat = 1) -> CGFloat { 8 * min(scale, 1.3) }
     // Tile scale never changes toolbar/section controls or their line heights.
     public static func workHeader(scale _: CGFloat = 1) -> CGFloat { 20 + sectionTitle }
     public static func shelfHeader(scale _: CGFloat = 1) -> CGFloat { 26 + sectionTitle + 4 }
-    public static func sections(compact: Bool) -> CGFloat { compact ? 12 : 16 }
     public static func workToShelf(compact: Bool) -> CGFloat { compact ? 4 : 16 }
     public static func headerContent(compact _: Bool, scale _: CGFloat = 1) -> CGFloat {
         toolbarButton
@@ -21,6 +25,6 @@ public enum DeckSpacing {
         toolbarTop + headerContent(compact: compact, scale: scale) + toolbarBottom
     }
     public static func chrome(compact: Bool, scale: CGFloat = 1) -> CGFloat {
-        header(compact: compact, scale: scale) + sections(compact: compact) + 18 + edge + 4
+        header(compact: compact, scale: scale) + footerTop + footerLine + footerBottom
     }
 }

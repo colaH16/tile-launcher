@@ -5,21 +5,21 @@ import CoreGraphics
 final class ScaledPanelLayoutTests: XCTestCase {
     func testOnlyTilesScaleWhileToolbarAndSectionControlsStayAtNativeSize() {
         for compact in [false, true] {
-            XCTAssertEqual(DeckSpacing.headerContent(compact: compact, scale: 1.3), 32)
-            XCTAssertEqual(DeckSpacing.header(compact: compact, scale: 1.3), 52)
-            XCTAssertEqual(DeckSpacing.chrome(compact: compact, scale: 1.3),
+            XCTAssertEqual(DeckSpacing.headerContent(compact: compact, scale: 1.4), 32)
+            XCTAssertEqual(DeckSpacing.header(compact: compact, scale: 1.4), 52)
+            XCTAssertEqual(DeckSpacing.chrome(compact: compact, scale: 1.4),
                            DeckSpacing.chrome(compact: compact, scale: 1))
         }
-        XCTAssertEqual(DeckSpacing.workHeader(scale: 1.3), 32)
-        XCTAssertEqual(DeckSpacing.shelfHeader(scale: 1.3), 42)
+        XCTAssertEqual(DeckSpacing.workHeader(scale: 1.4), 32)
+        XCTAssertEqual(DeckSpacing.shelfHeader(scale: 1.4), 42)
     }
     func testLargeScreenUsesPreferredScaleButDoesNotEnlargeOuterSpacing() {
         let screen = CGRect(x: -2560, y: -200, width: 2560, height: 1440)
         let original = PanelLayout.calculate(visibleFrame: screen, cursor: .zero).fittingContent(registeredCount: 18)
-        let enlarged = PanelLayout.calculate(visibleFrame: screen, cursor: .zero, scale: 1.3).fittingContent(registeredCount: 18)
-        XCTAssertEqual(enlarged.scale, 1.3)
-        XCTAssertEqual(enlarged.frame.width, original.frame.width * 1.3, accuracy: 0.001)
-        XCTAssertLessThan(enlarged.frame.height, original.frame.height * 1.3)
+        let enlarged = PanelLayout.calculate(visibleFrame: screen, cursor: .zero, scale: 1.4).fittingContent(registeredCount: 18)
+        XCTAssertEqual(enlarged.scale, 1.4)
+        XCTAssertEqual(enlarged.frame.width, original.frame.width * 1.4, accuracy: 0.001)
+        XCTAssertLessThan(enlarged.frame.height, original.frame.height * 1.4)
         XCTAssertEqual(enlarged.contentSize.width, original.frame.width, accuracy: 0.001)
         XCTAssertLessThan(enlarged.contentSize.height, original.frame.height)
         XCTAssertEqual(enlarged.columns, original.columns)
@@ -34,12 +34,12 @@ final class ScaledPanelLayoutTests: XCTestCase {
             for origin in [CGPoint.zero, CGPoint(x: -3440, y: -600)] {
                 let screen = CGRect(origin: origin, size: size)
                 for count in [0, 18, 36, 39, 200] {
-                    let layout = PanelLayout.calculate(visibleFrame: screen, cursor: screen.origin, scale: 1.3)
+                    let layout = PanelLayout.calculate(visibleFrame: screen, cursor: screen.origin, scale: 1.4)
                         .fittingContent(registeredCount: count)
                     XCTAssertTrue(screen.contains(layout.frame))
-                    XCTAssertTrue((1...1.3).contains(layout.scale))
-                    XCTAssertLessThanOrEqual(layout.frame.width, 1456.001)
-                    XCTAssertLessThanOrEqual(layout.frame.height, 1092.001)
+                    XCTAssertTrue((1...1.4).contains(layout.scale))
+                    XCTAssertLessThanOrEqual(layout.frame.width, 1568.001)
+                    XCTAssertLessThanOrEqual(layout.frame.height, 1176.001)
                     guard layout.supported else { continue }
                     let room = layout.frame.height - DeckSpacing.chrome(compact: layout.compact, scale: layout.scale)
                     let body = DeckContentLayout(width: layout.contentSize.width, availableHeight: room,
@@ -54,7 +54,7 @@ final class ScaledPanelLayoutTests: XCTestCase {
 
     func testProfileChangesPreserveScaleTopEdgeAndRestoreHeight() {
         let screen = CGRect(x: -2560, y: 120, width: 2560, height: 1440)
-        let original = PanelLayout.calculate(visibleFrame: screen, cursor: CGPoint(x: -1000, y: 700), scale: 1.3)
+        let original = PanelLayout.calculate(visibleFrame: screen, cursor: CGPoint(x: -1000, y: 700), scale: 1.4)
             .fittingContent(registeredCount: 36)
         let small = original.refittingContent(registeredCount: 18, visibleFrame: screen)
         let restored = small.refittingContent(registeredCount: 36, visibleFrame: screen)
@@ -69,7 +69,7 @@ final class ScaledPanelLayoutTests: XCTestCase {
     }
 
     func testReopenOnSmallerScreenClampsAndRetainsEveryWindow() {
-        let large = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440), cursor: .zero, scale: 1.3)
+        let large = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440), cursor: .zero, scale: 1.4)
             .fittingContent(registeredCount: 36)
         let screen = CGRect(x: -700, y: -200, width: 640, height: 600)
         let fitted = large.refittingContent(registeredCount: 200, visibleFrame: screen)
@@ -92,6 +92,20 @@ final class ScaledPanelLayoutTests: XCTestCase {
             XCTAssertLessThan(room - content.workHeight - content.gap - content.registeredHeight, 1.01)
             XCTAssertEqual(content.gap, DeckSpacing.workToShelf(compact: layout.compact))
         }
+    }
+
+    func testApprovedThreeRowLayoutIncludesCompactFooterInRealWindowHeight() {
+        let screen = CGRect(x: 0, y: 0, width: 2560, height: 1056)
+        let layout = PanelLayout.calculate(visibleFrame: screen, cursor: .zero, scale: PanelLayout.preferredScale)
+            .fittingContent(registeredCount: 39, workRows: 3)
+        XCTAssertEqual(layout.frame.size, CGSize(width: 1568, height: 918))
+        let room = layout.frame.height - DeckSpacing.chrome(compact: false, scale: layout.scale)
+        let body = DeckContentLayout(width: layout.contentSize.width, availableHeight: room,
+                                    registeredCount: 39, compact: false, scale: layout.scale, workRows: 3)
+        XCTAssertEqual(body.registeredHeight,
+                       RegisteredGridGeometry(width: layout.contentSize.width, scale: layout.scale)
+                        .shelfHeight(count: 39, maximumRows: 3))
+        XCTAssertLessThan(room - body.workHeight - body.gap - body.registeredHeight, 1)
     }
 
     func testFractionalShelfRemainderIsUsableInsteadOfRoundedDownToWholeRows() {

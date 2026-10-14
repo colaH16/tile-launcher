@@ -154,7 +154,6 @@ struct DeckView: View {
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     var previewLargeWindowIcons = false
     var previewBalancedWindowLabels = false
-    var previewChrome: ChromeProposalPreview = .current
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -191,7 +190,7 @@ struct DeckView: View {
     private var deckContents: some View {
         VStack(spacing: u(0)) {
             header
-            VStack(alignment: .leading, spacing: previewChrome.proposed ? 12 : DeckSpacing.sections(compact: compact)) {
+            VStack(alignment: .leading, spacing: DeckSpacing.footerTop) {
                 if browser.current != nil {
                     folderContents
                 } else {
@@ -220,13 +219,12 @@ struct DeckView: View {
                     Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
                         .font(.caption).lineLimit(1).foregroundStyle(.secondary)
                 }
-                .frame(height: previewChrome.proposed ? 14 : 18)
-                .padding(.horizontal, previewChrome.footerExtraInset)
-                .font(previewChrome.proposed ? .caption : .system(size: NSFont.systemFontSize))
+                .frame(height: DeckSpacing.footerLine)
+                .font(.caption)
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, DeckSpacing.edge)
-            .padding(.bottom, previewChrome.proposed ? 8 : DeckSpacing.edge)
+            .padding(.bottom, DeckSpacing.footerBottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.deckTheme, settings.theme)
@@ -246,23 +244,10 @@ struct DeckView: View {
 
     private var header: some View {
         ZStack {
-            Group {
-                if previewChrome.proposed {
-                    InlineHeaderProposal(
-                        iconURL: browser.current ?? snapshot.context?.url
-                            ?? snapshot.windows.first { $0.appName == snapshot.context?.name }?.appURL,
-                        appName: headerTitle, windowName: headerSubtitle, opticalBalance: previewChrome.optical,
-                        sizeScale: previewChrome.titleScale)
-                } else {
-                    VStack(spacing: 1) {
-                        Text(headerTitle)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1).truncationMode(.middle)
-                        Text(headerSubtitle).font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
-                    }
-                }
-            }
+            OverlayTitleView(
+                iconURL: browser.current ?? snapshot.context?.url
+                    ?? snapshot.windows.first { $0.appName == snapshot.context?.name }?.appURL,
+                appName: headerTitle, windowName: headerSubtitle)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 88)
             .allowsHitTesting(false)

@@ -297,15 +297,12 @@ struct DeckPreview: View {
     @StateObject var launches: ApplicationLaunchMonitor
     var recentAppearance: RecentAppearance
     var menuAppearance: MenuAppearance
-    var chromeProposal: ChromeProposalPreview
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
          recentAppearance: RecentAppearance = .locationColor, comparisonSample: Bool = false, recentCount: Int = 16,
          menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false, deliveredScale: Bool = false,
-         keyboardFeedback: Bool = false, launchFeedback: Bool = false,
-         chromeProposal: ChromeProposalPreview = .current) {
+         keyboardFeedback: Bool = false, launchFeedback: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
-        self.chromeProposal = chromeProposal
         let fixture = PreviewFixture(theme: theme, customColors: customColors,
                                                           compact: compact, registeredCount: registeredCount,
                                                           comparisonSample: comparisonSample, recentCount: recentCount,
@@ -340,12 +337,6 @@ struct DeckPreview: View {
             fixture.content.snapshot.layout = fixture.content.snapshot.layout.fittingContent(
                 registeredCount: fixture.settings.pins.count, workRows: fixture.content.snapshot.workRows())
         }
-        if chromeProposal.proposed {
-            let old = fixture.content.snapshot.layout
-            fixture.content.snapshot.layout = PanelLayout(frame: CGRect(origin: .zero,
-                size: CGSize(width: old.frame.width, height: old.frame.height - chromeProposal.heightReduction)),
-                compact: old.compact, supported: old.supported, scale: old.scale)
-        }
         _launches = StateObject(wrappedValue: launches)
         _fixture = StateObject(wrappedValue: fixture)
     }
@@ -355,7 +346,7 @@ struct DeckPreview: View {
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
                  showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, recentAppearance: recentAppearance,
-                 menuAppearance: menuAppearance, previewChrome: chromeProposal, dismiss: {})
+                 menuAppearance: menuAppearance, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius, style: .continuous))
@@ -472,40 +463,6 @@ struct FittedSettingsPreview: View {
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        for proposed in [false, true] {
-            let view = DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
-                                   deliveredScale: true, chromeProposal: proposed ? .inlineTitle : .current)
-                .environment(\.colorScheme, .dark)
-            let name = proposed ? "proposed" : "current"
-            try save(view, to: directory.appendingPathComponent("chrome-177-\(name).png"))
-            try save(view, capture: .title, to: directory.appendingPathComponent("chrome-177-\(name)-title.png"))
-            try save(view, capture: .footer, to: directory.appendingPathComponent("chrome-177-\(name)-footer.png"))
-        }
-        try save(ChromeProposalComparison(directory: directory).environment(\.colorScheme, .dark),
-                 to: directory.appendingPathComponent("chrome-177-comparison.png"))
-        for optical in [false, true] {
-            let view = DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
-                                   deliveredScale: true, chromeProposal: optical ? .opticalBalance : .inlineTitle)
-                .environment(\.colorScheme, .dark)
-            let name = optical ? "after" : "before"
-            try save(view, to: directory.appendingPathComponent("chrome-178-\(name).png"))
-            try save(view, capture: .title, to: directory.appendingPathComponent("chrome-178-\(name)-title.png"))
-            try save(view, capture: .footerRight, to: directory.appendingPathComponent("chrome-178-\(name)-footer.png"))
-        }
-        try save(OpticalChromeComparison(directory: directory).environment(\.colorScheme, .dark),
-                 to: directory.appendingPathComponent("chrome-178-comparison.png"))
-        for larger in [false, true] {
-            let view = DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
-                                   deliveredScale: true, chromeProposal: larger ? .largerTitle : .opticalBalance)
-                .environment(\.colorScheme, .dark)
-            let name = larger ? "after" : "before"
-            try save(view, to: directory.appendingPathComponent("chrome-179-\(name).png"))
-            try save(view, capture: .title, to: directory.appendingPathComponent("chrome-179-\(name)-title.png"))
-            try save(view, capture: .footerLeftCompact, to: directory.appendingPathComponent("chrome-179-\(name)-left.png"))
-            try save(view, capture: .footerRightCompact, to: directory.appendingPathComponent("chrome-179-\(name)-right.png"))
-        }
-        try save(LargerChromeComparison(directory: directory).environment(\.colorScheme, .dark),
-                 to: directory.appendingPathComponent("chrome-179-comparison.png"))
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
@@ -517,6 +474,7 @@ enum PreviewExport {
         try verifyGroupedWindowContent()
         try verifyScaledDragTargets()
         try verifyRegisteredViewport(to: directory)
+        try OverlayChromeValidation.verify(to: directory)
         try verifyWebAppIcon()
         try verifyQuickOptionReopen()
         try verifyMenuCatalogChoices()
@@ -757,7 +715,7 @@ enum PreviewExport {
             }), let document = shelf.documentView else { throw NSError(domain: "TileLauncher.Preview", code: 98) }
             let rect = shelf.convert(shelf.bounds, to: hosting)
             let bottomGap = layout.frame.height - rect.maxY
-                - (DeckSpacing.edge + DeckSpacing.sections(compact: layout.compact) + 18)
+                - (DeckSpacing.footerBottom + DeckSpacing.footerTop + DeckSpacing.footerLine)
             guard document.frame.height <= shelf.contentView.bounds.height + 1,
                   abs(shelf.contentView.bounds.minY) < 1, bottomGap >= -2, bottomGap <= 8,
                   abs(rect.minX - DeckSpacing.edge) <= 1,
@@ -1053,7 +1011,7 @@ enum PreviewExport {
         guard !window.isVisible else { throw NSError(domain: "TileLauncher.Preview", code: 34) }
         print("Panel surface: all four corners transparent at 1x/2x, fill preserved, resize covered; never shown onscreen.")
     }
-    @MainActor private static func save<V: View>(_ view: V, dark: Bool = true, scrollToEnd: Bool = false, titled: Bool = false, capture: ChromeCapture? = nil, to url: URL) throws {
+    @MainActor static func save<V: View>(_ view: V, dark: Bool = true, scrollToEnd: Bool = false, titled: Bool = false, to url: URL) throws {
         // AppKit hosts render native controls/scroll views that ImageRenderer omits.
         // This window is never ordered onscreen and never becomes key.
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -1088,7 +1046,7 @@ enum PreviewExport {
             hosting.layoutSubtreeIfNeeded()
             print("Offscreen scroll view reaches the bottom: \(url.lastPathComponent)")
         }
-        let captureRect = capture?.rect(in: hosting.bounds.size) ?? hosting.bounds
+        let captureRect = hosting.bounds
         guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: captureRect) else {
             throw NSError(domain: "TileLauncher.Preview", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Could not render \(url.lastPathComponent)"])

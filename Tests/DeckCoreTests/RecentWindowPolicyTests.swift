@@ -43,19 +43,22 @@ final class RecentWindowPolicyTests: XCTestCase {
     }
 
     func testNativeGeometryScalesTilesInsideUnscaledOuterMargins() {
-        for compact in [false, true] {
-            let base = DeckGeometry(width: 1120, compact: compact)
-            let scaled = DeckGeometry(width: 1120, compact: compact, scale: 1.3)
-            XCTAssertEqual(scaled.windowColumns, base.windowColumns)
-            XCTAssertEqual(scaled.gap, base.gap * 1.3, accuracy: 0.001)
-            XCTAssertEqual(scaled.menuWidth + scaled.windowWidth + (compact ? 0 : DeckSpacing.columns),
-                           1120 * 1.3 - 2 * DeckSpacing.edge, accuracy: 0.001)
-            XCTAssertGreaterThan(scaled.unit, base.unit)
+        for scale in [CGFloat(1.3), CGFloat(1.4)] {
+            for compact in [false, true] {
+                let base = DeckGeometry(width: 1120, compact: compact, scale: 1.3)
+                let scaled = DeckGeometry(width: 1120, compact: compact, scale: scale)
+                XCTAssertEqual(scaled.windowColumns, base.windowColumns)
+                XCTAssertEqual(scaled.gap, base.gap)
+                XCTAssertEqual(scaled.menuWidth + scaled.windowWidth + (compact ? 0 : DeckSpacing.columns),
+                               1120 * scale - 2 * DeckSpacing.edge, accuracy: 0.001)
+                XCTAssertGreaterThanOrEqual(scaled.unit, base.unit)
+            }
+            let base = RegisteredGridGeometry(width: 1120, scale: 1.3)
+            let scaled = RegisteredGridGeometry(width: 1120, scale: scale)
+            XCTAssertEqual(base.columns, scaled.columns)
+            XCTAssertEqual(base.gap, scaled.gap)
+            XCTAssertEqual(CGFloat(scaled.columns) * scaled.side + CGFloat(scaled.columns - 1) * scaled.gap,
+                           1120 * scale - 2 * DeckSpacing.edge, accuracy: 0.001)
         }
-        let base = RegisteredGridGeometry(width: 1120)
-        let scaled = RegisteredGridGeometry(width: 1120, scale: 1.3)
-        XCTAssertEqual(base.columns, scaled.columns)
-        XCTAssertEqual(CGFloat(scaled.columns) * scaled.side + CGFloat(scaled.columns - 1) * scaled.gap,
-                       1120 * 1.3 - 2 * DeckSpacing.edge, accuracy: 0.001)
     }
 }

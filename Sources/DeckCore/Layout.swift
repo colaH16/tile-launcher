@@ -6,7 +6,7 @@ public struct PanelLayout: Equatable {
     public let compact: Bool
     public let supported: Bool
     public let scale: CGFloat
-    public static let preferredScale: CGFloat = 1.3
+    public static let preferredScale: CGFloat = 1.4
     public init(frame: CGRect, compact: Bool, supported: Bool, scale: CGFloat = 1) {
         self.frame = frame; self.compact = compact; self.supported = supported
         self.scale = scale.isFinite ? max(1, min(Self.preferredScale, scale)) : 1

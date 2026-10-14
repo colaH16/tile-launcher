@@ -6,11 +6,11 @@ public struct RegisteredGridGeometry {
     public let side: CGFloat
     public let gap: CGFloat
     public init(width: CGFloat, scale: CGFloat = 1) {
-        gap = 8 * scale
-        let content = max(1, width - DeckSpacing.edge * 2 / scale)
+        gap = DeckSpacing.tileGap(scale: scale)
+        let content = max(1, width * scale - DeckSpacing.edge * 2)
         // Keep the same density as the base layout when only margins change.
         columns = max(1, Int((max(1, width - DeckSpacing.edge * 2) + 8) / (60 + 8)))
-        side = (content - CGFloat(columns - 1) * 8) / CGFloat(columns) * scale
+        side = (content - CGFloat(columns - 1) * gap) / CGFloat(columns)
         headerHeight = DeckSpacing.shelfHeader(scale: scale)
     }
     private let headerHeight: CGFloat
