@@ -964,7 +964,10 @@
 - 실제 오버레이의 Developer 세 항목과 macOS 메타데이터를 대조했다. AX 창은 Discover 하나, WindowServer에는 Discover와 닫힌 General/Account 두 표면이 남았으며 뒤 두 개의 ordered-in=0/alpha=1이었다. USBclean과 Keychain Access도 AXWindows 성공·0개지만 닫힌 큰 서버 표면을 보관했다. 먼저 실행됐다는 순서 자체가 아니라 닫힌 표면을 실제 다른 Space 창으로 받아들이는 경로의 문제다.
 - 사용자 승인 범위에서 Developer의 일반 읽기 창을 닫고/재열고/최소화했다. 닫으면 AXWindows 0개인데 서버의 세 표면은 모두 ordered-in=0으로 남았다. 수정 생산 추적기의 별도 읽기 진단에서 Developer/USBclean/Keychain Access 각각 앱 항목 1개, 실제 다른 데스크탑 문서 창 2개를 포함한 세 실제 문서 창 보존을 확인했다. 최소화하면 Developer 실제 창 1개로 남는다. 공개 기록에 개인 문서 제목/사용자 목록을 복사하지 않는다.
 - 앱 이름 예외 없이 ordered-out CG-only 표면은 후보/기존 캐시에서 제외하고 AX 성공 목록에서 사라진 오래된 핸들도 정리한다. 최소화/숨긴 앱·조회 실패/순서 함수 미지원은 보존하며 ABI/오류를 런타임 점검한다. 실제 창이 있으면 정상 창 타일, 모두 닫혔으면 회색 앱 타일 1개다.
-- 창 판정 버그 patch 1.1.3(18), 누적 노트는 v1.0.0 이후 1.1.0–1.1.3 모두 포함한다. 기존 데이터/메뉴/테마/프로필/최근 순서·번호를 유지하며 서명·공증된 앱으로 검증·설치를 진행한다. 새 GitHub 릴리스는 별도다.
+- 창 판정 버그 patch 1.1.3(18), 누적 노트는 v1.0.0 이후 1.1.0–1.1.3 모두 포함한다. 기존 데이터/메뉴/테마/프로필/최근 순서·번호를 유지하며 서명·공증된 앱으로 검증·설치를 완료했다. 새 GitHub 릴리스는 별도다.
+
+- 완료: 소스 ce58673c587f9d5e9a3359d8bbbeed0034ace15f의 1.1.3(18)을 Developer ID Team VV2W9U5XT3로 서명하고 제출 a8678b86-f159-4c7a-905d-0310b8184919 Accepted·티켓·Gatekeeper·ZIP 재추출 검증을 통과했다. 기존 /Applications/launch at Login/Tile Launcher.app에 이전 앱 백업 후 설치하고 실행 소유자 버전 1.1.3(18)/실행 경로를 확인했다. 설정·프로필·권한은 바꾸지 않았다.
+- 사용자가 마지막 오버레이를 열고 고정한 뒤, 실행 중인 새 프로세스의 AXWindows 성공·1개와 실제 목록의 Developer/USBclean/Keychain Access 열린 창 없음 항목 각각 1개를 읽었다. CUA는 noWindowsAvailable로 새 오버레이를 선택하지 못했고 modifier-only 입력도 거부했다. 실제 목록 확인과 서명 배포 실행 파일 렌더를 통과했지만 최종 픽셀 캡처로 확인했다고 기록하지 않는다. 117개 XCTest/23개 Python·생산 추적기 닫힘/최소화/다른 Space 검사 통과. 새 공개 태그·릴리스는 만들지 않는다.
 
 ## 다음 요청 기록 양식
 

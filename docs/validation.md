@@ -7,7 +7,13 @@
 - runtime-checked SLSWindowIsOrderedIn/CGSWindowIsOrderedIn의 UInt8 출력/성공/0 또는 1만 사용한다. 참고 선언/사용은 macos-upgrade-guide.md의 yabai 1차 소스 링크다. 값이 false인 CG-only 후보/캐시를 제외하고 AX 목록에서 사라진 캐시는 최소화·숨김·AX 실패·nil 상태를 보존한다. 현재 최소화 AX 값이 캐시보다 우선한다. 실제 AX 목록에 있는 창은 ordered-out만으로 제거하지 않는다.
 - XCTest 117개/Python 배포 정책 23개 통과, /tmp/tile-113-tests.log. 새 두 회귀는 큰 alpha=1 ordered-out 표면 제외/true·nil 보존, 누락 AX 캐시의 정상/최소화/숨김/조회 실패/미지원 보존 조건이다. 기존 Space·MRU·프로필·배치·사용 통계도 통과했다.
 - 수정된 실제 생산 WindowTracker의 별도 --diagnose-window-inventory에서 Developer/USBclean/Keychain Access 앱 항목 각각 1개, 다른 Space 두 창을 포함한 실제 문서 창 3개 보존을 확인했다(/tmp/tile-113-live-closed.json). 실제 Developer 최소화 후에는 앱 항목이 아니라 실제 창 1개로 보존됐다(/tmp/tile-113-live-minimized.json). 제목/문서 내용을 출력하지 않았다. 이미 실행 중인 앱을 새 추적기에서 읽는 검사여서 앱 시작 순서 때문인 것으로 취급하지 않는다.
-- 기존 화면 없는 렌더/설정/키 정책/메뉴·최근/100개 스크롤/마스크 통과(/tmp/tile-113-previews.log). 최종 최소화 캐시 우선순위 보정 빌드 로그 /tmp/tile-113-final-debug-build.log. 서명·공증·설치/최종 실제 오버레이 검증은 이어 기록한다. 새 GitHub 릴리스는 별도다.
+- 기존 화면 없는 렌더/설정/키 정책/메뉴·최근/100개 스크롤/마스크 통과(/tmp/tile-113-previews.log). 최종 최소화 캐시 우선순위 보정 빌드 로그 /tmp/tile-113-final-debug-build.log. 최종 서명·공증·설치와 실제 목록 결과는 아래와 같다. 새 GitHub 릴리스는 별도다.
+
+- 소스 ce58673c587f9d5e9a3359d8bbbeed0034ace15f, 1.1.3(18)/arm64/min26.0의 독립 최적화 빌드·App Intents 추출·Developer ID Team VV2W9U5XT3/강화된 런타임/타임스탬프/strict 서명·ZIP 검증을 통과했다. /tmp/tile-113-prepare.log, tile-113-sign.log. 실제 서명 배포 실행 파일의 화면 없는 설정·메뉴/최근·100개 스크롤·마스크 렌더도 통과했다(/tmp/tile-113-signed-previews.log).
+- Apple 제출 a8678b86-f159-4c7a-905d-0310b8184919 Accepted 후 stapler/Gatekeeper·최종 ZIP 재추출 검증 완료. /tmp/tile-113-notarize.log, tile-113-notarize-final.log. 공증 인증 재요청이나 암호/개인 키 출력은 하지 않았다. 실제 서명 배포 실행 파일의 읽기 생산 추적기에서도 닫힌 Developer/USBclean/Keychain Access가 앱 항목 하나씩이다(/tmp/tile-113-signed-closed.json).
+- 최종 번들 SHA-256 192a99f8afccb1117916d9c03dc3f013f67abca1fbc8dbb67ea800403511aee5; Tile-Launcher-1.1.3-arm64.zip 5e3ba121e597497b7c7522e276d7d11aed1c3f3cbbcff3523e9cffe259d73a9f; release-metadata.json 9a12bdf124118bcb7e8e46f9a085425ec26211cf19e2b924d9f6ca5ab5ce6e1e; SHA256SUMS.txt dd59b105c20793edda4df08219786a3e698812288a3fa291bc238cf1faff8b41.
+- /Applications/launch at Login/Tile Launcher.app에 설치 후 버전/빌드/서명/티켓/Gatekeeper/번들 해시 재검증 통과. 이전 앱 백업 /var/folders/cy/rhl7z2sn7mv4yjlmfy7xsl8c0000gp/T/tile-before-113-py9reh9h.app, receipt /tmp/tile-113-install.json, 설치 로그 /tmp/tile-113-install.log. 앱 경로·설정·프로필·권한은 보존했으며 이후 CUA/Finder 재호출로 새 실행 소유자 1.1.3(18)/같은 설치 경로를 확인했다.
+- 최종 CUA는 새 프로세스에 noWindowsAvailable가 반복되고 Option 단독 입력도 keyPressIncludedNoNonModifierKeys로 거부됐다. 사용자에게 오버레이 열기·고정을 요청했고 사용자가 완료를 확인했다. 그 뒤 화면 입력 없이 실행 중인 새 오버레이 AX/CG를 읽어 AXWindows=1, ordered-in=1/onScreen=true/1120×729pt와 Developer/USBclean/Keychain Access 열린 창 없음 버튼 각각 1개를 확인했다(/tmp/tile-113-overlay-read.log). 등록 버튼/앱 메뉴 검색 항목은 최근 목록 개수에서 제외한다. 최종 픽셀 캡처 확인과 구별하며 사용자 개인 문서/목록/스크린샷은 공개 저장소에 넣지 않았다.
 
 ## R135 · 1.1.2(17) 선택한 메뉴 기본 적용
 
