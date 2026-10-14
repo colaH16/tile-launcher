@@ -13,6 +13,10 @@ enum RecentAppearance {
     var uniform: Bool { self == .squares || self == .consecutiveSmall }
     var neutralApplications: Bool { self != .original }
 }
+/// Comparison-only menu variants. The shipped view retains .original until chosen.
+enum MenuAppearance {
+    case original, recentPastel, recentGray
+}
 struct WindowItem: Identifiable, Equatable {
     let id: UUID
     let pid: pid_t

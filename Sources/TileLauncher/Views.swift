@@ -128,6 +128,7 @@ struct DeckView: View {
     var resizeForProfile: (Int) -> Void = { _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
     var recentAppearance: RecentAppearance = .consecutiveSmall
+    var menuAppearance: MenuAppearance = .original
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -281,6 +282,26 @@ struct DeckView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.buttonStyle(TileStyle())
+            } else if menuAppearance != .original {
+                let sizes = menuItems.map { command in
+                    command.isPinned ? RecentTileSize.wide : snapshot.frequentMenuIDs.contains(command.id) ? .square : .application
+                }
+                let packed = RecentTileArrangement.place(sizes: sizes, columns: 8)
+                let micro = (geometry.unit - geometry.gap) / 2
+                let bottom = packed.map { $0.row + $0.height }.max() ?? 0
+                ScrollView(.vertical) {
+                    ZStack(alignment: .topLeading) {
+                        ForEach(packed, id: \.index) { place in
+                            menuTile(menuItems[place.index], small: place.height == 1)
+                                .frame(width: micro * CGFloat(place.width) + geometry.gap * CGFloat(place.width - 1),
+                                       height: micro * CGFloat(place.height) + geometry.gap * CGFloat(place.height - 1))
+                                .offset(x: CGFloat(place.column) * (micro + geometry.gap),
+                                        y: CGFloat(place.row) * (micro + geometry.gap))
+                        }
+                    }.frame(width: geometry.menuWidth,
+                            height: CGFloat(bottom) * micro + CGFloat(max(0, bottom - 1)) * geometry.gap,
+                            alignment: .topLeading)
+                }.scrollIndicators(.visible)
             } else {
                 let packed = rows(menuItems.map { ($0.isPinned || snapshot.frequentMenuIDs.contains($0.id)) ? 2 : 1 }, columns: 4)
                 ScrollView(.vertical) {
@@ -298,23 +319,35 @@ struct DeckView: View {
             }
         }.frame(height: height)
     }
-    private func menuTile(_ command: MenuCommand) -> some View {
-        Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
+    private func menuTile(_ command: MenuCommand, small: Bool = false) -> some View {
+        var colors = settings.tileColors
+        if menuAppearance == .recentGray && !command.isPinned && !snapshot.frequentMenuIDs.contains(command.id) {
+            colors.menus = TileColor(0x777777)
+        }
+        return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .top) {
-                    Image(systemName: "command").font(.system(size: 20))
-                    Spacer(minLength: 4)
+                    Image(systemName: "command").font(.system(size: small ? 12 : 20))
+                    Spacer(minLength: small ? 0 : 4)
                     VStack(alignment: .trailing, spacing: 1) {
-                        Image(systemName: "pin.fill").font(.caption2)
-                            .opacity(command.isPinned ? 1 : 0)
+                        if !small {
+                            Image(systemName: "pin.fill").font(.caption2)
+                                .opacity(command.isPinned ? 1 : 0)
+                        }
                         Text("\(command.totalUseCount.formatted(.number.notation(.compactName)))회")
-                            .font(.system(size: 9, weight: .medium)).monospacedDigit()
+                            .font(.system(size: small ? 8 : 9, weight: .medium)).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.8)
                     }.foregroundStyle(.secondary).accessibilityHidden(true)
                 }
-                Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                if small {
+                    Text(command.title).font(.system(size: 9, weight: .medium)).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }.padding(small ? 4 : 10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : "") + "\n" + command.usageDescription)
             .accessibilityValue(command.usageDescription)
@@ -328,6 +361,7 @@ struct DeckView: View {
                     editedMenus = MenuCommand.ordered(settings.commands, appID: command.appID, history: settings.menuHistory)
                 }
             }
+            .environment(\.tileColors, colors)
     }
 
     private var registeredSection: some View {

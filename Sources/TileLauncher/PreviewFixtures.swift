@@ -10,11 +10,12 @@ final class PreviewFixture: ObservableObject {
     let browser = FolderBrowser()
     private let suite: String
     private let defaults: UserDefaults
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16) {
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16, menuComparison: Bool = false) {
         suite = "dev.cola16.TileLauncher.preview.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         settings = SettingsStore(defaults: defaults)
         settings.theme = theme
+        if menuComparison { settings.tileColors.menus = TileColor(0x4CBB00) }
         if customColors {
             settings.tileColors.menus = TileColor(0xAA4725)
             settings.tileColors.windows = TileColor(0x7651AA)
@@ -22,7 +23,7 @@ final class PreviewFixture: ObservableObject {
         }
         let pins = (0..<registeredCount).map { PinnedItem(kind: .app, path: "/Preview/App\($0).app", bundleID: nil, name: "앱 \($0 + 1)") }
         settings.pins = pins
-        let app = AppItem(id: "preview.editor", pid: -1, name: "문서 편집기", url: nil)
+        let app = AppItem(id: "preview.editor", pid: -1, name: menuComparison ? "Finder" : "문서 편집기", url: nil)
         var commands = [
             MenuCommand(appID: app.id, appName: app.name, path: ["파일", "PDF로 내보내기"]),
             MenuCommand(appID: app.id, appName: app.name, path: ["도구", "그림 크기 줄이기"]),
@@ -34,6 +35,16 @@ final class PreviewFixture: ObservableObject {
         for _ in 0..<2 { commands[0].recordUse(at: Date(), observed: true) }
         for _ in 0..<4 { commands[2].recordUse(at: Date()) }
         commands[3].recordUse(at: Date())
+        if menuComparison {
+            let paths = [["File", "New Tab"], ["File", "New Folder"], ["File", "New Finder Window"],
+                         ["File", "Open in New Tab"], ["File", "Get Info"], ["Go", "Go to Folder…"],
+                         ["Go", "Connect to Server…"], ["View", "Show View Options"], ["View", "Hide Sidebar"]]
+            commands = paths.enumerated().map { index, path in
+                var command = MenuCommand(appID: app.id, appName: app.name, path: path, isPinned: index < 3)
+                for _ in 0..<([3, 2, 1, 3, 4, 2, 1, 1, 1][index]) { command.recordUse(at: Date()) }
+                return command
+            }
+        }
         settings.commands = commands
         var windows: [WindowItem] = []
         let iconURLs = ["terminal", "externaldrive", "note.text", "calendar", "plus", "music.note"].map { URL(string: "tile-preview://\($0)/\($0)")! }
@@ -56,7 +67,7 @@ final class PreviewFixture: ObservableObject {
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: compact ? 560 : 1440,
                                                                 height: compact ? 468 : 1000),
                                            cursor: CGPoint(x: 720, y: 500)).fittingContent(registeredCount: pins.count)
-        content = OverlayContent(OverlaySnapshot(context: app, contextWindowTitle: "미리보기 문서",
+        content = OverlayContent(OverlaySnapshot(context: app, contextWindowTitle: menuComparison ? "Downloads" : "미리보기 문서",
                     apps: [app], windows: windows, layout: layout, permission: true, pins: pins,
                     profileID: "default", profileName: "기본", shortcuts: .registeredFirst, commands: commands,
                     frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: app.id)))
@@ -191,19 +202,24 @@ final class PreviewFixture: ObservableObject {
 struct DeckPreview: View {
     @StateObject var fixture: PreviewFixture
     var recentAppearance: RecentAppearance
+    var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
-         recentAppearance: RecentAppearance = .consecutiveSmall, comparisonSample: Bool = false, recentCount: Int = 16) {
+         recentAppearance: RecentAppearance = .consecutiveSmall, comparisonSample: Bool = false, recentCount: Int = 16,
+         menuAppearance: MenuAppearance = .original) {
         self.recentAppearance = recentAppearance
+        self.menuAppearance = menuAppearance
         _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
                                                           compact: compact, registeredCount: registeredCount,
-                                                          comparisonSample: comparisonSample, recentCount: recentCount))
+                                                          comparisonSample: comparisonSample, recentCount: recentCount,
+                                                          menuComparison: menuAppearance != .original))
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
                  presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in },
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
-                 showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, recentAppearance: recentAppearance, dismiss: {})
+                 showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, recentAppearance: recentAppearance,
+                 menuAppearance: menuAppearance, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)
@@ -288,6 +304,8 @@ struct SettingsLayoutPreview: View {
 
 #Preview("클래식 · 기본색") { DeckPreview(theme: .classic).preferredColorScheme(.dark) }
 #Preview("유리 · 기본색") { DeckPreview(theme: .glass).preferredColorScheme(.dark) }
+#Preview("메뉴 비교 · 최근 파스텔") { DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: .recentPastel).preferredColorScheme(.dark) }
+#Preview("메뉴 비교 · 최근 회색") { DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: .recentGray).preferredColorScheme(.dark) }
 #Preview("사용자 색 · 밝은 화면") { DeckPreview(theme: .classic, customColors: true).preferredColorScheme(.light) }
 #Preview("모양 설정") { AppearancePreview() }
 #Preview("메뉴 사용 횟수") { MenuUsagePreview() }
@@ -373,6 +391,11 @@ enum PreviewExport {
             try save(DeckPreview(theme: .classic, registeredCount: 18, recentAppearance: appearance, comparisonSample: true)
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("recent-compare-\(name).png"))
+        }
+        for (name, appearance): (String, MenuAppearance) in [("pastel", .recentPastel), ("gray", .recentGray)] {
+            try save(DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: appearance)
+                        .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("menu-compare-\(name).png"))
         }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
