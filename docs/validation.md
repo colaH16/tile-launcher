@@ -7,7 +7,9 @@
 - `/tmp/tile-140-previews`의 실제 설정 NSWindow 렌더에서 기본 콘텐츠580×918pt, 일반 document885pt/viewport886pt를 확인했다. 기본 크기에서 일반/모양은 내용이 넘치면 실패하는 검사를 통과했다. 수동 리사이즈·재열기 크기·작은 화면 제한도 검사했다. settings-native-general/appearance/menus/registered.png의 상단 시작선·좌우 여백, 일반 권한/버전, 메뉴 하단 추가·가변 목록을 직접 확인했다. 비표시 네이티브 선택 탭의 재질은 검게 나올 수 있어 실제 합성 색 검증과 구별한다.
 - 짧은 설명은 크기 세 줄·색 두 줄로 항상 보인다. 펼침/스크롤을 기본 해결책으로 쓰지 않는다. 앱 실행 대기/숫자 선택 피드백, 두 테마·명암·큰/작은 화면·기존 프로필 및 최근 창 fixture를 렌더했다. `/tmp/tile-140-previews.log`와 application-launch-feedback.png/keyboard-execution-feedback.png를 확인했다.
 - 실행 코드에서 직접 Space 쓰기 함수와 SLS 별칭이 제거됐는지 확인한다. 관련 외부 재현 기록과 사용자 증상은 일치하지만 개발 Mac에서 사용자 현상을 직접 재현하지 않았다. 실제 다른 Space 이동/앱별 AX 지원은 사용자 시험과 구별하며 자세한 근거는 space-transition-diagnostics.md에 있다.
-- Developer ID 서명·미공증 ZIP 제작/복사 결과는 아래에 이어 기록한다. 개발 Mac의 설치 앱·실행 인스턴스·GitHub 바이너리는 변경하지 않는다.
+- 소스 `f124946b07cec3b67ed301f6bbf48ae3871f7a3f`에서 독립 release 빌드, Developer ID Application Team VV2W9U5XT3 서명·강화된 런타임·타임스탬프·최종 ZIP 재추출 검증을 통과했다. 실제 서명 실행 파일의 비표시 검사/전체 렌더와 이후 번들 검증도 통과했다. 로그는 `/tmp/tile-140-prepare.log`, `tile-140-sign.log`, `tile-140-verify.log`, `tile-140-signed-previews.log`다. 최종 일반 화면에 버전1.4.0·빌드24가 끝까지 보인다.
+- 원본은 `/Users/cola/Library/Developer/TileLauncher/releases/v1.4.0`, 번들 SHA256은 `b07f171c7e7123f34624eb8564462a81b8b8bc5ac22b2a7824a86bc124e0dd5d`다. ZIP2,308,256바이트, SHA256 `228e6e711406909f2d9f67040d4d2095a3cacce173edcfc20f3246f8d4bf52d3`를 저장소 상위 `Tile-Launcher-1.4.0-arm64-unnotarized.zip`에 임시 파일로 복사·해시 확인 후 이름을 확정했다. 기존 ZIP을 덮어쓰지 않았다.
+- 공증 제출은 생략했다. 개발 Mac 설치본의 Info.plist는1.2.0이며 교체/재실행하지 않았다. GitHub 바이너리 공개도 하지 않았다. iCloud 서버 업로드 완료·다른 Mac의 수신/설치는 확인하지 않았다. 소스와 전달 기록만 기존 승인에 따라 main에 커밋·푸시한다.
 
 ## R163 · 1.3.0 위치 크기·첫 등장 색·시험 ZIP
 
