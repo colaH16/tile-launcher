@@ -8,6 +8,8 @@
 - 실제 공유 뷰를 화면 밖에서 두 테마/명암/작은 화면/등록 0·18·36·200개로 렌더링했다. 작은 타일 밀도가 높아 16개가 3.3줄 안에 들어가므로 스크롤 끝 샘플을 100개로 늘렸다. 최근 마지막 샘플 100번과 작은 일반 설정 하단을 확인했다. /tmp/tile-111-previews.log, /tmp/tile-111-previews/recent-scroll-bottom.png. 최초 렌더의 16개 샘플은 넘침이 없어 스크롤 검사가 실패했으며 샘플 보정 후 전체 검사 통과했다.
 - 같은 16개 비교 목록에서 2/3번 세로 스택, 10번/배포 로그 세로 스택, 계산기/다음 주/회의 기록/변경 이력 아래의 빈칸과 오른쪽 큰 창을 확인했다. 전달 PNG ~/.codex/visualizations/2026/10/12/01a12d92-b01c-7760-b0c2-ef84fe97ea6c/recent-vertical-pairs-20261014.png. 합성 SF 아이콘/샘플 제목이며 실제 사용자 앱 아이콘·데스크탑 Glass 합성 검증과 구별한다.
 - UI patch 1.1.1(16)의 누적 노트는 공개 v1.0.0 이후 1.1.0과 1.1.1을 모두 포함한다. 서명·공증·설치 결과는 이어 기록한다. 공개 태그/릴리스는 이번 요청으로 만들지 않는다.
+- 소스 acb6fc1595bbba26f26edaad26bd3d37a38e3e53의 독립 최적화 빌드(19.34초)/App Intents 추출/Developer ID Team VV2W9U5XT3/강화된 런타임/타임스탬프/서명 및 ZIP 재추출 검증 통과. /tmp/tile-111-prepare.log, tile-111-sign.log. 서명한 실제 배포 실행 파일의 격리 검사/렌더도 통과했고 마지막 100번을 확인했다(/tmp/tile-111-signed-previews.log).
+- Apple 제출은 기존 Keychain 프로필을 찾지 못해 인증 단계에서 실패했다(‘No Keychain password item found for profile: tile-launcher-notary’). 기본 및 명시적인 login.keychain-db 모두 같은 결과다. 현재 notary_id가 없고 Accepted/설치 완료로 선언하지 않는다. 사용자 터미널의 안전한 자격 증명 재저장을 요청했으며 암호·개인 키를 출력/수집하지 않았다. 서명·공증 완료 이전 1.1.0 설치 앱은 보존한다. /tmp/tile-111-notarize.log.
 
 ## R130 · 누적 릴리스 노트 보완
 
