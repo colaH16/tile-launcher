@@ -6,7 +6,7 @@
 - GitHub API 변경 전후 본문은 정본과 일치했다. id/tag/name/draft/prerelease/published_at/created_at/target_commitish와 모든 자산의 ID·이름·크기·digest·타입·생성/수정 시각·다운로드 URL 동일, latest v1.0.0 유지. 다운로드 수는 외부 사용에 따라 달라져 비교 대상에서 제외했다. /tmp/tile-release-notes-audit.json, tile-release-notes-after.json, tile-release-notes-receipt.json, tile-release-notes-latest.txt.
 - Python 배포 정책 23개 통과, /tmp/tile-cumulative-notes-tests.log. 중간 버전 누락/빈 본문/잘못된 버전 제목/중복·순서·다른 산출물 버전·이전 정식 공개본 불일치·기존 공개/초안의 자동 노트 변경 거부와 설명 갱신 시 자산 보존/실패 복원을 검사한다. 검사는 의미상 모든 변경을 자동 판별하지 않으므로 요청·검증 기록과 Git 변경을 대조했다.
 - 문서/배포 도구만 변경해 앱 버전은 1.1.0(15)이고 별도 Swift/Xcode 빌드나 사용자 앱 재시작/권한 변경은 하지 않았다. 기존 공개 바이너리/메타데이터/체크섬/태그는 보존했다. 이전 산출물의 release-notes.md/notes_sha256는 최초 게시 기록이며 보완된 공개 설명 정본과 의도적으로 구별한다.
-- 아직 공개하지 않은 서명·공증 1.1.0 산출물의 설명 갱신 결과는 아래에 추가한다. 새 GitHub 릴리스 게시는 이번 요청 범위에 포함하지 않는다.
+- 미공개 서명·공증 1.1.0의 refresh-notes 실행과 갱신 전후 verify 통과. 노트 소스 커밋 eb5785ca068e9bdadeca5f9011cebd7fff1ac7a5, 새 노트 SHA-256 b13d0a50f8b6d5df2ba8c10a54683718fcf98f75852aff640f144d7be139157a. notes_sha256/notes_range/notes_revision 세 필드를 제외한 manifest 전체 동일이며 앱 소스 2d68dd1ab8e89d4047a4c2c3820e893cb1a81d3e와 번들/ZIP/metadata/체크섬 해시는 위 R124–R127 기록 그대로다. 원본 설명 세 파일은 releases/v1.1.0/notes-history/20261014T023153088154Z에 보존했다. 로그 /tmp/tile-110-cumulative-notes-refresh.log, receipt /tmp/tile-110-cumulative-notes-receipt.json. 새 GitHub 릴리스·태그를 만들지 않았다.
 
 ## R124–R127 · 1.1.0(15) 기능 후보 검증
 
