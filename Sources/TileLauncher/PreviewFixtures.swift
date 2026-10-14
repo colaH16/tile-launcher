@@ -2,6 +2,41 @@ import AppKit
 import SwiftUI
 import DeckCore
 
+/// Only populated by the realistic comparison fixture. Read icon resources, never launch apps.
+enum PreviewIconAssets {
+    private static var images: [String: NSImage] = [:]
+    static func image(for url: URL?) -> NSImage? { url.flatMap { images[$0.path] } }
+    static func app(_ name: String, path: String, iconFile: String? = nil, fallback: String = "app.fill") -> URL {
+        let key = URL(fileURLWithPath: "/Preview/Realistic/\(name).app")
+        if images[key.path] != nil { return key }
+        let bundle = URL(fileURLWithPath: path)
+        let info = (try? Data(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")))
+            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
+        let resourceName = iconFile ?? info?["CFBundleIconFile"] as? String
+        let resource = resourceName.map { bundle.appendingPathComponent("Contents/Resources").appendingPathComponent($0) }
+        let original = resource.flatMap { NSImage(contentsOf: $0) ?? NSImage(contentsOf: $0.appendingPathExtension("icns")) }
+            ?? NSImage(systemSymbolName: fallback, accessibilityDescription: nil)!
+        let bitmap = NSImage(size: NSSize(width: 64, height: 64))
+        bitmap.lockFocus()
+        original.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
+        bitmap.unlockFocus()
+        images[key.path] = bitmap
+        return key
+    }
+    static func folder(_ name: String) -> PinnedItem {
+        let key = "/Preview/Realistic/\(name)"
+        let image = NSImage(contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericFolderIcon.icns")
+            ?? NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)!
+        let bitmap = NSImage(size: NSSize(width: 64, height: 64))
+        bitmap.lockFocus()
+        NSColor.systemBlue.set()
+        image.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
+        bitmap.unlockFocus()
+        images[key] = bitmap
+        return PinnedItem(kind: .folder, path: key, bundleID: nil, name: name)
+    }
+}
+
 /// Synthetic data only: no AX observer, keyboard monitor, real folder or user settings.
 final class PreviewFixture: ObservableObject {
     let settings: SettingsStore
@@ -10,7 +45,7 @@ final class PreviewFixture: ObservableObject {
     let browser = FolderBrowser()
     private let suite: String
     private let defaults: UserDefaults
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16, menuComparison: Bool = false) {
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16, menuComparison: Bool = false, realisticSample: Bool = false) {
         suite = "dev.cola16.TileLauncher.preview.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         settings = SettingsStore(defaults: defaults)
@@ -21,7 +56,35 @@ final class PreviewFixture: ObservableObject {
             settings.tileColors.windows = TileColor(0x7651AA)
             settings.tileColors.registered = TileColor(0x297D76)
         }
-        let pins = (0..<registeredCount).map { PinnedItem(kind: .app, path: "/Preview/App\($0).app", bundleID: nil, name: "앱 \($0 + 1)") }
+        var pins = (0..<registeredCount).map { PinnedItem(kind: .app, path: "/Preview/App\($0).app", bundleID: nil, name: "앱 \($0 + 1)") }
+        var realisticApps: [String: URL] = [:]
+        if realisticSample {
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            let entries: [(String, String, String?)] = [
+                ("Finder", "/System/Library/CoreServices/Finder.app", nil),
+                ("ChatGPT", "/Applications/AI/ChatGPT.app", "icon-chatgpt.icns"),
+                ("Claude", "/Applications/AI/Claude.app", nil),
+                ("Slack", "/Applications/Slack.app", nil),
+                ("CotEditor", "/Applications/Develop/CotEditor.app", nil),
+                ("Preview", "/System/Applications/Preview.app", nil),
+                ("Docmost", home + "/Applications/safariDock/OPENMARU/Docmost - kanban.app", nil),
+                ("Outline", home + "/Applications/Outline.app", nil),
+                ("iTerm2", "/Applications/Develop/iTerm.app", nil),
+                ("Spark", "/Applications/Spark Desktop.app", nil),
+                ("Safari", "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app", nil),
+                ("Notes", "/System/Applications/Notes.app", nil),
+                ("Hi Sticky", "/Applications/Hi Sticky.app", nil),
+                ("Calendar", "/System/Applications/Calendar.app", nil),
+                ("Reminders", "/System/Applications/Reminders.app", nil)
+            ]
+            for (name, path, icon) in entries { realisticApps[name] = PreviewIconAssets.app(name, path: path, iconFile: icon) }
+            let names = ["Finder", "Safari", "ChatGPT", "Docmost", "CotEditor", "Slack", "Notes", "iTerm2",
+                         "Preview", "Hi Sticky", "Spark", "Calendar", "Reminders"]
+            pins = names.map { PinnedItem(kind: .app, path: realisticApps[$0]!.path, bundleID: nil, name: $0) }
+            pins += [PreviewIconAssets.folder("Projects"), PreviewIconAssets.folder("Downloads"),
+                     PinnedItem(kind: .trash, path: "/Preview/Realistic/Trash", bundleID: nil, name: "휴지통")]
+            pins += ["Outline", "Claude"].map { PinnedItem(kind: .app, path: realisticApps[$0]!.path, bundleID: nil, name: $0) }
+        }
         settings.pins = pins
         let app = AppItem(id: "preview.editor", pid: -1, name: menuComparison ? "Finder" : "문서 편집기", url: nil)
         var commands = [
@@ -63,6 +126,33 @@ final class PreviewFixture: ObservableObject {
                                       appURL: comparisonSample && index == 2 ? URL(string: "tile-preview://externaldrive/usbclean") : iconURLs[group],
                                       title: applicationOnly ? "" : comparisonSample ? sampleTitles[index] : title, minimized: false,
                                       desktop: applicationOnly ? .unknown : desktop, isApplication: applicationOnly))
+        }
+        if realisticSample {
+            let samples: [(String, String, WindowDesktop, Bool)] = [
+                ("Finder", "Downloads", .current, false),
+                ("ChatGPT", "ChatGPT", .current, false),
+                ("Finder", "launch at Login", .current, false),
+                ("Finder", "개발", .other, false),
+                ("CotEditor", "", .unknown, true),
+                ("Preview", "", .unknown, true),
+                ("ChatGPT", "설정 창 여백 검토", .other, false),
+                ("ChatGPT", "메뉴 타일 비교", .current, false),
+                ("Docmost", "프로젝트 칸반", .current, false),
+                ("Docmost", "서비스 작업 목록", .other, false),
+                ("Docmost", "이번 주 일정", .other, false),
+                ("Outline", "", .unknown, true),
+                ("Claude", "새 릴리스 준비", .other, false),
+                ("Claude", "집중 모드 연동", .other, false),
+                ("Claude", "UI 개선 메모", .other, false),
+                ("Claude", "앱 메뉴 수집", .other, false),
+                ("Slack", "# 프로젝트 · 팀 대화", .current, false),
+                ("iTerm2", "~ — zsh", .current, false),
+                ("Spark", "", .unknown, true)
+            ]
+            windows = samples.enumerated().map { index, sample in
+                WindowItem(id: UUID(), pid: Int32(index + 100), appName: sample.0, appURL: realisticApps[sample.0],
+                           title: sample.1, minimized: false, desktop: sample.2, isApplication: sample.3)
+            }
         }
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: compact ? 560 : 1440,
                                                                 height: compact ? 468 : 1000),
@@ -205,13 +295,14 @@ struct DeckPreview: View {
     var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
          recentAppearance: RecentAppearance = .consecutiveSmall, comparisonSample: Bool = false, recentCount: Int = 16,
-         menuAppearance: MenuAppearance = .original) {
+         menuAppearance: MenuAppearance = .original, realisticSample: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
         _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
                                                           compact: compact, registeredCount: registeredCount,
                                                           comparisonSample: comparisonSample, recentCount: recentCount,
-                                                          menuComparison: menuAppearance != .original))
+                                                          menuComparison: menuAppearance != .original || realisticSample,
+                                                          realisticSample: realisticSample))
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
@@ -396,6 +487,11 @@ enum PreviewExport {
             try save(DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: appearance)
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("menu-compare-\(name).png"))
+        }
+        for (name, appearance): (String, MenuAppearance) in [("1-pastel-small", .recentPastel), ("2-gray-square", .recentGraySquare), ("3-original", .original)] {
+            try save(DeckPreview(theme: .classic, registeredCount: 18, menuAppearance: appearance, realisticSample: true)
+                        .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("menu-realistic-\(name).png"))
         }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.

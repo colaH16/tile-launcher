@@ -14,7 +14,9 @@ struct Icon: View {
     var size: CGFloat = 34
     var body: some View {
         Group {
-            if url?.scheme == "tile-preview", let symbol = url?.host {
+            if let image = PreviewIconAssets.image(for: url) {
+                Image(nsImage: image).resizable().interpolation(.high)
+            } else if url?.scheme == "tile-preview", let symbol = url?.host {
                 // Synthetic icons keep offscreen comparisons independent of
                 // WindowServer's native app-icon representation caching.
                 let color: Color = symbol == "terminal" ? .green : symbol == "calendar" ? .red : symbol == "note.text" ? .orange : .blue
