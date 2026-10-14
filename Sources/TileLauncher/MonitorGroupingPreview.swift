@@ -22,14 +22,20 @@ struct MonitorGroupingPreview: View {
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
          production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
          threeColumns: Bool = false, squareColumnHeads: Bool = false, largeIcons: Bool = false,
-         relaxedSpacing: Bool = false, fittedColumns: Bool = false, startTileLabels: Bool = false) {
+         relaxedSpacing: Bool = false, fittedColumns: Bool = false, startTileLabels: Bool = false,
+         deliveredLayout: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
         self.largeIcons = largeIcons
         self.relaxedSpacing = relaxedSpacing
-        self.startTileLabels = startTileLabels
+        self.startTileLabels = startTileLabels || deliveredLayout
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
+        if deliveredLayout {
+            fixture.content.snapshot.layout = PanelLayout.calculate(
+                visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440), cursor: .zero,
+                scale: PanelLayout.preferredScale).fittingContent(registeredCount: 18)
+        }
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
         fixture.settings.tileColors.windows = TileColor(0x2FA3E7)
         fixture.settings.tileColors.registered = TileColor(0xB793FD)
@@ -192,11 +198,12 @@ struct MonitorGroupingPreview: View {
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
                  showSettings: { _ in }, requestPermission: {}, pinOverlay: {},
                  recentAppearance: production ? .grouped : .consecutiveSmall,
+                 startTileLabels: startTileLabels,
                  previewWindowSizes: production ? nil : sizes,
                  previewEmphasizedWindows: production ? nil : emphasized,
                  previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil,
                  previewDesktopColumns: columns, previewLargeWindowIcons: largeIcons,
-                 previewBalancedWindowLabels: relaxedSpacing, previewStartTileLabels: startTileLabels, dismiss: {})
+                 previewBalancedWindowLabels: relaxedSpacing, dismiss: {})
     }
 
     var body: some View {
@@ -208,7 +215,7 @@ struct MonitorGroupingPreview: View {
             deck
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(DeckSurfaceView.shape)
+            .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius * fixture.content.snapshot.layout.scale, style: .continuous))
         }
     }
 }

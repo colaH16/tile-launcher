@@ -74,14 +74,16 @@ private struct TileStyle: ButtonStyle {
     var section: TileSection = .menus
     var emphasized = false
     var selected = false
+    var compact = false
     func makeBody(configuration: Configuration) -> some View {
-        Surface(configuration: configuration, section: section, emphasized: emphasized, selected: selected)
+        Surface(configuration: configuration, section: section, emphasized: emphasized, selected: selected, compact: compact)
     }
     private struct Surface: View {
         let configuration: ButtonStyleConfiguration
         let section: TileSection
         let emphasized: Bool
         let selected: Bool
+        let compact: Bool
         @Environment(\.colorScheme) private var scheme
         @Environment(\.colorSchemeContrast) private var contrast
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -90,7 +92,7 @@ private struct TileStyle: ButtonStyle {
         @State private var hovering = false
         var body: some View {
             let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark, theme: theme, colors: colors)
-            let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 14, style: .continuous)
+            let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : compact ? 8 : 14, style: .continuous)
             configuration.label
                 .foregroundStyle(palette.ink, palette.secondary)
                 .contentShape(shape)
@@ -134,6 +136,7 @@ struct DeckView: View {
     var quitApplication: (WindowItem) -> Void = { _ in }
     var recentAppearance: RecentAppearance = .grouped
     var menuAppearance: MenuAppearance = .selected
+    var startTileLabels = true
     // Synthetic comparison inputs only; production callers keep all defaults.
     var previewWindowSizes: [RecentTileSize]? = nil
     var previewEmphasizedWindows: Set<UUID>? = nil
@@ -141,7 +144,6 @@ struct DeckView: View {
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     var previewLargeWindowIcons = false
     var previewBalancedWindowLabels = false
-    var previewStartTileLabels = false
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -150,6 +152,24 @@ struct DeckView: View {
     @Environment(\.colorScheme) private var deckScheme
 
     var body: some View {
+        deckContents
+            .frame(width: snapshot.layout.contentSize.width, height: snapshot.layout.contentSize.height)
+            .scaleEffect(snapshot.layout.scale, anchor: .topLeading)
+            .frame(width: snapshot.layout.frame.width, height: snapshot.layout.frame.height, alignment: .topLeading)
+            // Keep the native drag view in physical window coordinates. Resolve
+            // the scaled SwiftUI anchors here so header controls stay clickable.
+            .overlayPreferenceValue(HeaderControlsKey.self) { controls in
+                GeometryReader { geometry in
+                    OverlayDragHandle(enabled: presentation.isPinned,
+                                      excludedRects: controls.map { geometry[$0] })
+                        .frame(height: (DeckSpacing.edge + (compact ? 40 : 52)
+                                        + DeckSpacing.sections(compact: compact)) * snapshot.layout.scale)
+                        .allowsHitTesting(presentation.isPinned)
+                }
+            }
+    }
+
+    private var deckContents: some View {
         VStack(spacing: 0) {
             header
             VStack(alignment: .leading, spacing: DeckSpacing.sections(compact: compact)) {
@@ -157,7 +177,7 @@ struct DeckView: View {
                     folderContents
                 } else {
                     GeometryReader { area in
-                        let content = DeckContentLayout(width: snapshot.layout.frame.width,
+                        let content = DeckContentLayout(width: snapshot.layout.contentSize.width,
                                                         availableHeight: area.size.height,
                                                         registeredCount: registeredItems.count, compact: compact)
                         VStack(spacing: 0) {
@@ -246,13 +266,6 @@ struct DeckView: View {
         .padding(.horizontal, DeckSpacing.edge)
         .padding(.top, DeckSpacing.edge)
         .padding(.bottom, DeckSpacing.sections(compact: compact))
-        .overlayPreferenceValue(HeaderControlsKey.self) { controls in
-            GeometryReader { geometry in
-                OverlayDragHandle(enabled: presentation.isPinned,
-                                  excludedRects: controls.map { geometry[$0] })
-                    .allowsHitTesting(presentation.isPinned)
-            }
-        }
     }
 
     private var headerTitle: String {
@@ -264,7 +277,7 @@ struct DeckView: View {
         return snapshot.contextWindowTitle ?? "지금 하던 일에서, 다음으로"
     }
 
-    private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.frame.width, compact: compact) }
+    private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.contentSize.width, compact: compact) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
     private func workArea(height: CGFloat) -> some View {
         HStack(alignment: .top, spacing: DeckSpacing.columns) {
@@ -340,7 +353,7 @@ struct DeckView: View {
             colors.menus = TileColor(0x777777)
         }
         return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
-            if previewStartTileLabels {
+            if startTileLabels {
                 ZStack(alignment: .bottomLeading) {
                     Image(systemName: "command").font(.system(size: small ? 26 : 52, weight: .light))
                         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, small ? 12 : 22)
@@ -395,7 +408,7 @@ struct DeckView: View {
     }
 
     private var registeredSection: some View {
-        let grid = RegisteredGridGeometry(width: snapshot.layout.frame.width)
+        let grid = RegisteredGridGeometry(width: snapshot.layout.contentSize.width)
         return VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
@@ -415,7 +428,7 @@ struct DeckView: View {
                               spacing: grid.gap) {
                         ForEach(Array(registeredItems.enumerated()), id: \.element.id) { index, pin in
                             Button { selectPin(pin) } label: {
-                                if previewStartTileLabels {
+                                if startTileLabels {
                                     ZStack(alignment: .bottomLeading) {
                                         Group {
                                             if pin.kind == .trash { Image(systemName: "trash").font(.system(size: 34)) }
@@ -553,7 +566,7 @@ struct DeckView: View {
                                   dark: deckScheme == .dark, theme: settings.theme, colors: colors)
         return Button { selectWindow(window) } label: {
             Group {
-              if previewStartTileLabels {
+              if startTileLabels {
                 let compactTile = window.isApplication || small
                 ZStack(alignment: .bottomLeading) {
                     Icon(url: window.appURL, size: compactTile ? 26 : 58)
@@ -607,14 +620,14 @@ struct DeckView: View {
               }
             }
                 .overlay(alignment: .topTrailing) {
-                    if previewStartTileLabels && (small || window.isApplication) {
+                    if startTileLabels && (small || window.isApplication) {
                         numberBadge(index, side: 12).padding(2)
                     } else {
                         numberBadge(index).padding(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5)
                     }
                 }
         }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
-                                selected: presentation.selection == "window:\(window.id)"))
+                                selected: presentation.selection == "window:\(window.id)", compact: small || window.isApplication))
             .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
                 + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
             .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title)" + (desktop == .current ? ", 현재 데스크탑" : desktop == .other ? ", 다른 데스크탑" : ""))

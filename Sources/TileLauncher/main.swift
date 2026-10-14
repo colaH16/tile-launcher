@@ -288,7 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             layout = previousLayout.refittingContent(registeredCount: settings.activeProfile.items.count,
                                                        visibleFrame: previousScreen.visibleFrame)
         } else {
-            layout = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point)
+            layout = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
                 .fittingContent(registeredCount: settings.activeProfile.items.count)
         }
         guard layout.supported else {
@@ -334,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 self?.hide()
                             })
         let hosting = NSHostingView(rootView: view)
-        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
+        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size), scale: layout.scale)
         let window = DeckPanel(contentRect: layout.frame, styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered, defer: false)
         window.onClose = { [weak self] in
@@ -522,11 +522,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let panel, panel.isVisible, let content = visibleContent,
               let screen = panel.screen ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) else { return }
         let old = content.snapshot.layout
-        let current = PanelLayout(frame: panel.frame, compact: old.compact, supported: old.supported)
+        let current = PanelLayout(frame: panel.frame, compact: old.compact, supported: old.supported, scale: old.scale)
         let fitted = current.refittingContent(registeredCount: registeredCount, visibleFrame: screen.visibleFrame)
         guard fitted != old || fitted.frame != panel.frame else { return }
         content.snapshot.layout = fitted
         panel.setFrame(fitted.frame, display: true)
+        (panel.contentView as? DeckSurfaceView)?.updateScale(fitted.scale)
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.invalidateShadow()
     }

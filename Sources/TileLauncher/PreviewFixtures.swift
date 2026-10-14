@@ -298,14 +298,20 @@ struct DeckPreview: View {
     var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
          recentAppearance: RecentAppearance = .grouped, comparisonSample: Bool = false, recentCount: Int = 16,
-         menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false) {
+         menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false, deliveredScale: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
-        _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
+        let fixture = PreviewFixture(theme: theme, customColors: customColors,
                                                           compact: compact, registeredCount: registeredCount,
                                                           comparisonSample: comparisonSample, recentCount: recentCount,
                                                           menuComparison: comparisonSample || realisticSample,
-                                                          realisticSample: realisticSample, groupedRecent: recentAppearance == .grouped))
+                                                          realisticSample: realisticSample, groupedRecent: recentAppearance == .grouped)
+        if deliveredScale {
+            fixture.content.snapshot.layout = PanelLayout.calculate(
+                visibleFrame: CGRect(x: 0, y: 0, width: compact ? 1024 : 2560, height: compact ? 768 : 1440),
+                cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: fixture.settings.pins.count)
+        }
+        _fixture = StateObject(wrappedValue: fixture)
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
@@ -316,7 +322,7 @@ struct DeckPreview: View {
                  menuAppearance: menuAppearance, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(DeckSurfaceView.shape)
+            .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius * fixture.content.snapshot.layout.scale, style: .continuous))
     }
 }
 
@@ -438,6 +444,7 @@ enum PreviewExport {
         try delegate.verifyClickExecutionForPreview()
         try verifySettingsNavigation()
         try verifyGroupedWindowContent()
+        try verifyScaledDragTargets()
         try verifyWebAppIcon()
         try verifyQuickOptionReopen()
         try verifyMenuCatalogChoices()
@@ -480,6 +487,8 @@ enum PreviewExport {
                 try save(view, dark: dark, to: directory.appendingPathComponent("\(theme.rawValue)-\(dark ? "dark" : "light").png"))
             }
         }
+        try save(MonitorGroupingPreview(grouped: true, production: true, deliveredLayout: true).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("delivered-121-selected.png"))
         try save(DeckPreview(theme: .classic, customColors: true).environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("custom-dark.png"))
         try save(DeckPreview(theme: .classic, compact: true).environment(\.colorScheme, .dark),
@@ -560,9 +569,63 @@ enum PreviewExport {
                          to: directory.appendingPathComponent("overlay-start-\(enlarged ? "large" : "base")-\(canvas ? "canvas" : "native").png"))
             }
         }
+        for theme in DeckTheme.allCases {
+            for dark in [false, true] {
+                try save(DeckPreview(theme: theme, registeredCount: 18, realisticSample: true, deliveredScale: true)
+                            .environment(\.colorScheme, dark ? .dark : .light), dark: dark,
+                         to: directory.appendingPathComponent("delivered-121-\(theme.rawValue)-\(dark ? "dark" : "light").png"))
+            }
+        }
+        for count in [0, 36, 200] {
+            try save(DeckPreview(theme: .classic, registeredCount: count, deliveredScale: true).environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("delivered-121-profile-\(count).png"))
+        }
+        try save(DeckPreview(theme: .classic, compact: true, registeredCount: 36, deliveredScale: true).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("delivered-121-small-screen.png"))
+        try save(DeckPreview(theme: .classic, registeredCount: 36, recentCount: 100, deliveredScale: true).environment(\.colorScheme, .dark),
+                 scrollToEnd: true, to: directory.appendingPathComponent("delivered-121-scroll-bottom.png"))
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
+    }
+
+    @MainActor private static func verifyScaledDragTargets() throws {
+        let fixture = PreviewFixture(theme: .classic, registeredCount: 18)
+        let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+                                           cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: 18)
+        fixture.content.snapshot.layout = layout
+        fixture.presentation.pin()
+        let view = DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
+            presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
+            changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
+            openInFinder: { _ in }, openTrash: {}, showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
+        let hosting = NSHostingView(rootView: view)
+        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size), scale: layout.scale)
+        let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = surface
+        surface.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        surface.layoutSubtreeIfNeeded()
+        func dragViews(_ view: NSView) -> [OverlayDragHandle.DragView] {
+            (view as? OverlayDragHandle.DragView).map { [$0] } ?? view.subviews.flatMap(dragViews)
+        }
+        guard let drag = dragViews(surface).first,
+              abs(drag.bounds.width - layout.frame.width) < 1,
+              abs(drag.bounds.height - 92 * layout.scale) < 1,
+              drag.excludedRects.count == 2,
+              drag.excludedRects.allSatisfy({ abs($0.width - 34 * layout.scale) < 1 && drag.bounds.contains($0) }),
+              !window.isVisible else {
+            throw NSError(domain: "TileLauncher.Preview", code: 82,
+                          userInfo: [NSLocalizedDescriptionKey: "Scaled header/controls must use physical window coordinates."])
+        }
+        for rect in drag.excludedRects {
+            let point = drag.convert(CGPoint(x: rect.midX, y: rect.midY), to: drag.superview)
+            guard drag.hitTest(point) == nil else { throw NSError(domain: "TileLauncher.Preview", code: 83) }
+        }
+        let background = drag.convert(CGPoint(x: drag.bounds.midX, y: drag.bounds.midY), to: drag.superview)
+        guard drag.hitTest(background) === drag else { throw NSError(domain: "TileLauncher.Preview", code: 84) }
+        print("Scaled header: \(layout.frame.size), scale=\(layout.scale), physical drag bounds and both control exclusions passed offscreen.")
     }
 
     @MainActor private static func verifyGroupedWindowContent() throws {
