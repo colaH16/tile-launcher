@@ -251,7 +251,8 @@ struct DeckView: View {
                     InlineHeaderProposal(
                         iconURL: browser.current ?? snapshot.context?.url
                             ?? snapshot.windows.first { $0.appName == snapshot.context?.name }?.appURL,
-                        appName: headerTitle, windowName: headerSubtitle, opticalBalance: previewChrome.optical)
+                        appName: headerTitle, windowName: headerSubtitle, opticalBalance: previewChrome.optical,
+                        sizeScale: previewChrome.titleScale)
                 } else {
                     VStack(spacing: 1) {
                         Text(headerTitle)

@@ -494,6 +494,18 @@ enum PreviewExport {
         }
         try save(OpticalChromeComparison(directory: directory).environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("chrome-178-comparison.png"))
+        for larger in [false, true] {
+            let view = DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
+                                   deliveredScale: true, chromeProposal: larger ? .largerTitle : .opticalBalance)
+                .environment(\.colorScheme, .dark)
+            let name = larger ? "after" : "before"
+            try save(view, to: directory.appendingPathComponent("chrome-179-\(name).png"))
+            try save(view, capture: .title, to: directory.appendingPathComponent("chrome-179-\(name)-title.png"))
+            try save(view, capture: .footerLeftCompact, to: directory.appendingPathComponent("chrome-179-\(name)-left.png"))
+            try save(view, capture: .footerRightCompact, to: directory.appendingPathComponent("chrome-179-\(name)-right.png"))
+        }
+        try save(LargerChromeComparison(directory: directory).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("chrome-179-comparison.png"))
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()

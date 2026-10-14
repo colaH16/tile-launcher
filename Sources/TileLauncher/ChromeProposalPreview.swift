@@ -1,19 +1,26 @@
 import AppKit
 import SwiftUI
 
-/// R177–R178 comparison only. Production callers retain the current chrome.
+/// R177–R179 comparison only. Production callers retain the current chrome.
 enum ChromeProposalPreview {
-    case current, inlineTitle, opticalBalance
+    case current, inlineTitle, opticalBalance, largerTitle
     var proposed: Bool { self != .current }
-    var optical: Bool { self == .opticalBalance }
-    var footerExtraInset: CGFloat { optical ? 8 : proposed ? 16 : 0 }
+    var optical: Bool { self == .opticalBalance || self == .largerTitle }
+    var titleScale: CGFloat { self == .largerTitle ? 1.15 : 1 }
+    var footerExtraInset: CGFloat {
+        switch self {
+        case .current, .largerTitle: 0
+        case .inlineTitle: 16
+        case .opticalBalance: 8
+        }
+    }
     // Current footer: 16 gap + 18 line + 24 outside + 4 sizing reserve.
     // Proposal: 12 gap + 14 line + 8 outside; no duplicated reserve.
     var heightReduction: CGFloat { proposed ? 28 : 0 }
 }
 
 enum ChromeCapture {
-    case title, footer, footerRight
+    case title, footer, footerRight, footerLeftCompact, footerRightCompact
     func rect(in size: CGSize) -> CGRect {
         switch self {
         case .title:
@@ -24,6 +31,10 @@ enum ChromeCapture {
         case .footerRight:
             let width = min(500, size.width)
             return CGRect(x: size.width - width, y: size.height - 180, width: width, height: 180)
+        case .footerLeftCompact, .footerRightCompact:
+            let width = min(350, size.width)
+            let x = self == .footerLeftCompact ? 0 : size.width - width
+            return CGRect(x: x, y: size.height - 64, width: width, height: 64)
         }
     }
 }
@@ -33,21 +44,54 @@ struct InlineHeaderProposal: View {
     let appName: String
     let windowName: String
     var opticalBalance = false
+    var sizeScale: CGFloat = 1
 
     var body: some View {
-        HStack(spacing: opticalBalance ? 6 : 8) {
-            Icon(url: iconURL, size: opticalBalance ? 26 : 20)
+        HStack(spacing: (opticalBalance ? 6 : 8) * sizeScale) {
+            Icon(url: iconURL, size: (opticalBalance ? 26 : 20) * sizeScale)
                 .environment(\.deckScale, 1).accessibilityHidden(true)
-            Text(appName).font(.system(size: 18, weight: .semibold))
+            Text(appName).font(.system(size: 18 * sizeScale, weight: .semibold))
                 .lineLimit(1).truncationMode(.middle).layoutPriority(1)
             Text("—").foregroundStyle(.secondary)
             Text(windowName).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.middle)
         }
-        .font(.system(size: 13))
+        .font(.system(size: 13 * sizeScale))
         .offset(y: opticalBalance ? 3 : 0)
         .help("\(appName) — \(windowName)")
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct LargerChromeComparison: View {
+    let directory: URL
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("이전 시안 · 상단")
+            capture("before-title", width: 700, height: 84)
+            Text("새 시안 · 비율은 그대로, 제목과 아이콘 15% 확대")
+            capture("after-title", width: 700, height: 84)
+            Text("이전 시안 · 하단 양끝")
+            corners("before")
+            Text("새 시안 · 좌우는 1.4.2 위치, 줄인 아래 여백 유지")
+            corners("after")
+        }
+        .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+        .padding(16).frame(width: 740)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+    private func corners(_ name: String) -> some View {
+        HStack(spacing: 8) {
+            capture("\(name)-left", width: 350, height: 64)
+            capture("\(name)-right", width: 350, height: 64)
+        }
+    }
+    private func capture(_ name: String, width: CGFloat, height: CGFloat) -> some View {
+        Group {
+            if let image = NSImage(contentsOf: directory.appendingPathComponent("chrome-179-\(name).png")) {
+                Image(nsImage: image).resizable().frame(width: width, height: height).background(Color.black)
+            }
+        }
     }
 }
 
