@@ -181,8 +181,7 @@ struct DeckView: View {
                 GeometryReader { geometry in
                     OverlayDragHandle(enabled: presentation.isPinned,
                                       excludedRects: controls.map { geometry[$0] })
-                        .frame(height: (DeckSpacing.edge + (compact ? 40 : 52)
-                                        + DeckSpacing.sections(compact: compact)) * snapshot.layout.scale)
+                        .frame(height: DeckSpacing.header(compact: compact, scale: snapshot.layout.scale))
                         .allowsHitTesting(presentation.isPinned)
                 }
             }
@@ -191,18 +190,19 @@ struct DeckView: View {
     private var deckContents: some View {
         VStack(spacing: u(0)) {
             header
-            VStack(alignment: .leading, spacing: u(DeckSpacing.sections(compact: compact))) {
+            VStack(alignment: .leading, spacing: DeckSpacing.sections(compact: compact)) {
                 if browser.current != nil {
                     folderContents
                 } else {
                     GeometryReader { area in
                         let content = DeckContentLayout(width: snapshot.layout.contentSize.width,
-                                                        availableHeight: area.size.height / snapshot.layout.scale,
-                                                        registeredCount: registeredItems.count, compact: compact)
+                                                        availableHeight: area.size.height,
+                                                        registeredCount: registeredItems.count, compact: compact,
+                                                        scale: snapshot.layout.scale)
                         VStack(spacing: u(0)) {
-                            workArea(height: u(content.workHeight))
-                            Color.clear.frame(height: u(content.gap))
-                            registeredSection.frame(height: u(content.registeredHeight))
+                            workArea(height: content.workHeight)
+                            Color.clear.frame(height: content.gap)
+                            registeredSection.frame(height: content.registeredHeight)
                             Spacer(minLength: u(0))
                         }
                     }
@@ -222,8 +222,8 @@ struct DeckView: View {
                 .frame(height: u(18))
                 .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, u(DeckSpacing.edge))
-            .padding(.bottom, u(DeckSpacing.edge))
+            .padding(.horizontal, DeckSpacing.edge)
+            .padding(.bottom, DeckSpacing.edge)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.deckTheme, settings.theme)
@@ -284,10 +284,10 @@ struct DeckView: View {
                 .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
             }
         }
-        .frame(height: u(compact ? 40 : 52))
-        .padding(.horizontal, u(DeckSpacing.edge))
-        .padding(.top, u(DeckSpacing.edge))
-        .padding(.bottom, u(DeckSpacing.sections(compact: compact)))
+        .frame(height: DeckSpacing.headerContent(compact: compact, scale: snapshot.layout.scale))
+        .padding(.horizontal, DeckSpacing.edge)
+        .padding(.top, DeckSpacing.edge)
+        .padding(.bottom, DeckSpacing.sections(compact: compact))
     }
 
     private var headerTitle: String {
@@ -302,7 +302,7 @@ struct DeckView: View {
     private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.contentSize.width, compact: compact, scale: snapshot.layout.scale) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
     private func workArea(height: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: u(DeckSpacing.columns)) {
+        HStack(alignment: .top, spacing: DeckSpacing.columns) {
             if !compact { menuSection(height: height).frame(width: geometry.menuWidth) }
             recentSection(height: height).frame(width: geometry.windowWidth)
         }
@@ -314,7 +314,7 @@ struct DeckView: View {
     private func tileWidth(_ span: Int) -> CGFloat { geometry.unit * CGFloat(span) + geometry.gap * CGFloat(span - 1) }
 
     private func menuSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: u(DeckSpacing.sectionTitle)) {
+        VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack(spacing: u(8)) {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
@@ -431,7 +431,7 @@ struct DeckView: View {
 
     private var registeredSection: some View {
         let grid = RegisteredGridGeometry(width: snapshot.layout.contentSize.width, scale: snapshot.layout.scale)
-        return VStack(alignment: .leading, spacing: u(DeckSpacing.sectionTitle)) {
+        return VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack(spacing: u(8)) {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
                 profilePicker
@@ -481,7 +481,7 @@ struct DeckView: View {
                                 .help(pinHelp(pin, index: index))
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }
-                    }.padding(.top, u(4))
+                    }.padding(.top, 4)
                 }.id(presentation.profile?.id ?? snapshot.profileID)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -517,7 +517,7 @@ struct DeckView: View {
         }
     }
     private func recentSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: u(DeckSpacing.sectionTitle)) {
+        VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack(spacing: u(8)) {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(font(.caption2)).foregroundStyle(.tertiary)
@@ -559,7 +559,7 @@ struct DeckView: View {
                 let micro = (geometry.unit - geometry.gap) / 2
                 let bottom = packed.map { $0.row + $0.height }.max() ?? 0
                 let visible = RecentTileArrangement.visible(packed, module: micro, gap: geometry.gap,
-                                                            offset: recentOffset, viewport: max(0, height - u(DeckSpacing.workHeader)))
+                                                            offset: recentOffset, viewport: max(0, height - DeckSpacing.workHeader(scale: snapshot.layout.scale)))
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         ForEach(visible, id: \.index) { place in

@@ -42,19 +42,20 @@ final class RecentWindowPolicyTests: XCTestCase {
             applications: [false, false, false, false, false]), [true, false, true, true, false])
     }
 
-    func testNativeGeometryUsesPhysicalPointsWithoutChangingColumns() {
+    func testNativeGeometryScalesTilesInsideUnscaledOuterMargins() {
         for compact in [false, true] {
             let base = DeckGeometry(width: 1120, compact: compact)
-            let scaled = DeckGeometry(width: 1120, compact: compact, scale: 1.4)
+            let scaled = DeckGeometry(width: 1120, compact: compact, scale: 1.3)
             XCTAssertEqual(scaled.windowColumns, base.windowColumns)
-            XCTAssertEqual(scaled.unit, base.unit * 1.4, accuracy: 0.001)
-            XCTAssertEqual(scaled.windowWidth, base.windowWidth * 1.4, accuracy: 0.001)
-            XCTAssertEqual(scaled.menuWidth, base.menuWidth * 1.4, accuracy: 0.001)
-            XCTAssertEqual(scaled.viewport(rows: 3.3), base.viewport(rows: 3.3) * 1.4, accuracy: 0.001)
+            XCTAssertEqual(scaled.gap, base.gap * 1.3, accuracy: 0.001)
+            XCTAssertEqual(scaled.menuWidth + scaled.windowWidth + (compact ? 0 : DeckSpacing.columns),
+                           1120 * 1.3 - 2 * DeckSpacing.edge, accuracy: 0.001)
+            XCTAssertGreaterThan(scaled.unit, base.unit)
         }
         let base = RegisteredGridGeometry(width: 1120)
-        let scaled = RegisteredGridGeometry(width: 1120, scale: 1.4)
+        let scaled = RegisteredGridGeometry(width: 1120, scale: 1.3)
         XCTAssertEqual(base.columns, scaled.columns)
-        XCTAssertEqual(scaled.shelfHeight(count: 18, maximumRows: 3), base.shelfHeight(count: 18, maximumRows: 3) * 1.4, accuracy: 0.001)
+        XCTAssertEqual(CGFloat(scaled.columns) * scaled.side + CGFloat(scaled.columns - 1) * scaled.gap,
+                       1120 * 1.3 - 2 * DeckSpacing.edge, accuracy: 0.001)
     }
 }

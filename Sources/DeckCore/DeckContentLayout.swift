@@ -7,37 +7,41 @@ public struct RegisteredGridGeometry {
     public let gap: CGFloat
     public init(width: CGFloat, scale: CGFloat = 1) {
         gap = 8 * scale
-        let content = max(1, width - DeckSpacing.edge * 2)
-        columns = max(1, Int((content + 8) / (60 + 8)))
+        let content = max(1, width - DeckSpacing.edge * 2 / scale)
+        // Keep the same density as the base layout when only margins change.
+        columns = max(1, Int((max(1, width - DeckSpacing.edge * 2) + 8) / (60 + 8)))
         side = (content - CGFloat(columns - 1) * 8) / CGFloat(columns) * scale
-        headerHeight = DeckSpacing.shelfHeader * scale
+        headerHeight = DeckSpacing.shelfHeader(scale: scale)
     }
     private let headerHeight: CGFloat
     public func shelfHeight(count: Int, maximumRows: Int) -> CGFloat {
         let rows = min(maximumRows, max(1, (max(0, count) + columns - 1) / columns))
-        return CGFloat(rows) * side + CGFloat(rows - 1) * gap + headerHeight
+        // AppKit rounds scroll document edges to points. Reserve that rounding
+        // here too so a fully fitting grid does not lose its last pixel.
+        return (CGFloat(rows) * side + CGFloat(rows - 1) * gap).rounded(.up) + headerHeight.rounded(.up) + 1
     }
 }
 
-/// Show three complete rows and a peek at the fourth. Reserve complete
-/// registered rows, falling back only when the display is too small.
+/// Physical heights shared by the panel and the view. Prefer 3.3 recent rows
+/// and the profile's registered rows. On smaller screens retain at least two
+/// recent rows (one in compact mode), giving the remaining height to the shelf.
 public struct DeckContentLayout {
     public let registeredHeight: CGFloat
     public let workHeight: CGFloat
     public let workTopInset: CGFloat
     public let gap: CGFloat
 
-    public init(width: CGFloat, availableHeight: CGFloat, registeredCount: Int, compact: Bool) {
+    public init(width: CGFloat, availableHeight: CGFloat, registeredCount: Int, compact: Bool, scale: CGFloat = 1) {
         gap = DeckSpacing.workToShelf(compact: compact)
-        let geometry = DeckGeometry(width: width, compact: compact)
-        let grid = RegisteredGridGeometry(width: width)
+        let geometry = DeckGeometry(width: width, compact: compact, scale: scale)
+        let grid = RegisteredGridGeometry(width: width, scale: scale)
         let oneRegisteredRow = grid.shelfHeight(count: 1, maximumRows: 1)
-        let roomForWork = max(0, availableHeight - gap - oneRegisteredRow)
-        workHeight = min(geometry.viewport(rows: 3.3) + DeckSpacing.workHeader, roomForWork)
-        let room = max(0, availableHeight - workHeight - gap)
-        let rowBudget = max(1, Int((room - DeckSpacing.shelfHeader + grid.gap) / (grid.side + grid.gap)))
-        registeredHeight = min(room, grid.shelfHeight(count: registeredCount,
-                                                       maximumRows: min(rowBudget, compact ? 2 : 3)))
+        let desiredShelf = grid.shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
+        let desiredWork = geometry.viewport(rows: 3.3) + DeckSpacing.workHeader(scale: scale)
+        let minimumWork = geometry.viewport(rows: compact ? 1 : 2) + DeckSpacing.workHeader(scale: scale)
+        let available = max(0, availableHeight - gap)
+        registeredHeight = min(available, max(oneRegisteredRow, min(desiredShelf, available - minimumWork)))
+        workHeight = min(desiredWork, max(0, available - registeredHeight))
         workTopInset = 0
     }
 }

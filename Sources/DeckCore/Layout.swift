@@ -6,7 +6,7 @@ public struct PanelLayout: Equatable {
     public let compact: Bool
     public let supported: Bool
     public let scale: CGFloat
-    public static let preferredScale: CGFloat = 1.4
+    public static let preferredScale: CGFloat = 1.3
     public init(frame: CGRect, compact: Bool, supported: Bool, scale: CGFloat = 1) {
         self.frame = frame; self.compact = compact; self.supported = supported
         self.scale = scale.isFinite ? max(1, min(Self.preferredScale, scale)) : 1
@@ -15,7 +15,7 @@ public struct PanelLayout: Equatable {
         CGSize(width: frame.width / scale, height: frame.height / scale)
     }
     public var columns: Int {
-        DeckGeometry(width: contentSize.width, compact: compact).windowColumns / 2
+        DeckGeometry(width: contentSize.width, compact: compact, scale: scale).windowColumns / 2
     }
     public var capacity: Int { columns * 3 }
 
@@ -57,15 +57,15 @@ public struct PanelLayout: Equatable {
 
     /// Trim unused vertical space within the existing size/aspect limits.
     public func fittingContent(registeredCount: Int) -> Self {
-        let geometry = DeckGeometry(width: contentSize.width, compact: compact)
-        let shelf = RegisteredGridGeometry(width: contentSize.width)
+        let geometry = DeckGeometry(width: contentSize.width, compact: compact, scale: scale)
+        let shelf = RegisteredGridGeometry(width: contentSize.width, scale: scale)
             .shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
         // Reserve native caption/icon line metrics plus rounding so a shelf row
         // never disappears for a one-point shortage at the viewport boundary.
-        let desired = geometry.viewport(rows: 3.3) + DeckSpacing.workHeader + shelf
-            + DeckSpacing.workToShelf(compact: compact) + DeckSpacing.chrome(compact: compact)
-        let minimum: CGFloat = compact ? 420 : 620
-        let height = min(frame.height, max(minimum, desired.rounded(.up)) * scale)
+        let desired = geometry.viewport(rows: 3.3) + DeckSpacing.workHeader(scale: scale) + shelf
+            + DeckSpacing.workToShelf(compact: compact) + DeckSpacing.chrome(compact: compact, scale: scale)
+        let minimum: CGFloat = (compact ? 420 : 620) * scale
+        let height = min(frame.height, max(minimum, desired.rounded(.up)))
         return Self(frame: CGRect(x: frame.minX, y: frame.midY - height / 2, width: frame.width, height: height),
                     compact: compact, supported: supported, scale: scale)
     }
