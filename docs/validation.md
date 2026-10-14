@@ -1,5 +1,16 @@
 # 네이티브 빌드 검증
 
+## R138–R139 · 1.1.4(19) 색상 예시·등록 앱과 폴더
+
+- 사용자가 확정한 최근 창 색상 예시는 회색 1×1 → 연한색 2×2 → 진한색 2×2다. 컬러 1×1을 제외하고 진한색을 오른쪽에 맞췄다. 등록 예시는 파스텔 폴더 → 진한 앱 정사각이며 실제 등록 타일의 kind=.app만 기존 강조 팔레트를 사용한다. 폴더/휴지통은 기존 파스텔, 아이콘·번호/선택·hover/실행/프로필/저장 색은 유지한다.
+- 최초 후보 b99f3ae의 긴 현재/다른 데스크탑 예시 제목이 잘려 색 이름 진한색/연한색과 툴팁으로 보정했다. 전용 AppearancePreview 호스트에 배경을 넣어 네이티브 박스/기본 글자를 확인했다. 이후 R139의 추가 요청은 같은 미전달 1.1.4(19)에 포함했다. 앞 후보 산출물은 v1.1.4-candidate-b99f3ae / v1.1.4-candidate-d12d3dc에 보존하며 최종 기본 경로는 v1.1.4다.
+- 최종 소스 bdd5cb5381c204c0db974b4e74c1456f41114a1a의 독립 최적화 빌드/App Intents 추출 및 Developer ID Team VV2W9U5XT3/강화된 런타임/타임스탬프/strict 서명을 통과했다. /tmp/tile-114-r139-prepare.log, tile-114-r139-sign.log. 실제 서명 배포 실행 파일의 --render-previews에서 키/클릭 정책·메뉴 카탈로그·설정 크기·하단 스크롤·표면 마스크·최근 창 100개 끝 및 전체 렌더를 통과했다(/tmp/tile-114-r139-previews.log). UI 변경에 필요한 빌드/공유 뷰 검사이며 앞선 117개 XCTest/23개 Python을 이번에 다시 실행했다고 기록하지 않는다.
+- appearance-classic/glass-dark/light와 settings-appearance-540/580의 샘플 크기·순서·글자/아이콘을 확인했다. menu-realistic-2-gray-square.png의 앱 강조/폴더·휴지통 파스텔과 읽기 쉬운 글자를 확인했다. 합성 프로필/창 제목·정적 네이티브 렌더이며 실제 사용자 오버레이·데스크탑 Glass 합성·Focus/TCC 입력 확인과 구별한다. 개인 설정을 읽거나 변경하지 않았다.
+- Apple 제출 18ab19a3-c32e-4b28-8a94-843841578f5e은 같은 ID 재조회 후 Accepted이며 티켓·Gatekeeper·최종 ZIP 검증을 통과했다. /tmp/tile-114-notarize.log, tile-114-notarize-final.log. 기존 Keychain profile을 사용했고 공증 로그인 재요청/암호·개인 키 출력은 하지 않았다.
+- 최종 번들 SHA-256 3dcd27969a566885ec88af8de189b061fdba7994e90fee8ba9ebdb2386942111; Tile-Launcher-1.1.4-arm64.zip e9fc1cf196afbe3faf504cab7a22c6a87c539d757bc8e27eb72e819bd139c001; release-metadata.json 5d2b99e5c5da067816eca4aa920de2153d63ec7f0b229ab69baa441f74da6d98; SHA256SUMS.txt d028185ae0b959b27c4eba03888c4343661473ca777e49cf0c35bd376c866ae3.
+- 설치 /Applications/launch at Login/Tile Launcher.app, 백업 /var/folders/cy/rhl7z2sn7mv4yjlmfy7xsl8c0000gp/T/tile-before-114-l0_por0h.app, receipt /tmp/tile-114-install.json, 설치 로그 /tmp/tile-114-install.log. 설치 후 버전1.1.4/빌드19·서명·stapler·Gatekeeper·번들 해시가 공증 산출물과 일치한다. 실행 소유자 파일이 전후 동일하며 자동 재시작/사용자 화면 조작/설정·권한 변경을 하지 않았다. 다음 다시 열기에서 새 빌드로 전환한다.
+- 새 GitHub 릴리스/태그는 만들지 않았고 공개 1.1.3 자산을 보존한다. 다음 누적 노트는 v1.1.3→v1.1.4 범위로 준비하며 소스/최종 검증 기록을 main에 푸시한다.
+
 ## R137 · 1.1.3 정식 공개·누적 노트·공개 다운로드 확인
 
 - GitHub 공개 목록의 직전 실제 정식 버전 v1.0.0과 CHANGELOG/요청·검증 기록 및 v1.0.0..ce58673 Git 변경을 대조했다. 1.1.0/1.1.1/1.1.2/1.1.3 전체 기능·버그·UI 변경을 포함하고 중간 4×2 창 단계/최종 2×2·1×1을 구별했다. 시안은 출시 기능에서 제외했고 R136 원인 확인을 반영해 오래된 USBClean 미확정 안내를 정리했다.
