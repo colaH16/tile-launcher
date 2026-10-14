@@ -8,7 +8,7 @@ struct AppearanceView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: SettingsSpacing.sectionGap) {
                 GroupBox("테마") {
                     VStack(alignment: .leading, spacing: 8) {
                         Picker("타일 모양", selection: $settings.theme) {
@@ -47,7 +47,7 @@ struct AppearanceView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Button("모든 섹션 기본색으로") { settings.tileColors = TileColors() }
                     .disabled(settings.tileColors == TileColors())
-            }.padding(16)
+            }.modifier(SettingsPaneInsets())
         }
     }
     private func colorBinding(_ section: TileSection) -> Binding<Color> {

@@ -41,7 +41,7 @@ final class TileWorkflowTests: XCTestCase {
             let g = DeckGeometry(width: width, compact: compact)
             XCTAssertGreaterThanOrEqual(g.windowColumns, 6)
             XCTAssertGreaterThan(g.unit, 50)
-            let occupied = g.windowWidth + (compact ? 0 : g.menuWidth + 22)
+            let occupied = g.windowWidth + (compact ? 0 : g.menuWidth + 24)
             XCTAssertEqual(occupied, width - 48, accuracy: 0.01)
         }
     }

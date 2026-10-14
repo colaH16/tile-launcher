@@ -1,6 +1,17 @@
 # 네이티브 빌드 검증
 
-최종 검증 기록일: 2026-10-13, Asia/Seoul. 제품명 Tile Launcher, 개발본 0.17.6(13). GitHub 공개본 0.17.6(13).
+최종 검증 기록일: 2026-10-14, Asia/Seoul. 제품명 Tile Launcher, 1.0.0(14) 후보. GitHub 공개본 0.17.6(13).
+
+## R122–R123 · 공통 여백 및 서명 준비
+
+- 가입 완료는 사용자 보고다. 초기 valid identity는 0개였고 Xcode에서 생성 후 유효 Developer ID Application identity 1개를 확인했다. 인증서 유형/유효성만 확인하고 개인 키·계정 암호를 내보내거나 출력하지 않았다. 공증 자격 증명은 별도 사용자 Keychain profile 준비 단계다.
+- 네 설정 탭에 공통 SettingsPaneInsets를 적용해 중복 상단 16pt를 없앴다. 같은 창/스크롤 시작의 실제 공유 SettingsView 렌더링에서 일반 첫 안내와 모양/메뉴/프로필 제목의 시작 높이를 함께 확인했다. 일반 권한→버전 간격 12pt와 바깥 여백 16pt를 사용한다. 일반 fitted 콘텐츠 샘플은 580×849pt이며 폰트/로그인 상태에 따라 달라진다.
+- 기본/작은 540×638pt 창의 네 탭과 일반 하단 스크롤·빈/많은 메뉴를 렌더링했다. 비표시 native TabView는 inline 제목 영역을 추가하므로 기본 일반 본문은 별도 공유 콘텐츠 렌더링으로도 확인했다. 실제 도구 막대/ColorPicker/Glass 합성은 Xcode canvas 또는 실기 확인 범위로 구별한다.
+- DeckSpacing으로 바깥 24pt·열 간 24pt·제목 아래 12pt·섹션 간격과 sizing 계산을 통일했다. 기본 오버레이 1040×719pt에서 최근 창 3줄+다음 일부와 등록 35개 3행을 확인했다. 작은 512×341pt 샘플도 렌더링했다. 타일 비율/순서·폰트·클릭/드래그 기능·기존 테마/색은 바꾸지 않았다.
+- 변경된 헤더 높이에 맞춰 행 경계 검사를 수정했다. 가용 높이 570pt의 등록 3행, 560pt의 완전한 2행 및 작은 화면의 최소 두 창 행/한 등록 행을 검증했다. 극소 부동소수점 경계는 0.001pt 허용 오차로 비교한다.
+- 최종 scripts/test.sh 통과: XCTest 105개, Python release 정책 14개, 실패 없음. 기존 SettingsStore/AppDelegate/HoldMonitor/메뉴/Focus 모델/사용 횟수/마스크 격리 검사도 통과했다. 컴파일 경고/오류 없음.
+- 로그 /tmp/tile-100-tests.log, /tmp/tile-100-previews.log; 이미지 /tmp/tile-100-previews/settings-general-fitted.png, settings-general-580.png, settings-appearance-580.png, settings-menus-580.png, settings-registered-580.png 및 각 -540.png, classic-dark.png, glass-dark.png, compact-dark.png. 사용자 전경 앱/입력/권한을 자동 조작하지 않았다.
+- config의 1.0.0(14)은 후보다. 서명·공증·배포 결과를 이어서 기록하며 현재 공개 v0.17.6은 변경하지 않는다.
 
 ## R120 · 0.17.6 GitHub 공개 완료
 

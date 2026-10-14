@@ -37,7 +37,7 @@ public struct DeckGeometry {
         unit * rows + gap * max(0, ceil(rows) - 1)
     }
     public init(width: CGFloat, compact: Bool) {
-        let content = max(1, width - 48)
+        let content = max(1, width - DeckSpacing.edge * 2)
         if compact {
             windowColumns = max(6, Int((content + 8) / 70) / 2 * 2)
             unit = (content - CGFloat(windowColumns - 1) * 8) / CGFloat(windowColumns)
@@ -45,7 +45,7 @@ public struct DeckGeometry {
             windowWidth = content
         } else {
             // Four menu units; at least six window units (six wide windows in two rows).
-            let available = content - 22
+            let available = content - DeckSpacing.columns
             let totalColumns = max(10, Int((available + 16) / 80) / 2 * 2)
             windowColumns = totalColumns - 4
             unit = (available - CGFloat(totalColumns - 2) * 8) / CGFloat(totalColumns)

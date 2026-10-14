@@ -4,12 +4,15 @@ import CoreGraphics
 
 final class DesktopLayoutTests: XCTestCase {
     func testBottomShelfFitsActualRowsAndCapsOnlyItsViewport() {
-        let one = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 14, compact: false)
-        let three = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 36, compact: false)
-        let many = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 200, compact: false)
-        XCTAssertEqual(one.registeredHeight, 103.42857, accuracy: 0.001)
-        XCTAssertEqual(three.registeredHeight, 246.28571, accuracy: 0.001)
+        let one = DeckContentLayout(width: 1040, availableHeight: 570, registeredCount: 14, compact: false)
+        let three = DeckContentLayout(width: 1040, availableHeight: 570, registeredCount: 36, compact: false)
+        let many = DeckContentLayout(width: 1040, availableHeight: 570, registeredCount: 200, compact: false)
+        let tighter = DeckContentLayout(width: 1040, availableHeight: 560, registeredCount: 36, compact: false)
+        XCTAssertEqual(one.registeredHeight, 105.42857, accuracy: 0.001)
+        XCTAssertEqual(three.registeredHeight, 248.28571, accuracy: 0.001)
         XCTAssertEqual(many.registeredHeight, three.registeredHeight)
+        XCTAssertEqual(tighter.registeredHeight, 176.85714, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(three.workHeight + three.gap + three.registeredHeight, 570)
         XCTAssertEqual(one.workTopInset, 0)
         XCTAssertEqual(three.workTopInset, 0)
     }
@@ -19,14 +22,14 @@ final class DesktopLayoutTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(grid.side, 60)
             XCTAssertLessThan(grid.side, 72)
             XCTAssertEqual(CGFloat(grid.columns) * grid.side + CGFloat(grid.columns - 1) * grid.gap, width - 48, accuracy: 0.01)
-            XCTAssertEqual(grid.shelfHeight(count: grid.columns + 1, maximumRows: 3), grid.side * 2 + grid.gap + 40)
+            XCTAssertEqual(grid.shelfHeight(count: grid.columns + 1, maximumRows: 3), grid.side * 2 + grid.gap + 42)
         }
     }
     func testWorkAreaShowsThreeRowsAndThirtyPercentOfFourth() {
         let content = DeckContentLayout(width: 900, availableHeight: 520, registeredCount: 36, compact: false)
         let geometry = DeckGeometry(width: 900, compact: false)
         XCTAssertEqual(content.workTopInset, 0)
-        XCTAssertEqual(content.workHeight, geometry.unit * 3.3 + geometry.gap * 3 + 30, accuracy: 0.001)
+        XCTAssertEqual(content.workHeight, geometry.unit * 3.3 + geometry.gap * 3 + 32, accuracy: 0.001)
         XCTAssertEqual(content.registeredHeight, RegisteredGridGeometry(width: 900).shelfHeight(count: 24, maximumRows: 2))
         XCTAssertLessThan(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, 520)
     }
@@ -34,7 +37,7 @@ final class DesktopLayoutTests: XCTestCase {
         for (width, bodyHeight, compact): (CGFloat, CGFloat, Bool) in [(512, 298, true), (760, 470, false), (1040, 560, false)] {
             let content = DeckContentLayout(width: width, availableHeight: bodyHeight, registeredCount: 100, compact: compact)
             XCTAssertGreaterThanOrEqual(content.registeredHeight, 94)
-            XCTAssertGreaterThanOrEqual(content.workHeight, DeckGeometry(width: width, compact: compact).twoRows + 30)
+            XCTAssertGreaterThanOrEqual(content.workHeight, DeckGeometry(width: width, compact: compact).twoRows + 32 - 0.001)
             XCTAssertGreaterThanOrEqual(content.workTopInset, 0)
             XCTAssertLessThanOrEqual(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, bodyHeight)
         }

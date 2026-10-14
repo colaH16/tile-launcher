@@ -17,7 +17,7 @@ R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공�
 
 ## 지금 준비하는 개발용 서명 배포
 
-현재 개발 구성은 `release/config.json`의 v0.17.6, 빌드 13, Apple Silicon, 정식 릴리스(prerelease=false)다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
+현재 개발 구성은 `release/config.json`의 v1.0.0, 빌드 14, Apple Silicon, 정식 릴리스(prerelease=false) 후보다. R123에 따라 Developer ID 서명/공증을 준비하며 아직 서명·공개 완료 상태가 아니다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개다.
 
 R108의 0.17.1 공개는 완료했다. R120에서 0.17.6 공개를 요청해 R113의 보류를 해제했고 2026-10-13 17:03 KST 게시를 완료했다. R119의 여백 수정은 다음 UI 작업이다. 아래 단계는 이후 새 버전에 적용하며 이미 공개한 0.17.6을 다시 게시/덮어쓰지 않는다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
@@ -29,10 +29,10 @@ python3 scripts/release.py verify
 ```
 
 - `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
-- `~/Library/Developer/TileLauncher/releases/v0.17.6/downloads`에 `Tile-Launcher-0.17.6-arm64-unnotarized.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `~/Library/Developer/TileLauncher/releases/v1.0.0/downloads`에 `Tile-Launcher-1.0.0-arm64.zip`, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
 - `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
-- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v0.17.6/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
-- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v0.17.6`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
+- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v1.0.0/release-notes.md`에 생성한다. 개발용 서명/공증 없음과 첫 실행 허용 절차가 자동으로 포함된다.
+- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v1.0.0`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
 
 ## GitHub 초안과 정식 게시
 
@@ -68,6 +68,12 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 - Accepted 후에만 티켓을 붙이고 Gatekeeper 검사를 통과한 앱을 다시 ZIP으로 만든다. 이전 사본은 pre-sign.app/pre-staple.app으로 보존한다. 공증 후 다운로드 폴더에 이전 ZIP이 남을 수 있지만 게시 도구는 manifest에 기록된 최종 파일만 사용한다.
 - 공증된 결과는 `--allow-unnotarized` 없이 draft/publish할 수 있다. 이미 0.x를 개발용 서명으로 공개했더라도 최초 Developer ID 서명본은 1.0.0으로 별도 준비한다. 공개된 자산을 조용히 바꾸지 않는다.
 - 로컬 manifest/log/인증 정보는 공개하지 않는다. 공개 메타데이터에는 버전·아키텍처·소스 SHA·도구 버전·서명 상태만 담는다.
+
+## 가입 경로 안내 정정 · 2026-10-14
+
+앱 가입만 안내했던 기존 절차는 웹 경로를 함께 제시하지 않은 누락이었다. 사용자는 앱 신분 확인에 실패한 뒤 웹에서 가입을 완료했다. [웹 가입](https://developer.apple.com/help/account/membership/program-enrollment)과 [Apple의 신원 확인 조건](https://developer.apple.com/help/account/membership/identity-verification/)을 먼저 확인하며, 웹 경로가 모든 계정에서 신분 확인을 생략한다고 보장하지 않는다. 아래 앱 경로는 선택지 중 하나다.
+
+가입 후 GitHub 앱 배포에는 Developer ID Application 인증서와 로컬 개인 키가 필요하다. Xcode Settings의 Apple Accounts/Accounts에서 유료 팀 → Manage Certificates → + → Developer ID Application을 생성한다. [공식 인증서 안내](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/). 같은 Mac에서 만들면 인증서·개인 키를 내보낼 필요가 없다. 실제 local identity를 확인한 후 서명한다.
 
 ## 사용자가 진행하는 등록
 

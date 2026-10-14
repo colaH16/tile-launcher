@@ -121,7 +121,7 @@ struct SettingsView: View {
                 if settings.pins.isEmpty { Text("추가 버튼으로 앱과 폴더를 등록하세요.").foregroundStyle(.secondary) }
             }.frame(minHeight: 150)
             Text("앞의 10개에 1–9, 0이 표시됩니다. 순서를 바꾸면 숫자도 바뀝니다.").font(.caption).foregroundStyle(.secondary)
-        }.padding(16)
+        }.modifier(SettingsPaneInsets())
     }
 
 }
@@ -177,7 +177,7 @@ struct MenuSettingsView: View {
                     }
                 }.fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(16)
+        }.modifier(SettingsPaneInsets())
         .onAppear {
             refreshApps()
             handleAdditionRequest()

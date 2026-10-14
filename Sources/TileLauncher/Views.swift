@@ -122,7 +122,7 @@ struct DeckView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            VStack(alignment: .leading, spacing: compact ? 10 : 18) {
+            VStack(alignment: .leading, spacing: DeckSpacing.sections(compact: compact)) {
                 if browser.current != nil {
                     folderContents
                 } else {
@@ -149,8 +149,8 @@ struct DeckView: View {
                 .frame(height: 18)
                 .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .padding(.horizontal, DeckSpacing.edge)
+            .padding(.bottom, DeckSpacing.edge)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.deckTheme, settings.theme)
@@ -210,9 +210,9 @@ struct DeckView: View {
             }
         }
         .frame(height: compact ? 40 : 52)
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .padding(.bottom, compact ? 10 : 18)
+        .padding(.horizontal, DeckSpacing.edge)
+        .padding(.top, DeckSpacing.edge)
+        .padding(.bottom, DeckSpacing.sections(compact: compact))
         .overlayPreferenceValue(HeaderControlsKey.self) { controls in
             GeometryReader { geometry in
                 OverlayDragHandle(enabled: presentation.isPinned,
@@ -234,7 +234,7 @@ struct DeckView: View {
     private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.frame.width, compact: compact) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
     private func workArea(height: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: 22) {
+        HStack(alignment: .top, spacing: DeckSpacing.columns) {
             if !compact { menuSection(height: height).frame(width: geometry.menuWidth) }
             recentSection(height: height).frame(width: geometry.windowWidth)
         }
@@ -246,7 +246,7 @@ struct DeckView: View {
     private func tileWidth(_ span: Int) -> CGFloat { geometry.unit * CGFloat(span) + geometry.gap * CGFloat(span - 1) }
 
     private func menuSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
@@ -313,7 +313,7 @@ struct DeckView: View {
 
     private var registeredSection: some View {
         let grid = RegisteredGridGeometry(width: snapshot.layout.frame.width)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
                 profilePicker
@@ -382,7 +382,7 @@ struct DeckView: View {
         }
     }
     private func recentSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
             HStack {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)

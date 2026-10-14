@@ -3,7 +3,7 @@ import SwiftUI
 
 enum SettingsWindowLayout {
     static let defaultWidth: CGFloat = 580
-    static let outerPadding: CGFloat = 16
+    static let outerPadding = SettingsSpacing.paneInset
 
     @MainActor static func fittedContentSize(settings: SettingsStore, loginItem: LoginItemManager) -> CGSize {
         let content = GeneralSettingsContent(settings: settings, loginItem: loginItem,

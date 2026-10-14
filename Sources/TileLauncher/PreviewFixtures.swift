@@ -318,7 +318,7 @@ enum PreviewExport {
                     .background(Color(nsColor: .windowBackgroundColor)),
                  to: directory.appendingPathComponent("settings-general-fitted.png"))
         for size in [fittedSize, CGSize(width: 540, height: 638)] {
-            for tab in [SettingsTab.general, .menus] where size != fittedSize || tab != .general {
+            for tab in [SettingsTab.general, .appearance, .menus, .registered] {
                 try save(SettingsLayoutPreview(tab: tab, size: size).environment(\.colorScheme, .dark),
                          to: directory.appendingPathComponent("settings-\(tab)-\(Int(size.width)).png"))
             }
