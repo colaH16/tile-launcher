@@ -154,6 +154,7 @@ struct DeckView: View {
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     var previewLargeWindowIcons = false
     var previewBalancedWindowLabels = false
+    var previewChrome: ChromeProposalPreview = .current
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -190,7 +191,7 @@ struct DeckView: View {
     private var deckContents: some View {
         VStack(spacing: u(0)) {
             header
-            VStack(alignment: .leading, spacing: DeckSpacing.sections(compact: compact)) {
+            VStack(alignment: .leading, spacing: previewChrome.proposed ? 12 : DeckSpacing.sections(compact: compact)) {
                 if browser.current != nil {
                     folderContents
                 } else {
@@ -219,11 +220,13 @@ struct DeckView: View {
                     Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
                         .font(.caption).lineLimit(1).foregroundStyle(.secondary)
                 }
-                .frame(height: 18)
+                .frame(height: previewChrome.proposed ? 14 : 18)
+                .padding(.horizontal, previewChrome.proposed ? 16 : 0)
+                .font(previewChrome.proposed ? .caption : .system(size: NSFont.systemFontSize))
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, DeckSpacing.edge)
-            .padding(.bottom, DeckSpacing.edge)
+            .padding(.bottom, previewChrome.proposed ? 8 : DeckSpacing.edge)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.deckTheme, settings.theme)
@@ -243,12 +246,21 @@ struct DeckView: View {
 
     private var header: some View {
         ZStack {
-            VStack(spacing: 1) {
-                Text(headerTitle)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1).truncationMode(.middle)
-                Text(headerSubtitle).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
+            Group {
+                if previewChrome.proposed {
+                    InlineHeaderProposal(
+                        iconURL: browser.current ?? snapshot.context?.url
+                            ?? snapshot.windows.first { $0.appName == snapshot.context?.name }?.appURL,
+                        appName: headerTitle, windowName: headerSubtitle)
+                } else {
+                    VStack(spacing: 1) {
+                        Text(headerTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1).truncationMode(.middle)
+                        Text(headerSubtitle).font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 88)
