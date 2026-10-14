@@ -3,13 +3,17 @@ import SwiftUI
 import DeckCore
 
 /// R142: screenshot-inspired synthetic samples, never a live inventory or setting.
+enum MonitorPreviewSizing {
+    case smallFollowers, visibleWindows, activeAppOnly
+}
+
 struct MonitorGroupingPreview: View {
     @StateObject private var fixture: PreviewFixture
     private let sizes: [RecentTileSize]?
     private let emphasized: Set<UUID>?
     private let grouped: Bool
 
-    init(grouped: Bool, terminalSelected: Bool = false) {
+    init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers) {
         self.grouped = grouped
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
@@ -76,12 +80,26 @@ struct MonitorGroupingPreview: View {
         emphasized = grouped ? Set(windows.filter {
             !$0.isApplication && $0.desktop == .current
         }.map(\.id)) : nil
+        let contextName = terminalSelected ? "iTerm2" : "ChatGPT"
         sizes = grouped ? windows.indices.map { index in
             let window = windows[index]
-            if window.isApplication || (index > 0 && windows[index - 1].pid == window.pid) { return .application }
-            return monitor[window.id] == activeMonitor ? .wide : .square
+            let firstWindow = index == 0 || windows[index - 1].pid != window.pid
+            if window.isApplication { return .application }
+            switch sizing {
+            case .smallFollowers:
+                if !firstWindow { return .application }
+                return monitor[window.id] == activeMonitor ? .wide : .square
+            case .visibleWindows:
+                if window.desktop != .current { return .application }
+                return firstWindow && monitor[window.id] == activeMonitor ? .wide : .square
+            case .activeAppOnly:
+                if window.desktop != .current { return .application }
+                return firstWindow && window.appName == contextName ? .wide : .square
+            }
         } : nil
-        let contextName = terminalSelected ? "iTerm2" : "ChatGPT"
+        if let sizes, sizing != .smallFollowers {
+            print("Monitor sizing \(sizing): wide=\(sizes.filter { $0 == .wide }.count), square=\(sizes.filter { $0 == .square }.count), small=\(sizes.filter { $0 == .application }.count)")
+        }
         let context = AppItem(id: "preview.monitor.context", pid: -1, name: contextName, url: icons[contextName])
         var command = MenuCommand(appID: context.id, appName: context.name, path: ["File", "New Window"])
         for _ in 0..<4 { command.recordUse(at: Date()) }

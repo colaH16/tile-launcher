@@ -1,5 +1,12 @@
 # 네이티브 빌드 검증
 
+## R145 · 보이는 창 2×2·활성 앱 대표 하나 4×2 비교
+
+- MonitorPreviewSizing에 비교 전용 visibleWindows/activeAppOnly를 추가했다. 기본 smallFollowers 및 production 입력 nil은 유지한다. 첫 안은 보이는 창 2×2/안 보이는 창 1×1이며 활성 모니터의 그룹 첫 창만 4×2, 두 번째는 활성 앱 첫 창 하나만 4×2다. 동일 창의 색·순서는 R144를 유지한다.
+- native 개발 빌드 2.28초 및 전체 격리 --render-previews 통과. /tmp/tile-visible-size-build.log, tile-visible-size-previews.log. 로그의 실제 크기 집계는 visibleWindows wide=5/square=5/small=13, activeAppOnly wide=1/square=9/small=13이다. XCTest/Python을 다시 실행했다고 기록하지 않는다.
+- 두 공유 뷰 이미지에서 보이는 iTerm 두 창/Safari 두 창/Finder 두 창이 2×2이고 숨겨진 ChatGPT/Docmost/Claude가 1×1임을 확인했다. 첫 안에서는 활성 모니터 다섯 앱의 첫 창이 4×2이며 일부 마지막 작은 타일이 3.3줄 경계에 걸친다. 대안은 ChatGPT 하나만 4×2이고 더 많은 타일을 동일 영역 안에 온전히 표시한다. 작은 회색 앱 타일도 유지한다.
+- 동일 23개·등록 18개·1120×729pt/모니터 B 가정의 정적 합성 렌더다. 실제 사용자 앱/화면/설정을 조작하지 않았다. 전달 PNG는 monitor-visible-window-sizes-20261014.png / monitor-active-app-hero-20261014.png이며 앞선 시안 파일을 보존한다. 설치/공개 1.1.5(20) 번들 해시는 그대로다. 실제 선택·구현/설치/새 버전·릴리스는 하지 않았다.
+
 ## R144 · 작은 창도 모든 보이는 데스크탑 기준으로 강조
 
 - MonitorGroupingPreview의 색상 대상에서 첫 창 조건을 제거하고 isApplication=false/desktop=current만 사용했다. 크기/모니터/묶음 순서 로직은 그대로이며 범례도 현재 보이는 데스크탑으로 정정했다. 실제 WindowTracker/DesktopWindows 및 production 입력 nil은 유지한다.
