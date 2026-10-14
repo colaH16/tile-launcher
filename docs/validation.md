@@ -6,7 +6,9 @@
 - XCTest133개/Python23개 통과: `/tmp/tile-130-tests-isolated.log`. 새 정책 검사는 모니터 위치/음수 좌표/여러 모니터에 걸친 창·위치 미확인·비연속 반복·창 없는 앱 예외와 1.4배 실제 geometry를 다룬다. 최초 무한 CGRect 경계 검사가 실패해 isInfinite를 명시적으로 제외하고 전체 검사를 다시 통과했다.
 - 실제 공유 DeckView의 화면 없는 렌더·기본/유리 테마·명암·프로필0/18/36/200·최근100개 끝 스크롤·작은 화면과 헤더 버튼 제외 영역을 통과했다. `/tmp/tile-130-previews.log`, `/tmp/tile-130-previews`. 기존 export의 delivered-121 파일명에도 이번1.3.0 코드가 들어 있으므로 과거 산출물과 혼동하지 않는다. 대표/반복 Finder의4×2 진한색/파스텔, 다른 모니터의2×2, 숨겨진 실제 창1×1과 회색 앱, 왼쪽 아래 제목을 PNG로 확인했다.
 - 전체 DeckView의 scaleEffect를 없애고 실제 폰트/프레임/간격으로 그린다. 네이티브 헤더 앵커와 드래그 hitTest 검사를 통과했다. 이 결과는 사용자의 다른 Mac에서 실제 텍스트 선명도/키 입력·다중 모니터를 확인한 결과와 구별한다.
-- Developer ID 서명·ZIP 검증·동기화 폴더 복사 결과는 전달 완료 후 아래에 추가한다. 공증과 개발 Mac 설치, GitHub 바이너리 공개는 수행하지 않는다.
+- 소스b3e4227cb9b8e13ef7503abccc4242f5abcbbcee의 독립 release 빌드·Developer ID Application Team VV2W9U5XT3 서명·강화된 런타임·타임스탬프·번들/ZIP 재추출 검증을 통과했다. 배포 실행 파일로 전체 비표시 렌더와 좌표 검사를 다시 통과했다. `/tmp/tile-130-prepare.log`, `tile-130-sign.log`, `tile-130-verify.log`, `tile-130-signed-previews.log`.
+- 원본 `/Users/cola/Library/Developer/TileLauncher/releases/v1.3.0`의 앱 번들 SHA256은 `1c5031e3c0706b901b8e410c0bd321d812154b7bc3459933a637d0078b3f01a5`다. ZIP은2,250,992바이트, SHA256 `cbb5dd794a50c2d19981d3786649df1152cf2c1c8a25d24e12fd528d58ad7898`이며 저장소 상위 `Tile-Launcher-1.3.0-arm64-unnotarized.zip`에 원본 그대로 복사하고 해시를 확인했다. 기존1.2.1 ZIP은 덮어쓰지 않았다.
+- 사용자 요청대로 공증 제출/티켓·공증용 Gatekeeper 통과 선언/개발 Mac 설치/GitHub 바이너리 공개를 하지 않았다. 개발 Mac Info.plist의 설치1.2.0(21)을 재확인했다. iCloud 서버 업로드 완료와 다른 Mac 수신/설치는 확인하지 않았다.
 
 ## R158 · 사용자 보고: 1.2.1 텍스트 번짐 미해결
 
