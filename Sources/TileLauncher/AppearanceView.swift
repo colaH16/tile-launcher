@@ -67,7 +67,7 @@ struct AppearanceView: View {
         VStack(alignment: .leading, spacing: 4) {
             sample("", section: .windows, emphasized: false, width: 24, height: 24, gray: true)
             Text("회색\n1×1").font(.caption2).foregroundStyle(.secondary)
-        }.frame(width: 64, alignment: .leading).help("창 없는 앱")
+        }.frame(width: 56, alignment: .leading).help("창 없는 앱")
     }
     private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat,
                         height: CGFloat = 56, gray: Bool = false, symbol: String? = nil) -> some View {
