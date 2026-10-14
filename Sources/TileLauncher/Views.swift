@@ -130,7 +130,7 @@ struct DeckView: View {
     var resizeForProfile: (Int) -> Void = { _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
     var recentAppearance: RecentAppearance = .consecutiveSmall
-    var menuAppearance: MenuAppearance = .original
+    var menuAppearance: MenuAppearance = .selected
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -284,10 +284,9 @@ struct DeckView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.buttonStyle(TileStyle())
-            } else if menuAppearance != .original {
+            } else if menuAppearance == .recentPastel {
                 let sizes = menuItems.map { command in
-                    command.isPinned ? RecentTileSize.wide
-                        : snapshot.frequentMenuIDs.contains(command.id) || menuAppearance == .recentGraySquare ? .square : .application
+                    command.isPinned ? RecentTileSize.wide : snapshot.frequentMenuIDs.contains(command.id) ? .square : .application
                 }
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: 8)
                 let micro = (geometry.unit - geometry.gap) / 2
@@ -306,7 +305,9 @@ struct DeckView: View {
                             alignment: .topLeading)
                 }.scrollIndicators(.visible)
             } else {
-                let packed = rows(menuItems.map { ($0.isPinned || snapshot.frequentMenuIDs.contains($0.id)) ? 2 : 1 }, columns: 4)
+                let packed = rows(menuItems.map {
+                    ($0.isPinned || (menuAppearance == .original && snapshot.frequentMenuIDs.contains($0.id))) ? 2 : 1
+                }, columns: 4)
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: geometry.gap) {
                         ForEach(packed.indices, id: \.self) { row in

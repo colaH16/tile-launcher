@@ -295,13 +295,13 @@ struct DeckPreview: View {
     var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
          recentAppearance: RecentAppearance = .consecutiveSmall, comparisonSample: Bool = false, recentCount: Int = 16,
-         menuAppearance: MenuAppearance = .original, realisticSample: Bool = false) {
+         menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
         _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
                                                           compact: compact, registeredCount: registeredCount,
                                                           comparisonSample: comparisonSample, recentCount: recentCount,
-                                                          menuComparison: menuAppearance != .original || realisticSample,
+                                                          menuComparison: comparisonSample || realisticSample,
                                                           realisticSample: realisticSample))
     }
     var body: some View {

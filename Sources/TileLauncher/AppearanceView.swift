@@ -19,7 +19,7 @@ struct AppearanceView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
                 Text("섹션별 색상").font(.headline)
-                Text("선택한 색으로 기본 타일과 강조 타일을 함께 조정합니다. 작은 타일과 긴 타일은 같은 기본색을 쓰며, 글자색은 읽기 쉽게 자동으로 맞춥니다.")
+                Text("선택한 색으로 기본 타일과 강조 타일을 함께 조정합니다. 메뉴 색은 고정·자주 사용에 적용하며 최근 메뉴는 회색으로 구분합니다. 글자색은 읽기 쉽게 자동으로 맞춥니다.")
                     .font(.callout).foregroundStyle(.secondary)
                 ForEach(TileSection.allCases) { section in
                     GroupBox {
@@ -31,9 +31,9 @@ struct AppearanceView: View {
                                     .help("\(section.title) 색만 기본값으로 복원")
                             }
                             HStack(spacing: 8) {
-                                sample("기본", section: section, emphasized: false, width: 56)
+                                sample(section == .menus ? "최근 사용" : "기본", section: section, emphasized: false, width: 56, gray: section == .menus)
                                 sample(section == .menus ? "자주 사용" : "기본 · 긴 타일",
-                                       section: section, emphasized: false, width: 120)
+                                       section: section, emphasized: false, width: section == .menus ? 56 : 120)
                                 if section != .registered {
                                     sample(section == .menus ? "고정 메뉴" : "현재 데스크탑",
                                            section: section, emphasized: true, width: 120)
@@ -54,9 +54,11 @@ struct AppearanceView: View {
         Binding(get: { settings.tileColors.seed(for: section, theme: settings.theme).swiftUIColor },
                 set: { if let rgb = TileColor(color: $0) { settings.tileColors[section] = rgb } })
     }
-    private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat) -> some View {
+    private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat, gray: Bool = false) -> some View {
+        var colors = settings.tileColors
+        if gray { colors[section] = TileColor(0x777777) }
         let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark,
-                                  theme: settings.theme, colors: settings.tileColors)
+                                  theme: settings.theme, colors: colors)
         return VStack(alignment: .leading, spacing: 5) {
             Image(systemName: emphasized && section == .menus ? "pin.fill" : "square.fill")
             Text(title).font(.caption2).lineLimit(2)
