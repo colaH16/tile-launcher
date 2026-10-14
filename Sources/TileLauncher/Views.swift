@@ -284,7 +284,8 @@ struct DeckView: View {
                 }.buttonStyle(TileStyle())
             } else if menuAppearance != .original {
                 let sizes = menuItems.map { command in
-                    command.isPinned ? RecentTileSize.wide : snapshot.frequentMenuIDs.contains(command.id) ? .square : .application
+                    command.isPinned ? RecentTileSize.wide
+                        : snapshot.frequentMenuIDs.contains(command.id) || menuAppearance == .recentGraySquare ? .square : .application
                 }
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: 8)
                 let micro = (geometry.unit - geometry.gap) / 2
@@ -321,7 +322,7 @@ struct DeckView: View {
     }
     private func menuTile(_ command: MenuCommand, small: Bool = false) -> some View {
         var colors = settings.tileColors
-        if menuAppearance == .recentGray && !command.isPinned && !snapshot.frequentMenuIDs.contains(command.id) {
+        if menuAppearance == .recentGraySquare && !command.isPinned && !snapshot.frequentMenuIDs.contains(command.id) {
             colors.menus = TileColor(0x777777)
         }
         return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {

@@ -305,7 +305,7 @@ struct SettingsLayoutPreview: View {
 #Preview("클래식 · 기본색") { DeckPreview(theme: .classic).preferredColorScheme(.dark) }
 #Preview("유리 · 기본색") { DeckPreview(theme: .glass).preferredColorScheme(.dark) }
 #Preview("메뉴 비교 · 최근 파스텔") { DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: .recentPastel).preferredColorScheme(.dark) }
-#Preview("메뉴 비교 · 최근 회색") { DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: .recentGray).preferredColorScheme(.dark) }
+#Preview("메뉴 비교 · 최근 회색 2×2") { DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: .recentGraySquare).preferredColorScheme(.dark) }
 #Preview("사용자 색 · 밝은 화면") { DeckPreview(theme: .classic, customColors: true).preferredColorScheme(.light) }
 #Preview("모양 설정") { AppearancePreview() }
 #Preview("메뉴 사용 횟수") { MenuUsagePreview() }
@@ -392,7 +392,7 @@ enum PreviewExport {
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("recent-compare-\(name).png"))
         }
-        for (name, appearance): (String, MenuAppearance) in [("pastel", .recentPastel), ("gray", .recentGray)] {
+        for (name, appearance): (String, MenuAppearance) in [("pastel", .recentPastel), ("gray-square", .recentGraySquare)] {
             try save(DeckPreview(theme: .classic, registeredCount: 18, comparisonSample: true, menuAppearance: appearance)
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("menu-compare-\(name).png"))

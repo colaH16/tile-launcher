@@ -15,7 +15,7 @@ enum RecentAppearance {
 }
 /// Comparison-only menu variants. The shipped view retains .original until chosen.
 enum MenuAppearance {
-    case original, recentPastel, recentGray
+    case original, recentPastel, recentGraySquare
 }
 struct WindowItem: Identifiable, Equatable {
     let id: UUID
