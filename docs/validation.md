@@ -1,5 +1,10 @@
 # 네이티브 빌드 검증
 
+## R158 · 사용자 보고: 1.2.1 텍스트 번짐 미해결
+
+- 사용자가 실제 앱에서 글자가 번진다고 보고했다. 소스의 DeckView.body는 논리 contentSize로 배치한 뒤 scaleEffect(scale)를 적용하며, 실제 폰트/타일 치수를 개별 확대하는 레이아웃이 아님을 확인했다. 기존 좌표·테스트·비표시 렌더 통과는 실기 선명도 통과를 의미하지 않는다.
+- GroupedRecentWindows.sizes와 windowTile/DesktopWindows 색 경로, 메뉴/등록 스타일을 대조해 현재 규칙을 설명했다. 이번에는 실제 사용자 화면이나 래스터화 시점을 조사하지 않았고 코드/빌드/설치/ZIP을 변경하지 않았다. 번짐 해결을 선언하지 않는다.
+
 ## R157 · 저장소 상위 ZIP 복사
 
 - git rev-parse --show-toplevel과 manifest의version1.2.1/signing developer-id를 확인했다. Git 저장소 부모에 Tile-Launcher-1.2.1-arm64-unnotarized.zip을 원본 그대로 복사했다. 크기2,224,935바이트, 복사 전후 SHA256은25d1c8769c8135d199beb74492b75b88a47a310edce5a0879e9367d1d7f63ffb로 원본 manifest와 같다.
