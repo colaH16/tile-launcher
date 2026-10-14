@@ -10,7 +10,7 @@ final class PreviewFixture: ObservableObject {
     let browser = FolderBrowser()
     private let suite: String
     private let defaults: UserDefaults
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35) {
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false) {
         suite = "dev.cola16.TileLauncher.preview.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         settings = SettingsStore(defaults: defaults)
@@ -36,14 +36,21 @@ final class PreviewFixture: ObservableObject {
         commands[3].recordUse(at: Date())
         settings.commands = commands
         var windows: [WindowItem] = []
+        let iconURLs = ["terminal", "externaldrive", "note.text", "calendar", "plus", "music.note"].map { URL(string: "tile-preview://\($0)/\($0)")! }
+        let sampleGroups = [0, 0, 1, 4, 2, 2, 1, 5, 0, 0, 0, 3, 3, 2, 2, 1]
+        let sampleNames = ["Terminal", "Finder", "메모", "캘린더", "계산기", "음악"]
+        let sampleTitles = ["cc2", "se3", "", "", "기획 노트", "회의 기록", "다운로드", "", "개발 서버", "로컬 로그", "배포 로그", "이번 주", "다음 주", "설계 문서", "변경 이력", "프로젝트"]
         for index in 0..<16 {
             let pid: pid_t = index < 2 ? 1 : Int32(index)
             let applicationOnly = [2, 3, 7].contains(index)
             let name = index == 2 ? "USBClean" : index < 2 ? "Terminal" : "앱 \(index + 1)"
             let title = index == 0 ? "cc2" : (index == 1 ? "se3" : "프로젝트 문서 \(index + 1)")
             let desktop: WindowDesktop = index < 4 ? .current : .other
-            windows.append(WindowItem(id: UUID(), pid: pid, appName: name, appURL: nil,
-                                      title: applicationOnly ? "" : title, minimized: false,
+            let group = comparisonSample ? sampleGroups[index] : index < 2 ? 0 : index % 4
+            windows.append(WindowItem(id: UUID(), pid: comparisonSample ? (index == 2 ? 99 : Int32(group + 1)) : pid,
+                                      appName: comparisonSample ? (index == 2 ? "USBClean" : sampleNames[group]) : name,
+                                      appURL: comparisonSample && index == 2 ? URL(string: "tile-preview://externaldrive/usbclean") : iconURLs[group],
+                                      title: applicationOnly ? "" : comparisonSample ? sampleTitles[index] : title, minimized: false,
                                       desktop: applicationOnly ? .unknown : desktop, isApplication: applicationOnly))
         }
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: compact ? 560 : 1440,
@@ -183,16 +190,20 @@ final class PreviewFixture: ObservableObject {
 
 struct DeckPreview: View {
     @StateObject var fixture: PreviewFixture
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35) {
+    var recentAppearance: RecentAppearance
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
+         recentAppearance: RecentAppearance = .original) {
+        self.recentAppearance = recentAppearance
         _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
-                                                          compact: compact, registeredCount: registeredCount))
+                                                          compact: compact, registeredCount: registeredCount,
+                                                          comparisonSample: recentAppearance != .original))
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
                  presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in },
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
-                 showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
+                 showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, recentAppearance: recentAppearance, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)
@@ -358,6 +369,11 @@ enum PreviewExport {
         }
         try save(DeckPreview(theme: .classic, registeredCount: 36).environment(\.colorScheme, .dark),
                  scrollToEnd: true, to: directory.appendingPathComponent("recent-scroll-bottom.png"))
+        for (name, appearance): (String, RecentAppearance) in [("mixed", .mixedNeutral), ("squares-color", .squares), ("consecutive-small", .consecutiveSmall)] {
+            try save(DeckPreview(theme: .classic, registeredCount: 18, recentAppearance: appearance)
+                        .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("recent-compare-\(name).png"))
+        }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")

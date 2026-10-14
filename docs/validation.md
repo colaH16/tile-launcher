@@ -9,7 +9,10 @@
 - 사용자는 USBClean이 계속 창 없는 상태지만 현재 목록에는 나타나지 않는다고 확인했다. 진단 호스트는 AX 신뢰가 없고 이름/ID에 usb가 들어간 실행 앱을 찾지 못했다. 캡처의 정확한 오표시 원인이나 이 앱의 새 작은 타일 표시 성공을 확정하지 않는다.
 - 사용자의 1.0.0 실기: Focus 앱 필터 설정이 로딩되고 프로필을 선택할 수 있다. 캡처의 기본 아이콘과 실제 자동 전환/해제 전체 조합은 별도 검증으로 남긴다.
 - 최근 항목 1000개를 유지하면서 뷰포트와 한 큰 타일 높이의 여유만 렌더링하는 범위 검사를 통과했다. 시작/중간/끝에서 표시 대상은 30개 미만이며 마지막 999번에 접근한다. 실제 비표시 NSScrollView를 끝으로 이동한 recent-scroll-bottom.png에서 마지막 샘플 16번을 확인했다. Instruments의 실제 CPU/메모리 측정과 구별한다.
-- 1.1.0(15)은 최종 Developer ID 서명/공증 후 로컬 설치 예정이며 새 GitHub 바이너리를 자동 게시하지 않는다.
+- 최종 1.1.0(15)은 소스 2d68dd1ab8e89d4047a4c2c3820e893cb1a81d3e에서 Developer ID Team VV2W9U5XT3/강화된 런타임/타임스탬프 서명, Apple 공증 ID c5910ff0-4866-4038-b5e6-c73a8904ca63 Accepted, stapler/Gatekeeper와 ZIP 재추출 검증을 통과했다. 최종 ZIP SHA-256 69468c87d82da1fd8213b0b37551a8b0a368f56fa6d5700be88fefe91954cf26, metadata cab5e5768e2b00251596dd4c83dfdb0aa53709e819f80c2616f60a64958c4634, 체크섬 파일 b62804bd37631b042892c3446da8f31b984d5627b9851186b06a3154d7995718. /tmp/tile-110-prepare.log, sign.log, notarize.log(접두사 tile-110-), 서명 실행 파일 검사 /tmp/tile-110-final-signed-previews.log.
+- /Applications/launch at Login/Tile Launcher.app에 설치 후 서명/티켓/Gatekeeper를 다시 확인했다. 이전 1.0.0 Contents는 /tmp/tile-before-110-afp494ou.app에 보존했다. /tmp/tile-110-install.json에 기록하며 설치 전후 실행 소유자 파일 동일·자동 재시작/권한/사용자 데이터 변경 없음. 사용자 다시 열기에서 새 빌드로 전환한다. 현재 GitHub 공개본은 1.0.0이고 새 1.1.0 태그/릴리스를 만들지 않았다.
+- 앞선 내부 후보 94613cc와 제출 ID 7a9a858e-fc8b-41a7-b991-de4b1ff69a42는 releases/v1.1.0-internal-94613cc에 보존했다. 최종 파일은 렌더링 범위 보완 후 다른 소스/제출 ID이며 최종 ID를 재조회했고 중복 업로드하지 않았다.
+- R128–R129의 세 배치/회색 앱 비교는 /tmp/tile-110-three-delivery.log의 화면 없는 렌더링이다. 실제 설치 앱의 4×2/2×2 기본 정책과 구별한다. 합성 심벌을 사용해 두 시안의 아이콘/색을 비교하며 실제 앱 아이콘/유리 합성 검증으로 기록하지 않는다.
 
 최종 검증 기록일: 2026-10-14, Asia/Seoul. 제품명 Tile Launcher, Developer ID 서명·공증 완료 1.0.0(14) GitHub 공개.
 

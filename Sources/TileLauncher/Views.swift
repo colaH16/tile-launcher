@@ -13,7 +13,19 @@ struct Icon: View {
     let url: URL?
     var size: CGFloat = 34
     var body: some View {
-        Image(nsImage: AppIconCache.shared.icon(url)).resizable().interpolation(.high)
+        Group {
+            if url?.scheme == "tile-preview", let symbol = url?.host {
+                // Synthetic icons keep offscreen comparisons independent of
+                // WindowServer's native app-icon representation caching.
+                let color: Color = symbol == "terminal" ? .green : symbol == "calendar" ? .red : symbol == "note.text" ? .orange : .blue
+                ZStack {
+                    RoundedRectangle(cornerRadius: size / 5).fill(color)
+                    Image(systemName: symbol).font(.system(size: size * 0.58, weight: .semibold)).foregroundStyle(.white)
+                }
+            } else {
+                Image(nsImage: AppIconCache.shared.icon(url)).resizable().interpolation(.high)
+            }
+        }
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -115,6 +127,7 @@ struct DeckView: View {
     let pinOverlay: () -> Void
     var resizeForProfile: (Int) -> Void = { _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
+    var recentAppearance: RecentAppearance = .original
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -407,8 +420,13 @@ struct DeckView: View {
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let sizes = RecentTileArrangement.sizes(apps: snapshot.windows.map { $0.appURL?.path ?? String($0.pid) },
-                                                        applications: snapshot.windows.map(\.isApplication))
+                let identities = snapshot.windows.map { $0.appURL?.path ?? String($0.pid) }
+                let sizes = recentAppearance == .consecutiveSmall ? snapshot.windows.indices.map { index in
+                    let repeated = index > 0 && identities[index] == identities[index - 1] && !snapshot.windows[index - 1].isApplication
+                    return snapshot.windows[index].isApplication || repeated ? RecentTileSize.application : .square
+                } : recentAppearance.uniform ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
+                    : RecentTileArrangement.sizes(apps: snapshot.windows.map { $0.appURL?.path ?? String($0.pid) },
+                                                 applications: snapshot.windows.map(\.isApplication))
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
                 let micro = (geometry.unit - geometry.gap) / 2
                 let bottom = packed.map { $0.row + $0.height }.max() ?? 0
@@ -417,7 +435,7 @@ struct DeckView: View {
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         ForEach(visible, id: \.index) { place in
-                            windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4)
+                            windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4, small: place.height == 1)
                                 .frame(width: micro * CGFloat(place.width) + geometry.gap * CGFloat(place.width - 1),
                                        height: micro * CGFloat(place.height) + geometry.gap * CGFloat(place.height - 1))
                                 .offset(x: CGFloat(place.column) * (micro + geometry.gap),
@@ -433,22 +451,25 @@ struct DeckView: View {
             }
         }.frame(height: height)
     }
-    private func windowTile(_ window: WindowItem, index: Int, wide: Bool) -> some View {
+    private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false) -> some View {
         let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
+        var colors = settings.tileColors
+        if window.isApplication && recentAppearance.neutralApplications { colors.windows = TileColor(0x777777) }
         let palette = DeckPalette(section: .windows, emphasized: desktop == .current,
-                                  dark: deckScheme == .dark, theme: settings.theme, colors: settings.tileColors)
+                                  dark: deckScheme == .dark, theme: settings.theme, colors: colors)
         return Button { selectWindow(window) } label: {
             Group {
-              if window.isApplication {
+              if window.isApplication || small {
                 VStack(alignment: .leading, spacing: 2) {
-                    Icon(url: window.appURL, size: 20).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(window.appName).font(.system(size: 9, weight: .medium)).lineLimit(1)
+                    Icon(url: window.appURL, size: 20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(window.isApplication ? window.appName : window.title).font(.system(size: 9, weight: .medium)).lineLimit(1)
                 }.padding(4).frame(maxWidth: .infinity, maxHeight: .infinity)
               } else {
                 VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     Icon(url: window.appURL, size: 22)
-                    if wide { Text(window.appName).font(.caption2).foregroundStyle(palette.secondary).lineLimit(1) }
+                    if wide || recentAppearance.uniform { Text(window.appName).font(.caption2).foregroundStyle(palette.secondary).lineLimit(1) }
                     Spacer(minLength: 0)
                 }.padding(.trailing, 12)
                 Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
@@ -467,6 +488,7 @@ struct DeckView: View {
                     Button("\(window.appName) 종료") { quitApplication(window) }
                 }
             }
+            .environment(\.tileColors, colors)
     }
 
     private var folderContents: some View {

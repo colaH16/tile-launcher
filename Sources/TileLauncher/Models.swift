@@ -8,6 +8,11 @@ struct AppItem: Identifiable, Equatable {
     let name: String
     let url: URL?
 }
+enum RecentAppearance {
+    case original, squares, mixedNeutral, consecutiveSmall
+    var uniform: Bool { self == .squares || self == .consecutiveSmall }
+    var neutralApplications: Bool { self != .original }
+}
 struct WindowItem: Identifiable, Equatable {
     let id: UUID
     let pid: pid_t
