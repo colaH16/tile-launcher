@@ -1,5 +1,15 @@
 # 네이티브 빌드 검증
 
+## R140 · 1.1.5(20) 색상 예시 열 정렬
+
+- 회색 작은 예시의 컨테이너만64pt여서 나머지56pt 예시보다 두 번째 열이8pt 밀렸다. 컨테이너를56pt로 맞췄으며 작은 타일24pt/텍스트/8pt 행 간격·색/강조 순서는 유지한다. 메뉴 자주 사용/최근 창 연한색/등록 앱의 두 번째 열, 고정 메뉴/최근 창 진한색의 세 번째 열이 맞는다.
+- 소스 3485794d957f20df5b2cb415a2e075d9c2e9cd60의 독립 최적화 빌드/App Intents 추출·Developer ID Team VV2W9U5XT3/강화된 런타임/타임스탬프/strict 서명/ZIP 검증 통과. /tmp/tile-115-prepare.log, tile-115-sign.log. 실제 서명 실행 파일의 --render-previews에서 설정 창 크기/키·클릭 정책/메뉴 카탈로그/작은 설정 하단·최근100개 끝 스크롤/표면 마스크와 전체 렌더를 통과했다(/tmp/tile-115-previews.log). UI 정렬에 필요한 빌드·네이티브 렌더 검증이며 기존 XCTest/Python을 이번에 다시 실행했다고 기록하지 않는다.
+- appearance-classic/glass-dark/light와 settings-appearance-580/540에서 타일 열 시작선·회색 크기 유지/읽기 쉬운 글자를 확인했다. 합성 설정·화면 밖 렌더이며 사용자 화면/Glass 데스크탑 합성/실제 UI 입력 검증과 구별한다. 사용자 캡처는 공개 저장소에 복사하지 않았다.
+- Apple 제출 6d3e83e8-110b-41fd-a1d5-9a8af09e882a을 중복 업로드 없이 같은 ID로 재조회해 Accepted를 확인했다. 티켓·Gatekeeper·최종 ZIP 재추출 검증 통과. /tmp/tile-115-notarize.log, tile-115-notarize-final.log. 기존 Keychain profile을 사용하며 암호/개인 키는 출력하지 않았다.
+- 최종 번들 SHA-256 98a124bbcfa97e20d0de986cfa2c6d35a0d93ac12a0f32b936520740cdd67abf; Tile-Launcher-1.1.5-arm64.zip 8996fe486672664f577aa3d81aa1a09a25782cef2f52acb910692ae1c9c1f7e2; release-metadata.json 5ee4f0e914ffbcd9a1af830732724147145d686d7328005d0f2c902a4987a7bc; SHA256SUMS.txt 1dfad1b238900c1f9735254b22e7c090ce9ecd4b5b1257ae36441f8c7519ada7.
+- 설치 /Applications/launch at Login/Tile Launcher.app, 백업 /var/folders/cy/rhl7z2sn7mv4yjlmfy7xsl8c0000gp/T/tile-before-115-we60isch.app, receipt /tmp/tile-115-install.json, 설치 로그 /tmp/tile-115-install.log. 설치 후 버전1.1.5/빌드20·서명·stapler·Gatekeeper·번들 해시가 공증 산출물과 일치한다. 실행 소유자 파일은 전후 동일하며 사용자 설정·권한/현재 실행 앱을 유지했다. 자동 재시작/사용자 화면 조작은 하지 않고 다음 다시 열기에서 전환한다.
+- 공개 1.1.3 자산·태그는 보존하며 새 GitHub 릴리스를 게시하지 않았다. 다음 공개 범위 v1.1.3→v1.1.5의 누적 노트에는 1.1.4/1.1.5 모두를 포함한다. 소스·기록은 main에 푸시한다.
+
 ## R138–R139 · 1.1.4(19) 색상 예시·등록 앱과 폴더
 
 - 사용자가 확정한 최근 창 색상 예시는 회색 1×1 → 연한색 2×2 → 진한색 2×2다. 컬러 1×1을 제외하고 진한색을 오른쪽에 맞췄다. 등록 예시는 파스텔 폴더 → 진한 앱 정사각이며 실제 등록 타일의 kind=.app만 기존 강조 팔레트를 사용한다. 폴더/휴지통은 기존 파스텔, 아이콘·번호/선택·hover/실행/프로필/저장 색은 유지한다.
