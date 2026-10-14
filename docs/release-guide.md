@@ -1,6 +1,6 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
-확인일: 2026-10-14, Asia/Seoul. [v1.0.0 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.0.0)를 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 업로드 후 재다운로드 검증을 거쳐 10:01 KST 공개했다. 이전 개발용 ad-hoc 0.x 배포를 보존한다.
+확인일: 2026-10-14, Asia/Seoul. [v1.1.3 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.1.3)를 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 업로드 후 재다운로드 검증을 거쳐 13:48 KST 공개했다. 이전 개발용 ad-hoc 0.x 배포를 보존한다.
 
 ## R102 · 공개 완료와 버전 정책
 
@@ -17,7 +17,7 @@ R102 승인에 따라 5388c2c 커밋에서 0.16.3(6)을 새로 패키징해 공�
 
 ## 독립 배포 빌드 준비
 
-현재 공개/개발 구성은 `release/config.json`의 v1.0.0, 빌드 14, Apple Silicon, 정식 릴리스(prerelease=false)다. R123에 따라 실제 Developer ID 서명·공증·검증·게시를 완료했다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개이며 실제 manifest의 상태를 확인한다.
+현재 공개/개발 구성은 `release/config.json`의 v1.1.3, 빌드 18, Apple Silicon, 정식 릴리스(prerelease=false)다. R137에 따라 실제 Developer ID 서명·공증·검증·누적 노트 게시를 완료했다. Apple 공증 여부와 GitHub의 정식/사전 릴리스 구분은 별개이며 실제 manifest의 상태를 확인한다.
 
 R108의 0.17.1 공개는 완료했다. R120에서 0.17.6 공개를 요청해 R113의 보류를 해제했고 2026-10-13 17:03 KST 게시를 완료했다. R123에서 R119/R121의 여백 작업도 재개했다. 아래 단계는 이후 새 버전에 적용하며 이미 공개한 릴리스를 다시 게시/덮어쓰지 않는다. 저장소 루트에서 실행한다. Xcode가 다른 위치에 있으면 DEVELOPER_DIR만 바꾼다. 실행 중 개발 앱은 설치/재실행하지 않는다.
 
@@ -29,10 +29,10 @@ python3 scripts/release.py verify
 ```
 
 - `prepare`는 깨끗한 커밋의 `git archive` 소스에서 빌드하고 버전/소스 SHA를 번들에 기록한다. 작업 트리가 수정 중이면 중단한다.
-- `~/Library/Developer/TileLauncher/releases/v1.0.0/downloads`에 ZIP, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. prepare/sign 단계는 `Tile-Launcher-1.0.0-arm64-unnotarized.zip`, 공증/티켓 검증 후는 `Tile-Launcher-1.0.0-arm64.zip`이다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
+- `~/Library/Developer/TileLauncher/releases/v1.1.3/downloads`에 ZIP, `release-metadata.json`, `SHA256SUMS.txt`를 생성한다. prepare/sign 단계는 `Tile-Launcher-1.1.3-arm64-unnotarized.zip`, 공증/티켓 검증 후는 `Tile-Launcher-1.1.3-arm64.zip`이다. ZIP에는 앱과 라이선스/설치 안내가 포함된다.
 - `verify`는 앱 서명, 리소스·실행 권한, 플랫폼, 아이콘/Focus 정보, 버전/소스, 체크섬을 확인한다. ZIP도 다시 풀어 같은 앱인지 검사한다. 앱을 실행하거나 사용자 권한을 변경하지 않는다.
-- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v1.0.0/release-notes.md`에 생성한다. manifest의 실제 서명·공증 상태에 맞는 안내가 자동으로 포함된다.
-- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v1.0.0`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
+- 최종 릴리스 설명은 `~/Library/Developer/TileLauncher/releases/v1.1.3/release-notes.md`에 생성한다. manifest의 실제 서명·공증 상태에 맞는 안내가 자동으로 포함된다.
+- 수정 중 리허설에는 `prepare --local-check --output /tmp/tile-release-rehearsal`을 사용한다. 이 출력은 local_only로 기록되어 서명 승격/GitHub 업로드가 거부된다. 출력 폴더는 비어 있어야 하며 기존 결과를 자동 삭제하지 않는다. 기본 출력은 동기화 밖의 `~/Library/Developer/TileLauncher/releases/v1.1.3`이다. Desktop/문서/클라우드 저장소를 서명 출력으로 지정하면 중단한다.
 
 ## GitHub 초안과 정식 게시
 
@@ -47,9 +47,9 @@ python3 scripts/release.py verify
 - 서명·공증 파일을 이미 만든 뒤 **설명만** 보완했다면 노트를 검토·커밋한 후 `python3 scripts/release.py refresh-notes`를 사용한다. 기존 설명/manifest를 notes-history에 보존하고 앱/ZIP/메타데이터/체크섬은 다시 만들지 않는다. 이미 공개된 릴리스/초안에는 이 명령을 쓰지 않는다.
 - 과거 공개 노트의 오탈자/누락을 승인받아 보완할 때는 `release/history/<태그>.md`에 설명 원문을 버전 관리하고 `gh release edit <태그> --notes-file ...`로 설명만 갱신한다. 최초 공개 시각·정식 상태·태그·소스·모든 자산/해시와 최신 릴리스 표시를 전후 대조한다. 공개 당시 패키지 안의 설명/manifest는 변경하지 않는다.
 
-2026-10-14에 네 공개 설명을 보완했다. 범위와 본문 원본은 [과거 공개 노트](../release/history/README.md)에 있다. 현재 1.1.0은 로컬 검증본이며 새 GitHub 바이너리 게시와 구별한다.
+2026-10-14에 네 공개 설명을 보완했다. 범위와 본문 원본은 [과거 공개 노트](../release/history/README.md)에 있다. R137에서는 1.0.0 이후 모든 변경을 포함한 1.1.3을 공개했다. 다음 공개 범위의 기준은 v1.1.3이다.
 
-아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3, v0.17.1, v0.17.6, v1.0.0은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
+아래 명령은 원격 태그/릴리스를 변경한다. **v0.16.3, v0.17.1, v0.17.6, v1.0.0, v1.1.3은 게시 완료했으므로 재실행하지 않는다.** 다음 버전의 새 산출물에 사용한다. 소스는 origin/main에 푸시되어 있어야 하며 GitHub CLI의 로그인(`gh auth login`)이 필요하다. 저장소가 PUBLIC인지 확인하고 공개 범위를 자동 변경하지 않는다.
 
 ```sh
 # 개발용 서명/공증 없음으로 배포하기로 정했을 때

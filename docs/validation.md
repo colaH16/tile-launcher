@@ -1,5 +1,14 @@
 # 네이티브 빌드 검증
 
+## R137 · 1.1.3 정식 공개·누적 노트·공개 다운로드 확인
+
+- GitHub 공개 목록의 직전 실제 정식 버전 v1.0.0과 CHANGELOG/요청·검증 기록 및 v1.0.0..ce58673 Git 변경을 대조했다. 1.1.0/1.1.1/1.1.2/1.1.3 전체 기능·버그·UI 변경을 포함하고 중간 4×2 창 단계/최종 2×2·1×1을 구별했다. 시안은 출시 기능에서 제외했고 R136 원인 확인을 반영해 오래된 USBClean 미확정 안내를 정리했다.
+- 사용자 최종 캡처에서 Developer/USBclean의 회색 작은 앱 타일이 확인됐고 정상 종료도 사용자가 확인했다. 앞선 CUA 실패를 에이전트의 픽셀 캡처 성공으로 바꾸지 않는다. 개인 캡처/문서 제목을 공개 저장소에 저장하지 않았다.
+- 노트 커밋 1f91c5f 이후 refresh-notes는 기존 설명/manifest를 notes-history에 보존하고 앱/ZIP/메타데이터/체크섬을 바꾸지 않았다. 기존 1.1.3(18) 서명·티켓·Gatekeeper·ZIP 검사를 재통과했다. /tmp/tile-113-release-refresh.log. 앱 재빌드·공증 재제출·설치·새 버전 증가는 하지 않았다.
+- draft/publish의 범위/직전 공개본/정식 정책/PUBLIC 저장소/태그-소스/원격 main 포함/본문/자산 검사 및 초안 asset ID 다운로드 체크섬 검증을 통과했다. 2026-10-14 13:48:03 KST v1.1.3을 최신 정식으로 공개했다. /tmp/tile-113-release-draft.log, tile-113-release-publish.log.
+- 공개 API의 release ID 412346571, draft=false/prerelease=false/latest=v1.1.3와 본문 원문 일치, 태그의 실제 commit ce58673c587f9d5e9a3359d8bbbeed0034ace15f를 재확인했다. 공개 세 자산을 asset ID로 다시 다운로드해 ZIP 5e3ba121e597497b7c7522e276d7d11aed1c3f3cbbcff3523e9cffe259d73a9f / 메타데이터 9a12bdf124118bcb7e8e46f9a085425ec26211cf19e2b924d9f6ca5ab5ce6e1e / 체크섬 파일 dd59b105c20793edda4df08219786a3e698812288a3fa291bc238cf1faff8b41 일치를 확인했다. /tmp/tile-113-public-verification.json.
+- 공개 설명 원문은 release/history/v1.1.3.md에 보존한다. 링크/다운로드/현재 단계 문서만 갱신하고 기존 네 공개 릴리스의 태그·바이너리·자산은 건드리지 않았다. 이번 게시 작업에서 앱 기능 테스트를 새로 실행한 것으로 기록하지 않는다. 이전 117개 XCTest/23개 Python 및 실제 앱/서명 실행 파일 렌더 결과를 사용했다.
+
 ## R136 · 1.1.3(18) 닫힌 보조 창 판정
 
 - 사용자 요청에 따라 CUA로 실제 오버레이의 Developer 세 타일과 Developer의 실제 Discover 창을 확인했다. 현재 작업의 화면 조작은 명시적 승인 범위이며 보통의 무조작 검증 선호를 일반적으로 철회한 것으로 취급하지 않는다. 개인 문서 제목/사용자 목록은 공개 기록에 복사하지 않는다.
