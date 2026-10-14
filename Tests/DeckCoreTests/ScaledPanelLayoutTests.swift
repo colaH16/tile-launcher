@@ -3,6 +3,16 @@ import CoreGraphics
 @testable import DeckCore
 
 final class ScaledPanelLayoutTests: XCTestCase {
+    func testOnlyTilesScaleWhileToolbarAndSectionControlsStayAtNativeSize() {
+        for compact in [false, true] {
+            XCTAssertEqual(DeckSpacing.headerContent(compact: compact, scale: 1.3), 32)
+            XCTAssertEqual(DeckSpacing.header(compact: compact, scale: 1.3), 52)
+            XCTAssertEqual(DeckSpacing.chrome(compact: compact, scale: 1.3),
+                           DeckSpacing.chrome(compact: compact, scale: 1))
+        }
+        XCTAssertEqual(DeckSpacing.workHeader(scale: 1.3), 32)
+        XCTAssertEqual(DeckSpacing.shelfHeader(scale: 1.3), 42)
+    }
     func testLargeScreenUsesPreferredScaleButDoesNotEnlargeOuterSpacing() {
         let screen = CGRect(x: -2560, y: -200, width: 2560, height: 1440)
         let original = PanelLayout.calculate(visibleFrame: screen, cursor: .zero).fittingContent(registeredCount: 18)

@@ -333,6 +333,10 @@ struct DeckPreview: View {
         if launchFeedback, let pin = fixture.content.snapshot.pins.first {
             launches.launch(at: pin.url, title: pin.name, failure: { _ in })
         }
+        if recentAppearance == .locationColor {
+            fixture.content.snapshot.layout = fixture.content.snapshot.layout.fittingContent(
+                registeredCount: fixture.settings.pins.count, workRows: fixture.content.snapshot.workRows())
+        }
         _launches = StateObject(wrappedValue: launches)
         _fixture = StateObject(wrappedValue: fixture)
     }
@@ -345,7 +349,7 @@ struct DeckPreview: View {
                  menuAppearance: menuAppearance, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius * fixture.content.snapshot.layout.scale, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius, style: .continuous))
     }
 }
 
@@ -634,7 +638,7 @@ enum PreviewExport {
             changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
             openInFinder: { _ in }, openTrash: {}, showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
         let hosting = NSHostingView(rootView: view)
-        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size), scale: layout.scale)
+        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
         let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = surface
@@ -648,7 +652,7 @@ enum PreviewExport {
               abs(drag.bounds.width - layout.frame.width) < 1,
               abs(drag.bounds.height - DeckSpacing.header(compact: layout.compact, scale: layout.scale)) < 1,
               drag.excludedRects.count == 2,
-              drag.excludedRects.allSatisfy({ abs($0.width - 34 * layout.scale) < 1 && drag.bounds.contains($0) }),
+              drag.excludedRects.allSatisfy({ abs($0.width - DeckSpacing.toolbarButton) < 1 && drag.bounds.contains($0) }),
               !window.isVisible else {
             throw NSError(domain: "TileLauncher.Preview", code: 82,
                           userInfo: [NSLocalizedDescriptionKey: "Scaled header/controls must use physical window coordinates."])
@@ -664,7 +668,8 @@ enum PreviewExport {
 
     @MainActor private static func verifyRegisteredViewport(to directory: URL) throws {
         NSApp.appearance = NSAppearance(named: .darkAqua)
-        for size in [CGSize(width: 2560, height: 1440), CGSize(width: 1920, height: 1080), CGSize(width: 1440, height: 900)] {
+        for size in [CGSize(width: 2560, height: 1056), CGSize(width: 1440, height: 876),
+                     CGSize(width: 1280, height: 776), CGSize(width: 1024, height: 744)] {
             let fixture = PreviewFixture(theme: .classic, registeredCount: 39, recentCount: 14,
                                          menuComparison: true, realisticSample: true)
             fixture.settings.pins += (18..<39).map { index in
@@ -673,7 +678,7 @@ enum PreviewExport {
             }
             guard Set(fixture.settings.pins.map(\.id)).count == 39 else { throw NSError(domain: "TileLauncher.Preview", code: 100) }
             fixture.presentation.profile = fixture.settings.activeProfile
-            let layout = PanelLayout.calculate(visibleFrame: CGRect(origin: .zero, size: size),
+            var layout = PanelLayout.calculate(visibleFrame: CGRect(origin: .zero, size: size),
                 cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: 39)
             let snapshot = fixture.content.snapshot
             fixture.content.snapshot = OverlaySnapshot(context: snapshot.context, contextWindowTitle: snapshot.contextWindowTitle,
@@ -684,13 +689,15 @@ enum PreviewExport {
                     return copy
                 }, layout: layout, permission: true, pins: fixture.settings.pins, profileID: "default",
                 profileName: "기본", shortcuts: .registeredFirst, commands: [], frequentMenuIDs: [])
+            layout = layout.fittingContent(registeredCount: 39, workRows: fixture.content.snapshot.workRows())
+            fixture.content.snapshot.layout = layout
             let view = DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
                 presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
                 changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
                 openInFinder: { _ in }, openTrash: {}, showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
             let hosting = NSHostingView(rootView: view.environment(\.colorScheme, .dark))
             hosting.appearance = NSApp.appearance
-            let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size), scale: layout.scale)
+            let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
             let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.appearance = NSApp.appearance
@@ -707,7 +714,7 @@ enum PreviewExport {
             }), let document = shelf.documentView else { throw NSError(domain: "TileLauncher.Preview", code: 98) }
             let rect = shelf.convert(shelf.bounds, to: hosting)
             let bottomGap = layout.frame.height - rect.maxY
-                - (DeckSpacing.edge + DeckSpacing.sections(compact: layout.compact) + 18 * layout.scale)
+                - (DeckSpacing.edge + DeckSpacing.sections(compact: layout.compact) + 18)
             guard document.frame.height <= shelf.contentView.bounds.height + 1,
                   abs(shelf.contentView.bounds.minY) < 1, bottomGap >= -2, bottomGap <= 8,
                   abs(rect.minX - DeckSpacing.edge) <= 1,
@@ -716,13 +723,16 @@ enum PreviewExport {
                 throw NSError(domain: "TileLauncher.Preview", code: 99,
                     userInfo: [NSLocalizedDescriptionKey: "Registered viewport: rect=\(rect), document=\(document.frame.size), viewport=\(shelf.contentView.bounds), blank=\(bottomGap)"])
             }
-            print("All 39 registered items fit: viewport \(shelf.contentView.bounds.size), document \(document.frame.size), unused bottom \(bottomGap)")
+            let recent = scrolls(surface).filter { $0 !== shelf }.max { $0.bounds.width < $1.bounds.width }
+            let tile = DeckGeometry(width: layout.contentSize.width, compact: layout.compact, scale: layout.scale)
+            let visibleRows = recent.map { ($0.contentView.bounds.height + tile.gap) / (tile.unit + tile.gap) } ?? 0
+            print("All 39 registered items fit: viewport \(shelf.contentView.bounds.size), document \(document.frame.size), unused bottom \(bottomGap); recent full rows=\(Int(visibleRows)), fraction=\(visibleRows)")
             if let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
                 hosting.appearance?.performAsCurrentDrawingAppearance {
                     hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
                 }
                 try bitmap.representation(using: .png, properties: [:])?.write(to:
-                    directory.appendingPathComponent("registered-39-\(Int(size.width)).png"))
+                    directory.appendingPathComponent("registered-39-\(Int(size.width))-\(Int(size.height)).png"))
             }
             window.close()
         }

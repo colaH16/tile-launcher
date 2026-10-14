@@ -8,10 +8,8 @@ final class DeckSurfaceView: NSView {
     static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
     private let silhouette = CAShapeLayer()
     private let glass: NSGlassEffectView
-    private var displayScale: CGFloat
 
-    init(content: NSView, frame: CGRect, scale: CGFloat = 1) {
-        displayScale = scale
+    init(content: NSView, frame: CGRect) {
         glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: frame.size).insetBy(dx: -1, dy: -1))
         super.init(frame: frame)
         wantsLayer = true
@@ -20,7 +18,7 @@ final class DeckSurfaceView: NSView {
         // Keep the glass's own narrow dark edge outside the final silhouette.
         // The content stays at the original bounds; only the effect overscans.
         glass.style = .regular
-        glass.cornerRadius = Self.cornerRadius * scale + 1
+        glass.cornerRadius = Self.cornerRadius + 1
         glass.translatesAutoresizingMaskIntoConstraints = false
         glass.contentView = content
         addSubview(glass)
@@ -41,14 +39,6 @@ final class DeckSurfaceView: NSView {
     required init?(coder: NSCoder) { nil }
     override var isOpaque: Bool { false }
 
-    func updateScale(_ scale: CGFloat) {
-        guard displayScale != scale else { return }
-        displayScale = scale
-        glass.cornerRadius = Self.cornerRadius * scale + 1
-        silhouette.path = nil
-        updateSilhouette()
-    }
-
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         silhouette.contentsScale = window?.backingScaleFactor ?? 1
@@ -66,7 +56,7 @@ final class DeckSurfaceView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         silhouette.frame = bounds
-        silhouette.path = RoundedRectangle(cornerRadius: Self.cornerRadius * displayScale, style: .continuous)
+        silhouette.path = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
             .path(in: CGRect(origin: .zero, size: bounds.size)).cgPath
         CATransaction.commit()
     }

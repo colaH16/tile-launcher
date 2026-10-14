@@ -1,21 +1,20 @@
 import SwiftUI
 
 struct RecentWindowLegend: View {
-    @Environment(\.deckScale) private var scale
     var body: some View {
-        HStack(spacing: 8 * scale) {
+        HStack(spacing: 8) {
             item("현재 모니터", width: 12, height: 6,
                  help: "직사각 타일: 활성 앱이 있는 모니터의 현재 데스크탑")
             item("다른 모니터", width: 7, height: 7,
                  help: "큰 정사각 타일: 다른 모니터에서 현재 보이는 데스크탑")
             item("안 보임", width: 4, height: 4,
                  help: "작은 정사각 타일: 보이지 않는 데스크탑의 창. 회색 작은 타일은 창 없는 앱입니다.")
-        }.font(.system(size: 10 * scale)).foregroundStyle(.secondary)
+        }.font(.system(size: 10)).foregroundStyle(.secondary)
     }
     private func item(_ label: String, width: CGFloat, height: CGFloat, help: String) -> some View {
-        HStack(spacing: 4 * scale) {
-            Rectangle().frame(width: width * scale, height: height * scale)
-                .frame(width: 12 * scale, height: 10 * scale).accessibilityHidden(true)
+        HStack(spacing: 4) {
+            Rectangle().frame(width: width, height: height)
+                .frame(width: 12, height: 10).accessibilityHidden(true)
             Text(label).lineLimit(1)
         }.fixedSize().help(help).accessibilityLabel(help)
     }

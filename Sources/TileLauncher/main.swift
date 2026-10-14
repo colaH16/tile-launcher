@@ -289,8 +289,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let point = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
             ?? NSScreen.main else { return }
-        let layout: PanelLayout
+        var layout: PanelLayout
+        var layoutScreen = screen
+        var restored = false
         if let previousLayout, let previousScreen = NSScreen.screens.first(where: { $0.visibleFrame.contains(previousLayout.frame) }) {
+            layoutScreen = previousScreen
+            restored = true
             layout = previousLayout.refittingContent(registeredCount: settings.activeProfile.items.count,
                                                        visibleFrame: previousScreen.visibleFrame)
         } else {
@@ -304,7 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
         let menuNow = Date()
         let recent = OverlayContent.recentWindows(windows, context: lastContext)
-        let snapshot = OverlaySnapshot(context: lastContext,
+        var snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid && !$0.isApplication }?.title,
                                        apps: Array(apps.prefix(3)),
                                        windows: Array(recent.prefix(count)), layout: layout, permission: trusted,
@@ -312,6 +316,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
                                        commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
                                        frequentMenuIDs: MenuCommand.frequentIDs(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow))
+        layout = restored
+            ? layout.refittingContent(registeredCount: settings.activeProfile.items.count, visibleFrame: layoutScreen.visibleFrame,
+                                      workRows: snapshot.workRows())
+            : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
+        snapshot.layout = layout
         let content = OverlayContent(snapshot)
         visibleContent = content
         let folderBrowser = FolderBrowser()
@@ -333,14 +342,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             showSettings: { [weak self] destination in self?.showSettings(destination, context: content.snapshot.context) },
                             requestPermission: { [weak self] in self?.performImmediately { self?.requestPermission() } },
                             pinOverlay: { [weak self] in self?.pinOverlay() },
-                            resizeForProfile: { [weak self] count in self?.resizeOverlay(registeredCount: count) },
+                            resizeForContent: { [weak self] count, rows in self?.resizeOverlay(registeredCount: count, workRows: rows) },
                             quitApplication: { [weak self] window in self?.requestQuit(windowless: window) },
                             dismiss: { [weak self] in
                                 self?.pendingAction = nil
                                 self?.hide()
                             })
         let hosting = NSHostingView(rootView: view)
-        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size), scale: layout.scale)
+        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
         let window = DeckPanel(contentRect: layout.frame, styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered, defer: false)
         window.onClose = { [weak self] in
@@ -416,6 +425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                                 commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
                                 menuHistory: settings.menuHistory)
+        resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
         clearKeyboardFeedback()
@@ -551,16 +561,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         presentation.profile = profile
         resizeOverlay(registeredCount: profile.items.count)
     }
-    private func resizeOverlay(registeredCount: Int) {
-        guard let panel, panel.isVisible, let content = visibleContent,
+    private func resizeOverlay(registeredCount: Int, workRows: CGFloat? = nil) {
+        guard browser?.current == nil, let panel, panel.isVisible, let content = visibleContent,
               let screen = panel.screen ?? NSScreen.screens.first(where: { $0.visibleFrame.intersects(panel.frame) }) else { return }
         let old = content.snapshot.layout
         let current = PanelLayout(frame: panel.frame, compact: old.compact, supported: old.supported, scale: old.scale)
-        let fitted = current.refittingContent(registeredCount: registeredCount, visibleFrame: screen.visibleFrame)
+        let fitted = current.refittingContent(registeredCount: registeredCount, visibleFrame: screen.visibleFrame,
+                                             workRows: workRows ?? content.snapshot.workRows())
         guard fitted != old || fitted.frame != panel.frame else { return }
         content.snapshot.layout = fitted
         panel.setFrame(fitted.frame, display: true)
-        (panel.contentView as? DeckSurfaceView)?.updateScale(fitted.scale)
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.invalidateShadow()
     }

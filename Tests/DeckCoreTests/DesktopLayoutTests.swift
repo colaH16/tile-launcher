@@ -31,7 +31,7 @@ final class DesktopLayoutTests: XCTestCase {
         let content = DeckContentLayout(width: 900, availableHeight: 700, registeredCount: 36, compact: false)
         let geometry = DeckGeometry(width: 900, compact: false)
         XCTAssertEqual(content.workTopInset, 0)
-        XCTAssertEqual(content.workHeight, geometry.unit * 3.3 + geometry.gap * 3 + 32, accuracy: 0.001)
+        XCTAssertEqual(content.workHeight, (geometry.unit * 3.3 + geometry.gap * 3 + 32).rounded(.up), accuracy: 0.001)
         XCTAssertEqual(content.registeredHeight, RegisteredGridGeometry(width: 900).shelfHeight(count: 36, maximumRows: 3))
         XCTAssertLessThan(content.workTopInset + content.workHeight + content.gap + content.registeredHeight, 700)
     }
@@ -53,11 +53,11 @@ final class DesktopLayoutTests: XCTestCase {
             XCTAssertLessThanOrEqual(fitted.frame.height, original.frame.height)
             XCTAssertTrue(original.frame.contains(fitted.frame))
             XCTAssertLessThanOrEqual(fitted.frame.width / fitted.frame.height, 2.1)
-            XCTAssertGreaterThanOrEqual(fitted.frame.height, 620)
+            XCTAssertGreaterThan(fitted.frame.height, DeckSpacing.chrome(compact: false))
         }
         XCTAssertLessThan(original.fittingContent(registeredCount: 35).frame.height, original.frame.height)
         let fitted = original.fittingContent(registeredCount: 35)
-        let body = DeckContentLayout(width: fitted.frame.width, availableHeight: fitted.frame.height - 154,
+        let body = DeckContentLayout(width: fitted.frame.width, availableHeight: fitted.frame.height - DeckSpacing.chrome(compact: false),
                                      registeredCount: 35, compact: false)
         XCTAssertEqual(body.registeredHeight, RegisteredGridGeometry(width: fitted.frame.width).shelfHeight(count: 35, maximumRows: 3))
     }
@@ -79,7 +79,7 @@ final class DesktopLayoutTests: XCTestCase {
             let count = layout == small ? 18 : 36
             let body = DeckContentLayout(width: layout.frame.width,
                 availableHeight: layout.frame.height - DeckSpacing.chrome(compact: false), registeredCount: count, compact: false)
-            XCTAssertEqual(body.workHeight, DeckGeometry(width: layout.frame.width, compact: false).viewport(rows: 3.3) + 32, accuracy: 0.001)
+            XCTAssertEqual(body.workHeight, (DeckGeometry(width: layout.frame.width, compact: false).viewport(rows: 3.3) + 32).rounded(.up), accuracy: 0.001)
             XCTAssertTrue(screen.contains(layout.frame))
         }
     }

@@ -1,5 +1,13 @@
 # macOS 업그레이드 및 Apple 디자인 지침 대응
 
+## R174 · 기본 Glass 컨트롤과 타일 배율 분리
+
+- R175: 항목 개수가 아니라 실제 menu span/최근 micro-grid 배치의 큰 줄 수를 사용한다. 메뉴 우세/창 우세/작은 세로 쌍/마지막 홀수/빈 상태/좁은 화면 숨긴 메뉴에서1·2·3·3.3 정책을 확인한다. 실제 뷰 높이와 전체 패널 크기 계산은 같은 rows를 쓰고 픽셀 반올림으로 마지막 줄을 자르지 않는다. 짧은 목록을 위해 기존620pt 최소 높이를 무조건 남기지 않는다.
+
+- [Apple Liquid Glass 도입 안내](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)와 [GlassButtonStyle](https://developer.apple.com/documentation/swiftui/glassbuttonstyle)의 표준 컨트롤 경로를 사용한다. regular/circle·아이콘24pt의 현재 SDK 실측 결과는32pt다.32/8/12pt는 Apple의 영구 규격이 아니라 이번 사용자 참고 이미지에 맞춘 배치 값이다.
+- 타일 배율을 바꿔도 컨트롤/헤더52pt·섹션 제목·프로필·footer·바깥 모서리28pt는 커지지 않아야 한다. 핀/닫기/설정과 폴더 뒤로 버튼의 hitTest를 drag 영역이 덮지 않는지 확인한다. 긴 제목/부제는 한 줄로 줄여 표시하며 실제 앱 제어 동작은 유지한다.
+- 2560×1080 전체와 메뉴 막대/Dock을 제외한 가용 영역을 구별한다.2560×1056·1440×876·1280×776·1024×744 샘플에서 등록39개3줄과 최근 창의 실제 완전 행/부분 행을 따로 읽는다. 아주 작은 화면이나 더 많은 등록 항목의 스크롤은 유지한다.
+
 ## R170–R172 · 1.3배와 고정 여백·등록 영역
 
 - PanelLayout/DeckContentLayout은 물리 높이를 계산한다. 논리 폭+배율 입력은 타일 밀도만 보존하며 바깥/영역 간격은 다시 곱하지 않는다. 상단 드래그 영역도 같은 header 계산을 쓴다. 두 버튼의 실제 제외 영역/hitTest를 검사한다.

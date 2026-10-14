@@ -60,6 +60,12 @@ struct OverlaySnapshot: Equatable {
     let shortcuts: NumberShortcutAssignment
     let commands: [MenuCommand]
     var frequentMenuIDs: Set<UUID> = []
+    func workRows(commands override: [MenuCommand]? = nil) -> CGFloat {
+        let geometry = DeckGeometry(width: layout.contentSize.width, compact: layout.compact, scale: layout.scale)
+        return WorkAreaRows.visible(menuSpans: (override ?? commands).map { $0.isPinned ? 2 : 1 },
+            windowSizes: windows.map { $0.isApplication ? .application : $0.location.size },
+            windowColumns: geometry.windowColumns, compact: layout.compact)
+    }
 }
 final class OverlayContent: ObservableObject {
     @Published var snapshot: OverlaySnapshot

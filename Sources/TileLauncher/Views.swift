@@ -142,7 +142,7 @@ struct DeckView: View {
     let showSettings: (SettingsDestination) -> Void
     let requestPermission: () -> Void
     let pinOverlay: () -> Void
-    var resizeForProfile: (Int) -> Void = { _ in }
+    var resizeForContent: (Int, CGFloat) -> Void = { _, _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
     var recentAppearance: RecentAppearance = .locationColor
     var menuAppearance: MenuAppearance = .selected
@@ -174,7 +174,7 @@ struct DeckView: View {
         deckContents
             .frame(width: snapshot.layout.frame.width, height: snapshot.layout.frame.height, alignment: .topLeading)
             .environment(\.deckScale, snapshot.layout.scale)
-            .font(.system(size: u(NSFont.systemFontSize)))
+            .font(.system(size: NSFont.systemFontSize))
             // Layout and text are drawn at their final point sizes. The native
             // drag view and SwiftUI button anchors share physical coordinates.
             .overlayPreferenceValue(HeaderControlsKey.self) { controls in
@@ -198,7 +198,7 @@ struct DeckView: View {
                         let content = DeckContentLayout(width: snapshot.layout.contentSize.width,
                                                         availableHeight: area.size.height,
                                                         registeredCount: registeredItems.count, compact: compact,
-                                                        scale: snapshot.layout.scale)
+                                                        scale: snapshot.layout.scale, workRows: workRows)
                         VStack(spacing: u(0)) {
                             workArea(height: content.workHeight)
                             Color.clear.frame(height: content.gap)
@@ -207,19 +207,19 @@ struct DeckView: View {
                         }
                     }
                 }
-                HStack(spacing: u(8)) {
+                HStack(spacing: 8) {
                     Image(systemName: presentation.execution != nil || launches.statusText != nil ? "arrow.up.right" : presentation.isPinned ? "pin.fill" : "option")
                     Text(presentation.selectionTitle.map { "\($0) · Option을 놓으면 실행" }
                          ?? launches.statusText
                          ?? presentation.execution.map { "실행 요청: \($0.title)" }
                          ?? (compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
                          : presentation.isPinned ? "상단 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정"))
-                        .font(font(.caption1)).lineLimit(1)
+                        .font(.caption).lineLimit(1)
                     Spacer()
                     Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
-                        .font(font(.caption1)).lineLimit(1).foregroundStyle(.secondary)
+                        .font(.caption).lineLimit(1).foregroundStyle(.secondary)
                 }
-                .frame(height: u(18))
+                .frame(height: 18)
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, DeckSpacing.edge)
@@ -234,31 +234,34 @@ struct DeckView: View {
         }
         .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
         .onChange(of: snapshot.windows.map(\.id)) { _, _ in recentOffset = 0 }
-        .onChange(of: registeredItems.count) { _, count in resizeForProfile(count) }
+        .onChange(of: registeredItems.count) { _, count in resizeForContent(count, workRows) }
+        .onChange(of: workRows) { _, rows in resizeForContent(registeredItems.count, rows) }
+        .onChange(of: browser.current) { _, current in
+            if current == nil { resizeForContent(registeredItems.count, workRows) }
+        }
     }
 
     private var header: some View {
         ZStack {
-            VStack(spacing: u(3)) {
+            VStack(spacing: 1) {
                 Text(headerTitle)
-                    .font(.system(size: u(compact ? 18 : 23), weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
-                Text(headerSubtitle).font(font(.caption1)).foregroundStyle(.secondary)
+                Text(headerSubtitle).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, u(104))
+            .padding(.horizontal, 88)
             .allowsHitTesting(false)
 
-            HStack(spacing: u(8)) {
+            HStack(spacing: 8) {
                 Button {
                     if presentation.isPinned { dismiss() } else { pinOverlay() }
                 } label: {
                     Image(systemName: presentation.isPinned ? "xmark" : "pin")
-                        .frame(width: u(34), height: u(34)).contentShape(Circle())
+                        .font(.system(size: 13)).frame(width: 24, height: 24)
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: Circle())
+                .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                 .help(presentation.isPinned ? "닫기 · Esc · ⌘W · ⌥W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
                 .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
@@ -266,28 +269,26 @@ struct DeckView: View {
                 if browser.current != nil {
                     Button(action: browser.back) {
                         Image(systemName: "chevron.left")
-                            .frame(width: u(34), height: u(34)).contentShape(Circle())
+                            .font(.system(size: 13)).frame(width: 24, height: 24)
                     }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.interactive(), in: Circle())
+                    .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                     .help("뒤로")
                     .accessibilityLabel("이전 폴더로 이동")
                     .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
                 }
                 Spacer()
                 Button { showSettings(.general) } label: {
-                    Image(systemName: "slider.horizontal.3").frame(width: u(34), height: u(34)).contentShape(Circle())
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 13)).frame(width: 24, height: 24)
                 }
-                .buttonStyle(.plain).help("설정 · ⌘, 또는 ⌥,")
+                .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular).help("설정 · ⌘, 또는 ⌥,")
                 .accessibilityLabel("설정")
-                .glassEffect(.regular.interactive(), in: Circle())
                 .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
             }
         }
         .frame(height: DeckSpacing.headerContent(compact: compact, scale: snapshot.layout.scale))
-        .padding(.horizontal, DeckSpacing.edge)
-        .padding(.top, DeckSpacing.edge)
-        .padding(.bottom, DeckSpacing.sections(compact: compact))
+        .padding(.horizontal, DeckSpacing.toolbarHorizontal)
+        .padding(.top, DeckSpacing.toolbarTop)
+        .padding(.bottom, DeckSpacing.toolbarBottom)
     }
 
     private var headerTitle: String {
@@ -301,6 +302,10 @@ struct DeckView: View {
 
     private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.contentSize.width, compact: compact, scale: snapshot.layout.scale) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
+    private var workRows: CGFloat {
+        recentAppearance == .locationColor && previewDesktopColumns == nil && previewWindowSizes == nil
+            ? snapshot.workRows(commands: menuItems) : 3.3
+    }
     private func workArea(height: CGFloat) -> some View {
         HStack(alignment: .top, spacing: DeckSpacing.columns) {
             if !compact { menuSection(height: height).frame(width: geometry.menuWidth) }
@@ -315,12 +320,12 @@ struct DeckView: View {
 
     private func menuSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
-            HStack(spacing: u(8)) {
+            HStack(spacing: 8) {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
                 Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("설정에서 앱별 메뉴 추가")
-            }.frame(height: u(20))
+            }.frame(height: 20)
             if menuItems.isEmpty {
                 Button { showSettings(.addMenu) } label: {
                     VStack(alignment: .leading, spacing: u(9)) {
@@ -432,15 +437,15 @@ struct DeckView: View {
     private var registeredSection: some View {
         let grid = RegisteredGridGeometry(width: snapshot.layout.contentSize.width, scale: snapshot.layout.scale)
         return VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
-            HStack(spacing: u(8)) {
+            HStack(spacing: 8) {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
                 profilePicker
-                Text("\(registeredItems.count)개").font(font(.caption2)).foregroundStyle(.tertiary)
+                Text("\(registeredItems.count)개").font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
-                Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(font(.caption1)).foregroundStyle(.secondary)
+                Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
                 Button { showSettings(.registered) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
-            }.frame(height: u(26))
+            }.frame(height: 26)
             if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가") { showSettings(.registered) }
                     .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -495,10 +500,10 @@ struct DeckView: View {
             }
         } label: {
             Label(profileName, systemImage: "circle.dotted")
-                .font(font(.caption1)).lineLimit(1).frame(maxWidth: u(110))
+                .font(.caption).lineLimit(1).frame(maxWidth: 110)
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .padding(.horizontal, u(8)).frame(height: u(26))
+        .padding(.horizontal, 8).frame(height: 26)
         .glassEffect(.regular.interactive(), in: Capsule())
         .help("프로필 선택 · ⌥A/S 이전 · ⌥D/F 다음 · 키/휠 임시 전환은 닫으면 복귀")
         .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
@@ -518,17 +523,17 @@ struct DeckView: View {
     }
     private func recentSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
-            HStack(spacing: u(8)) {
+            HStack(spacing: 8) {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
-                Text("\(snapshot.windows.count)개").font(font(.caption2)).foregroundStyle(.tertiary)
+                Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
                 if let previewRecentLegend {
-                    Text(previewRecentLegend).font(font(.caption2)).foregroundStyle(.secondary)
+                    Text(previewRecentLegend).font(.caption2).foregroundStyle(.secondary)
                 } else if recentAppearance == .locationColor {
                     RecentWindowLegend()
                 }
-                Spacer(minLength: u(4))
-                Text("\(snapshot.shortcuts.windowPrefix)1–0").font(font(.caption1)).foregroundStyle(.secondary)
-            }.frame(height: u(20))
+                Spacer(minLength: 4)
+                Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
+            }.frame(height: 20)
             if !snapshot.permission {
                 VStack(spacing: u(8)) {
                     Text("창을 보여주려면 접근성 권한이 필요해요.").font(font(.callout))
@@ -686,11 +691,11 @@ struct DeckView: View {
     }
 
     private var folderContents: some View {
-        VStack(alignment: .leading, spacing: u(14)) {
-            HStack(spacing: u(8)) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
                 Picker("정렬", selection: $browser.sort) {
                     ForEach(FolderSort.allCases) { Text($0.rawValue).tag($0) }
-                }.labelsHidden().frame(width: u(160))
+                }.labelsHidden().frame(width: 160)
                     .help("추가 날짜가 없는 파일은 생성일로 정렬합니다.")
                 Spacer()
                 Button("Finder에서 열기") { if let url = browser.current { openInFinder(url) } }
@@ -725,9 +730,9 @@ struct DeckView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private func sectionTitle(_ title: String, symbol: String?) -> some View {
-        HStack(spacing: u(6)) {
-            if let symbol { Image(systemName: symbol).font(font(.caption1)) }
-            Text(title).font(.system(size: u(12), weight: .semibold))
+        HStack(spacing: 6) {
+            if let symbol { Image(systemName: symbol).font(.caption) }
+            Text(title).font(.system(size: 12, weight: .semibold))
         }.foregroundStyle(.secondary)
     }
 }

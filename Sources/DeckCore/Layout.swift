@@ -56,28 +56,28 @@ public struct PanelLayout: Equatable {
     }
 
     /// Trim unused vertical space within the existing size/aspect limits.
-    public func fittingContent(registeredCount: Int) -> Self {
+    public func fittingContent(registeredCount: Int, workRows: CGFloat = 3.3) -> Self {
         let geometry = DeckGeometry(width: contentSize.width, compact: compact, scale: scale)
         let shelf = RegisteredGridGeometry(width: contentSize.width, scale: scale)
             .shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
         // Reserve native caption/icon line metrics plus rounding so a shelf row
         // never disappears for a one-point shortage at the viewport boundary.
-        let desired = geometry.viewport(rows: 3.3) + DeckSpacing.workHeader(scale: scale) + shelf
+        let workHeight = (geometry.viewport(rows: max(1, min(3.3, workRows))) + DeckSpacing.workHeader(scale: scale)).rounded(.up)
+        let desired = workHeight + shelf
             + DeckSpacing.workToShelf(compact: compact) + DeckSpacing.chrome(compact: compact, scale: scale)
-        let minimum: CGFloat = (compact ? 420 : 620) * scale
-        let height = min(frame.height, max(minimum, desired.rounded(.up)))
+        let height = min(frame.height, desired.rounded(.up))
         return Self(frame: CGRect(x: frame.minX, y: frame.midY - height / 2, width: frame.width, height: height),
                     compact: compact, supported: supported, scale: scale)
     }
 
     /// Profile changes retain the top edge/dragged position and clamp to the screen.
     /// Rebuild from the screen ceiling so a smaller profile can grow again.
-    public func refittingContent(registeredCount: Int, visibleFrame: CGRect) -> Self {
+    public func refittingContent(registeredCount: Int, visibleFrame: CGRect, workRows: CGFloat = 3.3) -> Self {
         let ceiling = Self.calculate(visibleFrame: visibleFrame, cursor: CGPoint(x: frame.midX, y: frame.midY), scale: scale)
         let upper = Self(frame: CGRect(x: frame.minX, y: frame.minY, width: min(frame.width, ceiling.frame.width),
                                       height: ceiling.frame.height), compact: ceiling.compact, supported: ceiling.supported,
                          scale: ceiling.scale)
-        let fitted = upper.fittingContent(registeredCount: registeredCount)
+        let fitted = upper.fittingContent(registeredCount: registeredCount, workRows: workRows)
         let safe = visibleFrame.insetBy(dx: min(24, visibleFrame.width / 8), dy: min(24, visibleFrame.height / 8))
         let x = min(max(frame.minX, safe.minX), safe.maxX - fitted.frame.width)
         let y = min(max(frame.maxY - fitted.frame.height, safe.minY), safe.maxY - fitted.frame.height)

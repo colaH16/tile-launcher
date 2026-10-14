@@ -58,7 +58,7 @@ struct GeneralSettingsContent: View {
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("최근 사용한 창부터 표시합니다. 최대 3.3줄을 보여주며 아래로 스크롤할 수 있습니다.")
+                        Text("메뉴와 최근 창 중 더 긴 쪽에 맞춥니다. 4줄 이상은 3.3줄까지 표시하고 스크롤합니다.")
                             .font(.caption).foregroundStyle(.secondary)
                         RecentWindowExplanation()
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)

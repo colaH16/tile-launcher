@@ -31,14 +31,16 @@ public struct DeckContentLayout {
     public let workTopInset: CGFloat
     public let gap: CGFloat
 
-    public init(width: CGFloat, availableHeight: CGFloat, registeredCount: Int, compact: Bool, scale: CGFloat = 1) {
+    public init(width: CGFloat, availableHeight: CGFloat, registeredCount: Int, compact: Bool, scale: CGFloat = 1,
+                workRows: CGFloat = 3.3) {
         gap = DeckSpacing.workToShelf(compact: compact)
         let geometry = DeckGeometry(width: width, compact: compact, scale: scale)
         let grid = RegisteredGridGeometry(width: width, scale: scale)
         let oneRegisteredRow = grid.shelfHeight(count: 1, maximumRows: 1)
         let desiredShelf = grid.shelfHeight(count: registeredCount, maximumRows: compact ? 2 : 3)
-        let desiredWork = geometry.viewport(rows: 3.3) + DeckSpacing.workHeader(scale: scale)
-        let minimumWork = geometry.viewport(rows: compact ? 1 : 2) + DeckSpacing.workHeader(scale: scale)
+        let rows = max(1, min(3.3, workRows))
+        let desiredWork = (geometry.viewport(rows: rows) + DeckSpacing.workHeader(scale: scale)).rounded(.up)
+        let minimumWork = geometry.viewport(rows: min(rows, compact ? 1 : 2)) + DeckSpacing.workHeader(scale: scale)
         let available = max(0, availableHeight - gap)
         registeredHeight = min(available, max(oneRegisteredRow, min(desiredShelf, available - minimumWork)))
         workHeight = min(desiredWork, max(0, available - registeredHeight))
