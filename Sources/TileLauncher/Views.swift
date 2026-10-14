@@ -221,7 +221,7 @@ struct DeckView: View {
                         .font(.caption).lineLimit(1).foregroundStyle(.secondary)
                 }
                 .frame(height: previewChrome.proposed ? 14 : 18)
-                .padding(.horizontal, previewChrome.proposed ? 16 : 0)
+                .padding(.horizontal, previewChrome.footerExtraInset)
                 .font(previewChrome.proposed ? .caption : .system(size: NSFont.systemFontSize))
                 .foregroundStyle(.secondary)
             }
@@ -251,7 +251,7 @@ struct DeckView: View {
                     InlineHeaderProposal(
                         iconURL: browser.current ?? snapshot.context?.url
                             ?? snapshot.windows.first { $0.appName == snapshot.context?.name }?.appURL,
-                        appName: headerTitle, windowName: headerSubtitle)
+                        appName: headerTitle, windowName: headerSubtitle, opticalBalance: previewChrome.optical)
                 } else {
                     VStack(spacing: 1) {
                         Text(headerTitle)

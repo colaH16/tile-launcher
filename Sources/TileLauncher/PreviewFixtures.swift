@@ -483,6 +483,17 @@ enum PreviewExport {
         }
         try save(ChromeProposalComparison(directory: directory).environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("chrome-177-comparison.png"))
+        for optical in [false, true] {
+            let view = DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
+                                   deliveredScale: true, chromeProposal: optical ? .opticalBalance : .inlineTitle)
+                .environment(\.colorScheme, .dark)
+            let name = optical ? "after" : "before"
+            try save(view, to: directory.appendingPathComponent("chrome-178-\(name).png"))
+            try save(view, capture: .title, to: directory.appendingPathComponent("chrome-178-\(name)-title.png"))
+            try save(view, capture: .footerRight, to: directory.appendingPathComponent("chrome-178-\(name)-footer.png"))
+        }
+        try save(OpticalChromeComparison(directory: directory).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("chrome-178-comparison.png"))
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
