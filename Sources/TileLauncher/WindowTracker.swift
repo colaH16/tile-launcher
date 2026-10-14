@@ -7,6 +7,13 @@ private struct TrackedWindow {
     var item: WindowItem
 }
 
+private final class WindowFocusRequest {
+    private let lock = NSLock()
+    private var cancelled = false
+    var active: Bool { lock.lock(); defer { lock.unlock() }; return !cancelled }
+    func cancel() { lock.lock(); defer { lock.unlock() }; cancelled = true }
+}
+
 /// AX and WindowServer reads stay off the main thread. A partial AX list on a
 /// different Space is not a closed-window notification.
 final class WindowTracker {
@@ -22,6 +29,7 @@ final class WindowTracker {
     private var enabled = false
     private var pending: [pid_t: DispatchWorkItem] = [:]
     private var applicationIDs: [pid_t: UUID] = [:]
+    private var focusRequest: WindowFocusRequest?
     private let windowEvents = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
                                 kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
                                 kAXMovedNotification, kAXResizedNotification]
@@ -61,40 +69,45 @@ final class WindowTracker {
     }
     func focus(id: UUID, completion: @escaping (String?) -> Void) {
         queue.async {
+            self.focusRequest?.cancel()
+            let request = WindowFocusRequest()
+            self.focusRequest = request
+            let complete: (String?) -> Void = { if request.active { completion($0) } }
             guard self.enabled, AXIsProcessTrusted(),
                   let target = self.windows.values.joined().first(where: { $0.item.id == id }) else {
-                DispatchQueue.main.async { completion("창에 접근할 수 없습니다. 접근성 권한과 창 상태를 확인해 주세요.") }
+                DispatchQueue.main.async { complete("창에 접근할 수 없습니다. 접근성 권한과 창 상태를 확인해 주세요.") }
                 return
             }
             self.desktops.refresh()
             if target.item.isApplication {
                 DispatchQueue.main.async {
+                    guard request.active else { return }
                     guard let app = target.item.runningApplication, !app.isTerminated else {
-                        completion("앱이 종료되었습니다."); return
+                        complete("앱이 종료되었습니다."); return
                     }
                     NSApp.yieldActivation(to: app)
-                    completion(app.activate(options: []) ? nil : "앱을 활성화하지 못했습니다.")
+                    complete(app.activate(options: []) ? nil : "앱을 활성화하지 못했습니다.")
                 }
                 return
             }
             if let number = target.item.windowID, self.desktops.valid,
                self.desktops.records[number]?.pid != target.item.pid {
-                DispatchQueue.main.async { completion("이 창이 닫혔습니다.") }
+                DispatchQueue.main.async { complete("이 창이 닫혔습니다.") }
                 return
             }
             if let element = target.element, self.isInvalid(element) {
-                DispatchQueue.main.async { completion("이 창이 닫혔거나 응답하지 않습니다.") }
+                DispatchQueue.main.async { complete("이 창이 닫혔거나 응답하지 않습니다.") }
                 return
             }
-            let switched = target.item.windowID.map { self.desktops.revealDesktop(for: $0) } ?? false
-            // Space transitions are asynchronous. Retry only resolving/raising a
-            // selected window, never menu commands or a different app window.
-            self.resolveFocus(target, attempt: 0, delay: switched ? 0.18 : 0, completion: completion)
+            // Let AppKit/AX and the Dock coordinate visibility and transitions.
+            // WindowServer's direct Space setter can leave both Spaces visible.
+            self.resolveFocus(target, request: request, attempt: 0, delay: 0, completion: complete)
         }
     }
-    private func resolveFocus(_ target: TrackedWindow, attempt: Int, delay: TimeInterval,
+    private func resolveFocus(_ target: TrackedWindow, request: WindowFocusRequest, attempt: Int, delay: TimeInterval,
                               completion: @escaping (String?) -> Void) {
         queue.asyncAfter(deadline: .now() + delay) {
+            guard request.active else { return }
             guard self.enabled, AXIsProcessTrusted() else {
                 DispatchQueue.main.async { completion("접근성 권한이 해제되었습니다.") }; return
             }
@@ -106,11 +119,25 @@ final class WindowTracker {
             self.refresh(target.item.pid, focusEvent: false)
             let match = self.windows[target.item.pid]?.first { $0.item.id == target.item.id }
             if let element = match?.element ?? target.element, !self.isInvalid(element) {
-                self.raise(element, item: target.item, completion: completion)
+                self.raise(element, item: target.item, request: request, completion: completion)
                 return
             }
             if attempt < 4 {
-                self.resolveFocus(target, attempt: attempt + 1, delay: 0.15, completion: completion)
+                if attempt == 0 {
+                    // A cold-start off-Space window may not expose AX yet.
+                    // Activate its app once, then resolve only the selected ID.
+                    DispatchQueue.main.async {
+                        guard request.active else { return }
+                        guard let app = NSRunningApplication(processIdentifier: target.item.pid), !app.isTerminated else {
+                            completion("앱이 종료되었습니다."); return
+                        }
+                        NSApp.yieldActivation(to: app)
+                        guard app.activate(options: []) else { completion("앱을 활성화하지 못했습니다."); return }
+                        self.resolveFocus(target, request: request, attempt: 1, delay: 0.2, completion: completion)
+                    }
+                } else {
+                    self.resolveFocus(target, request: request, attempt: attempt + 1, delay: 0.2, completion: completion)
+                }
             } else {
                 DispatchQueue.main.async {
                     completion("이 앱이 해당 창의 제어 정보를 제공하지 않았습니다. 해당 데스크탑에서 창을 한 번 연 뒤 다시 선택해 주세요.")
@@ -118,22 +145,54 @@ final class WindowTracker {
             }
         }
     }
-    private func raise(_ element: AXUIElement, item: WindowItem, completion: @escaping (String?) -> Void) {
+    private func raise(_ element: AXUIElement, item: WindowItem, request: WindowFocusRequest, completion: @escaping (String?) -> Void) {
+        guard request.active else { return }
         if value(element, kAXMinimizedAttribute) as? Bool == true {
             guard AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse) == .success else {
                 DispatchQueue.main.async { completion("이 앱의 최소화된 창을 복원하지 못했습니다.") }; return
             }
         }
+        // Establish the intended window before app activation so macOS does not
+        // choose a different main window/Space for an app with several windows.
+        _ = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         DispatchQueue.main.async {
+            guard request.active else { return }
             guard let app = NSRunningApplication(processIdentifier: item.pid), !app.isTerminated else {
                 completion("앱이 종료되었습니다."); return
             }
             NSApp.yieldActivation(to: app)
             guard app.activate(options: []) else { completion("앱을 활성화하지 못했습니다."); return }
-            self.queue.async {
-                let raised = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+            self.queue.asyncAfter(deadline: .now() + 0.12) {
+                guard request.active else { return }
                 _ = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-                DispatchQueue.main.async { completion(raised == .success ? nil : "앱은 열었지만 이 창을 앞으로 가져오지 못했습니다.") }
+                _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+                self.verifyFocus(element, item: item, request: request, attempt: 0, completion: completion)
+            }
+        }
+    }
+    private func verifyFocus(_ element: AXUIElement, item: WindowItem, request: WindowFocusRequest, attempt: Int,
+                             completion: @escaping (String?) -> Void) {
+        guard request.active else { return }
+        desktops.refresh()
+        let app = AXUIElementCreateApplication(item.pid)
+        AXUIElementSetMessagingTimeout(app, 0.15)
+        let focused = value(app, kAXFocusedWindowAttribute)
+        let matches = focused.map { CFGetTypeID($0) == AXUIElementGetTypeID() && CFEqual($0, element) } ?? false
+        let exists = desktops.valid ? item.windowID.map { desktops.records[$0]?.pid == item.pid } : nil
+        let status = WindowFocusStatus.evaluate(targetExists: exists,
+            frontmost: value(app, kAXFrontmostAttribute) as? Bool == true, focused: matches,
+            desktop: desktops.desktop(for: item.windowID), attempt: attempt)
+        switch status {
+        case .confirmed: DispatchQueue.main.async { completion(nil) }
+        case .closed: DispatchQueue.main.async { completion("이 창이 닫혔습니다.") }
+        case .unconfirmed:
+            DispatchQueue.main.async {
+                completion("선택한 창으로 전환됐는지 확인하지 못했습니다. 해당 데스크탑에서 창 상태를 확인해 주세요.")
+            }
+        case .retry:
+            queue.asyncAfter(deadline: .now() + 0.15) {
+                self.verifyFocus(element, item: item, request: request, attempt: attempt + 1, completion: completion)
             }
         }
     }

@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let hold = HoldMonitor()
     let loginItem = LoginItemManager()
     let presentation = OverlayPresentation()
+    private let launches = ApplicationLaunchMonitor()
     let menuCatalog = MenuCatalog()
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var visibleContent: OverlayContent?
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionTimer: Timer?
     private var trusted = false
     private var pendingAction: (() -> Void)?
+    private var keyboardFeedbackCleanup: DispatchWorkItem?
     private var heldPresentation = false
     private var optionReopen = OptionReopenMemory<PanelLayout>()
     private var browser: FolderBrowser?
@@ -88,7 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.presentation.dismisses(for: reason) else { return }
             self.hide(reason: reason, at: time)
         }
-        hold.onCancel = { [weak self] in self?.pendingAction = nil; self?.presentation.selection = nil }
+        hold.onCancel = { [weak self] in
+            self?.pendingAction = nil
+            self?.presentation.selection = nil
+            self?.clearKeyboardFeedback()
+        }
         hold.onRelease = { [weak self] in
             self?.finishOptionSelection()
         }
@@ -314,7 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         presentation.profile = settings.activeProfile
         profileScroll.reset()
         presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
-        let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation,
+        let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation, launches: launches,
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },
                             selectMenu: { [weak self] command, context, window in self?.select(menu: command, context: context, window: window) },
@@ -400,7 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel?.isVisible == true else { return }
         let mouseDown = NSEvent.pressedMouseButtons != 0
         guard PinnedRefreshPolicy.allows(isPinned: presentation.isPinned, optionDown: hold.optionDown,
-                                        hasSelection: presentation.selection != nil,
+                                        hasSelection: presentation.selection != nil || presentation.execution != nil,
                                         hasPendingAction: pendingAction != nil, mouseDown: mouseDown) else {
             // Native window dragging may not deliver mouse-up. Retry only while
             // a known refresh is deferred by that gesture, never poll app contents.
@@ -412,6 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 menuHistory: settings.menuHistory)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
+        clearKeyboardFeedback()
         optionReopen.record(visibleSnapshot?.layout, at: time, reason: reason,
                             held: heldPresentation && panel?.isVisible == true,
                             actionPending: pendingAction != nil, preferences: settings.optionReopen)
@@ -428,6 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         profileScroll.reset()
     }
     private func performImmediately(_ action: () -> Void) {
+        clearKeyboardFeedback()
         pendingAction = nil
         presentation.selection = nil
         if !presentation.isPinned { hide() }
@@ -435,10 +443,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func finishOptionSelection() {
         let action = pendingAction
+        let target = presentation.selection
+        let title = presentation.selectionTitle
+        let pinned = presentation.isPinned
         pendingAction = nil
         presentation.selection = nil
         action?()
+        if action != nil, pinned, presentation.isPinned, let target, let title {
+            let id = presentation.showExecution(target: target, title: title)
+            keyboardFeedbackCleanup?.cancel()
+            let cleanup = DispatchWorkItem { [weak self] in
+                self?.presentation.clearExecution(id: id)
+                self?.keyboardFeedbackCleanup = nil
+                self?.schedulePinnedRefresh()
+            }
+            keyboardFeedbackCleanup = cleanup
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: cleanup)
+        }
         schedulePinnedRefresh()
+    }
+    private func clearKeyboardFeedback() {
+        keyboardFeedbackCleanup?.cancel()
+        keyboardFeedbackCleanup = nil
+        presentation.clearExecution()
     }
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
     func verifyClickExecutionForPreview() throws {
@@ -450,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             throw NSError(domain: "TileLauncher.Preview", code: 60)
         }
         _ = hold.handle(option, external: false)
-        defer { hold.stop(); hold.onRelease = nil; pendingAction = nil; presentation.reset() }
+        defer { hold.stop(); hold.onRelease = nil; pendingAction = nil; clearKeyboardFeedback(); presentation.reset() }
         for pinned in [false, true] {
             presentation.reset()
             if pinned { presentation.pin() }
@@ -467,6 +494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard clicks == 1, queued == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 62) }
         }
         var numbers = 0
+        presentation.pin()
+        presentation.selection = "pin:preview"
+        presentation.selectionTitle = "테스트 앱"
         pendingAction = { numbers += 1 }
         guard numbers == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 63) }
         hold.onRelease = { [weak self] in self?.finishOptionSelection() }
@@ -477,7 +507,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         _ = hold.handle(release, external: false)
         _ = hold.handle(release, external: false)
-        guard !hold.optionDown, numbers == 1, pendingAction == nil else {
+        guard !hold.optionDown, numbers == 1, pendingAction == nil,
+              presentation.execution?.target == "pin:preview", presentation.execution?.title == "테스트 앱",
+              presentation.isPinned else {
             throw NSError(domain: "TileLauncher.Preview", code: 64)
         }
         print("AppDelegate: immediate click while Option held, pinned retention, queued-number cancellation and exactly-once deferred number execution passed.")
@@ -514,6 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingAction = nil
         presentation.selection = nil
         browser?.close()
+        clearKeyboardFeedback()
         profileChangeRevision += 1
         presentation.profile = profile
         resizeOverlay(registeredCount: profile.items.count)
@@ -539,26 +572,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func selectNumber(_ index: Int, command: Bool) {
         guard let snapshot = visibleSnapshot, browser?.current == nil else { NSSound.beep(); return }
+        pendingAction = nil
+        presentation.selection = nil
         if snapshot.shortcuts.targetsWindows(command: command) {
             guard snapshot.windows.indices.contains(index) else { NSSound.beep(); return }
             let window = snapshot.windows[index]
+            if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
             presentation.selection = "window:\(window.id)"
+            presentation.selectionTitle = window.isApplication ? window.appName : "\(window.appName) — \(window.title)"
             pendingAction = { [weak self] in self?.select(window: window) }
         } else {
             let pins = presentation.profile?.items ?? snapshot.pins
             guard pins.indices.contains(index) else { NSSound.beep(); return }
             let pin = pins[index]
+            if pin.kind == .app && launches.isBlocked(pin.url) { return }
             if pin.opensInOverlay {
                 select(pin: pin)
                 return
             }
             presentation.selection = "pin:\(pin.id)"
+            presentation.selectionTitle = pin.name
             pendingAction = { [weak self] in self?.select(pin: pin) }
         }
     }
     private func select(pin: PinnedItem) {
         if pin.kind == .trash { selectTrash() }
-        else if pin.kind == .app { launchApplication(at: pin.url) }
+        else if pin.kind == .app { launchApplication(at: pin.url, title: pin.name) }
         else if pin.opensInOverlay {
             pendingAction = nil
             presentation.selection = nil
@@ -595,6 +634,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func select(app: AppItem) {
+        if let url = app.url, launches.isBlocked(url) { return }
         performImmediately { [weak self] in
             guard let running = NSRunningApplication(processIdentifier: app.pid) else {
                 self?.error("앱이 종료되었습니다.")
@@ -605,6 +645,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func select(window: WindowItem) {
+        if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
         performImmediately { [weak self] in
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
@@ -628,15 +669,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !NSWorkspace.shared.open(url) { self?.error("항목을 열지 못했습니다. 이동되었거나 삭제되었는지 확인해 주세요.") }
         }
     }
-    private func launchApplication(at url: URL) {
+    private func launchApplication(at url: URL, title: String? = nil) {
+        guard !launches.isBlocked(url) else { return }
         performImmediately { [weak self] in
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            configuration.addsToRecentItems = false
-            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, failure in
-                if let failure {
-                    DispatchQueue.main.async { self?.error("앱을 열지 못했습니다. \(failure.localizedDescription)") }
-                }
+            self?.launches.launch(at: url, title: title ?? url.deletingPathExtension().lastPathComponent) { [weak self] message in
+                self?.error(message)
             }
         }
     }

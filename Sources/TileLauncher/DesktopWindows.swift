@@ -21,7 +21,6 @@ final class DesktopWindows {
     private typealias Connection = @convention(c) () -> UInt32
     private typealias Displays = @convention(c) (UInt32) -> Unmanaged<CFArray>?
     private typealias Spaces = @convention(c) (UInt32, Int32, CFArray) -> Unmanaged<CFArray>?
-    private typealias SelectSpace = @convention(c) (UInt32, CFString, UInt64) -> Void
     private typealias WindowNumber = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> Int32
     private typealias OrderedIn = @convention(c) (UInt32, CGWindowID, UnsafeMutablePointer<UInt8>) -> Int32
     private let sky = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
@@ -29,13 +28,11 @@ final class DesktopWindows {
     private var connection: UInt32?
     private var displays: Displays?
     private var spaces: Spaces?
-    private var selectSpace: SelectSpace?
     private var windowNumber: WindowNumber?
     private var orderedIn: OrderedIn?
     private(set) var records: [CGWindowID: ServerWindow] = [:]
     private(set) var valid = false
     private var activeSpaces: Set<UInt64> = []
-    private var spaceDisplays: [UInt64: String] = [:]
     private var memberships: [CGWindowID: Set<UInt64>] = [:]
 
     init() {
@@ -45,7 +42,6 @@ final class DesktopWindows {
             }
             if let p = dlsym(sky, "CGSCopyManagedDisplaySpaces") { displays = unsafeBitCast(p, to: Displays.self) }
             if let p = dlsym(sky, "CGSCopySpacesForWindows") { spaces = unsafeBitCast(p, to: Spaces.self) }
-            if let p = dlsym(sky, "CGSManagedDisplaySetCurrentSpace") { selectSpace = unsafeBitCast(p, to: SelectSpace.self) }
             if let p = dlsym(sky, "SLSWindowIsOrderedIn") ?? dlsym(sky, "CGSWindowIsOrderedIn") {
                 orderedIn = unsafeBitCast(p, to: OrderedIn.self)
             }
@@ -56,15 +52,10 @@ final class DesktopWindows {
     func refresh() {
         memberships.removeAll(keepingCapacity: true)
         activeSpaces.removeAll(keepingCapacity: true)
-        spaceDisplays.removeAll(keepingCapacity: true)
         if let connection, let list = displays?(connection)?.takeRetainedValue() as? [[String: Any]] {
             for display in list {
-                guard let name = display["Display Identifier"] as? String else { continue }
                 if let current = display["Current Space"] as? [String: Any], let id = Self.spaceID(current) {
                     activeSpaces.insert(id)
-                }
-                for space in display["Spaces"] as? [[String: Any]] ?? [] {
-                    if let id = Self.spaceID(space) { spaceDisplays[id] = name }
                 }
             }
         }
@@ -111,15 +102,8 @@ final class DesktopWindows {
         guard valid, let id, let record = records[id] else { return .unknown }
         return WindowDesktop.resolve(windowSpaces: membership(id), activeSpaces: activeSpaces, onScreen: record.onScreen)
     }
-    /// Only called after the user chooses a particular window. Does not move
-    /// windows between Spaces or change Mission Control preferences.
-    func revealDesktop(for id: CGWindowID) -> Bool {
-        guard desktop(for: id) == .other, let connection, let selectSpace,
-              let target = membership(id)?.sorted().first(where: { spaceDisplays[$0] != nil }),
-              let display = spaceDisplays[target] else { return false }
-        selectSpace(connection, display as CFString, target)
-        return true
-    }
+    // Space metadata is read-only. Do not directly set a managed display's
+    // current Space: it can expose two Spaces without a Dock transition.
     private func membership(_ id: CGWindowID) -> Set<UInt64>? {
         if let saved = memberships[id] { return saved }
         guard let connection, let values = spaces?(connection, 7, [NSNumber(value: id)] as CFArray)?.takeRetainedValue() as? [NSNumber] else { return nil }

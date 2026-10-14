@@ -1,5 +1,14 @@
 # 네이티브 빌드 검증
 
+## R164–R169 · 1.4.0 실행 대기·설정 맞춤·Space 경로
+
+- 동기화 폴더의 빌드 메타데이터 문제를 피하려고 동일 소스를 메타데이터 없이 `/tmp/tile-140-validation`에 복사했다. Xcode의 기본 SwiftBuild로 XCTest147개/Python 배포 검사23개를 통과했다(`/tmp/tile-140-tests.log`). 앱 실행 시작/완료/시간 초과·종료·오류와 포커스 확인·피드백 취소 정책을 포함한다.
+- 실제 ApplicationLaunchMonitor에 가짜 opener/시계를 넣고 사용자 앱을 실행하지 않은 채 중복 차단, 다른 앱 접근,3초 시작 미확인, 오래된 콜백, 오류 후 재시도, 네이티브 실행 상태 전달을 검사했다. 처음에는 화면 없는 preview 프로세스도 finishedLaunching일 것이라고 잘못 가정해 검사94가 실패했다. NSApp.run을 하지 않는 실행 경로임을 확인하고 실제 상태를 따르는지 검사하도록 바로잡았다. 완료/60초 상한은 별도 정책 테스트로 확인했다.
+- `/tmp/tile-140-previews`의 실제 설정 NSWindow 렌더에서 기본 콘텐츠580×918pt, 일반 document885pt/viewport886pt를 확인했다. 기본 크기에서 일반/모양은 내용이 넘치면 실패하는 검사를 통과했다. 수동 리사이즈·재열기 크기·작은 화면 제한도 검사했다. settings-native-general/appearance/menus/registered.png의 상단 시작선·좌우 여백, 일반 권한/버전, 메뉴 하단 추가·가변 목록을 직접 확인했다. 비표시 네이티브 선택 탭의 재질은 검게 나올 수 있어 실제 합성 색 검증과 구별한다.
+- 짧은 설명은 크기 세 줄·색 두 줄로 항상 보인다. 펼침/스크롤을 기본 해결책으로 쓰지 않는다. 앱 실행 대기/숫자 선택 피드백, 두 테마·명암·큰/작은 화면·기존 프로필 및 최근 창 fixture를 렌더했다. `/tmp/tile-140-previews.log`와 application-launch-feedback.png/keyboard-execution-feedback.png를 확인했다.
+- 실행 코드에서 직접 Space 쓰기 함수와 SLS 별칭이 제거됐는지 확인한다. 관련 외부 재현 기록과 사용자 증상은 일치하지만 개발 Mac에서 사용자 현상을 직접 재현하지 않았다. 실제 다른 Space 이동/앱별 AX 지원은 사용자 시험과 구별하며 자세한 근거는 space-transition-diagnostics.md에 있다.
+- Developer ID 서명·미공증 ZIP 제작/복사 결과는 아래에 이어 기록한다. 개발 Mac의 설치 앱·실행 인스턴스·GitHub 바이너리는 변경하지 않는다.
+
 ## R163 · 1.3.0 위치 크기·첫 등장 색·시험 ZIP
 
 - 동일 작업 소스를 파일 메타데이터 없이 `/tmp/tile-130-validation`에 복사해 Xcode 기본 SwiftBuild로 컴파일했다. 기존 동기화 폴더의 xctest 링크는 Swift 드라이버가 getxattr에서 대기하여 중단했으며, 임시 폴더에서는 완료됐다. 사용자 앱/시스템 빌드 서비스/동기화 설정을 변경하지 않았다.

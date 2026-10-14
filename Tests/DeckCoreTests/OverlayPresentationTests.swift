@@ -2,6 +2,28 @@ import XCTest
 @testable import DeckCore
 
 final class OverlayPresentationTests: XCTestCase {
+    func testFeedbackSurvivesSelectionClearButCannotClearANewerRequest() {
+        let presentation = OverlayPresentation()
+        presentation.selection = "pin:a"
+        presentation.selectionTitle = "App A"
+        let first = presentation.showExecution(target: "pin:a", title: "App A")
+        presentation.selection = nil
+        XCTAssertNil(presentation.selectionTitle)
+        XCTAssertEqual(presentation.execution?.target, "pin:a")
+        let next = presentation.showExecution(target: "pin:b", title: "App B")
+        presentation.clearExecution(id: first)
+        XCTAssertEqual(presentation.execution?.id, next)
+        presentation.clearExecution(id: next)
+        XCTAssertNil(presentation.execution)
+    }
+
+    func testClosingOverlayClearsKeyboardFeedback() {
+        let presentation = OverlayPresentation()
+        presentation.showExecution(target: "window:x", title: "Document")
+        presentation.reset()
+        XCTAssertNil(presentation.execution)
+        XCTAssertNil(presentation.selectionTitle)
+    }
     func testPinnedOverlaySurvivesReleaseScreenshotKeysAndOutsideClick() {
         let presentation = OverlayPresentation()
         XCTAssertTrue(presentation.dismisses(for: .release))

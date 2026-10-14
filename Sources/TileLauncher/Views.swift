@@ -49,6 +49,7 @@ private struct RegisteredTileStyle: ButtonStyle {
         @Environment(\.deckTheme) private var theme
         @Environment(\.tileColors) private var colors
         @Environment(\.deckScale) private var scale
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovering = false
         private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 12 * scale, style: .continuous) }
         var body: some View {
@@ -59,16 +60,18 @@ private struct RegisteredTileStyle: ButtonStyle {
                 .contentShape(shape)
                 .background(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96), in: shape)
                 .overlay {
-                    shape.fill(Color.accentColor.opacity(selected || configuration.isPressed ? 0.18 : hovering ? 0.07 : 0))
+                    shape.fill(palette.ink.opacity(selected || configuration.isPressed ? 0.22 : hovering ? 0.07 : 0))
                         .allowsHitTesting(false)
                 }
                 .overlay {
-                    shape.strokeBorder(selected ? Color.accentColor.opacity(0.65)
+                    shape.strokeBorder(selected ? palette.ink
                                        : Color.primary.opacity(contrast == .increased ? 0.5 : hovering ? 0.22 : 0.12),
-                                       lineWidth: 1)
+                                       lineWidth: selected ? 3 : 1)
                         .allowsHitTesting(false)
                 }
                 .onHover { hovering = $0 }
+                .offset(y: selected && !reduceMotion ? 2 * scale : 0)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
         }
     }
 }
@@ -92,6 +95,7 @@ private struct TileStyle: ButtonStyle {
         @Environment(\.deckTheme) private var theme
         @Environment(\.tileColors) private var colors
         @Environment(\.deckScale) private var scale
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovering = false
         var body: some View {
             let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark, theme: theme, colors: colors)
@@ -102,16 +106,18 @@ private struct TileStyle: ButtonStyle {
                 .background {
                     ZStack {
                         shape.fill(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96))
-                        shape.fill(palette.ink.opacity(configuration.isPressed ? 0.16 : hovering ? 0.10 : 0))
+                        shape.fill(palette.ink.opacity(selected || configuration.isPressed ? 0.22 : hovering ? 0.10 : 0))
                     }.allowsHitTesting(false)
                 }
                 .overlay {
-                    shape.strokeBorder(selected || configuration.isPressed ? Color.accentColor
+                    shape.strokeBorder(selected || configuration.isPressed ? palette.ink
                                        : palette.ink.opacity(hovering ? 0.65 : contrast == .increased ? 0.55 : 0.08),
-                                       lineWidth: selected || configuration.isPressed || hovering ? 2 : 1)
+                                       lineWidth: selected ? 3 : configuration.isPressed || hovering ? 2 : 1)
                         .allowsHitTesting(false)
                 }
                 .onHover { hovering = $0 }
+                .offset(y: selected && !reduceMotion ? 2 * scale : 0)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
         }
     }
 }
@@ -121,6 +127,7 @@ struct DeckView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var browser: FolderBrowser
     @ObservedObject var presentation: OverlayPresentation
+    @ObservedObject var launches = ApplicationLaunchMonitor()
     let selectApp: (AppItem) -> Void
     let selectPin: (PinnedItem) -> Void
     let selectMenu: (MenuCommand, AppItem?, WindowItem?) -> Void
@@ -201,9 +208,12 @@ struct DeckView: View {
                     }
                 }
                 HStack(spacing: u(8)) {
-                    Image(systemName: presentation.isPinned ? "pin.fill" : "option")
-                    Text(compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
-                         : presentation.isPinned ? "상단 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정")
+                    Image(systemName: presentation.execution != nil || launches.statusText != nil ? "arrow.up.right" : presentation.isPinned ? "pin.fill" : "option")
+                    Text(presentation.selectionTitle.map { "\($0) · Option을 놓으면 실행" }
+                         ?? launches.statusText
+                         ?? presentation.execution.map { "실행 요청: \($0.title)" }
+                         ?? (compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
+                         : presentation.isPinned ? "상단 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정"))
                         .font(font(.caption1)).lineLimit(1)
                     Spacer()
                     Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
@@ -461,8 +471,13 @@ struct DeckView: View {
                                 }.padding(u(6)).frame(width: grid.side, height: grid.side)
                                     .overlay(alignment: .topTrailing) { numberBadge(index).padding(u(3)) }
                                 }
-                            }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)",
+                            }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)" || presentation.execution?.target == "pin:\(pin.id)",
                                                               emphasized: pin.kind == .app))
+                                .disabled(pin.kind == .app && launches.isBlocked(pin.url))
+                                .overlay {
+                                    if pin.kind == .app && launches.isBlocked(pin.url) { ApplicationLaunchBusy() }
+                                }
+                                .accessibilityValue(pin.kind == .app && launches.isBlocked(pin.url) ? "실행 중, 잠시 기다려 주세요" : "")
                                 .help(pinHelp(pin, index: index))
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }
@@ -506,8 +521,11 @@ struct DeckView: View {
             HStack(spacing: u(8)) {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(font(.caption2)).foregroundStyle(.tertiary)
-                Circle().fill(settings.tileColors.seed(for: .windows, theme: settings.theme).swiftUIColor).frame(width: u(5), height: u(5))
-                Text(previewRecentLegend ?? (recentAppearance == .locationColor ? "앱 첫 등장" : "현재 보이는 데스크탑")).font(font(.caption2)).foregroundStyle(.secondary)
+                if let previewRecentLegend {
+                    Text(previewRecentLegend).font(font(.caption2)).foregroundStyle(.secondary)
+                } else if recentAppearance == .locationColor {
+                    RecentWindowLegend()
+                }
                 Spacer(minLength: u(4))
                 Text("\(snapshot.shortcuts.windowPrefix)1–0").font(font(.caption1)).foregroundStyle(.secondary)
             }.frame(height: u(20))
@@ -651,10 +669,14 @@ struct DeckView: View {
                     }
                 }
         }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
-                                selected: presentation.selection == "window:\(window.id)", compact: small || window.isApplication))
+                                selected: presentation.selection == "window:\(window.id)" || presentation.execution?.target == "window:\(window.id)", compact: small || window.isApplication))
+            .disabled(window.isApplication && window.appURL.map(launches.isBlocked) == true)
+            .overlay {
+                if window.isApplication && window.appURL.map(launches.isBlocked) == true { ApplicationLaunchBusy(compact: true) }
+            }
             .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
                 + " · " + locationDescription)
-            .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title), \(locationDescription)" + (recentAppearance == .locationColor ? (emphasized ? ", 앱 첫 등장" : ", 반복 앱") : ""))
+            .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title), \(locationDescription)" + (recentAppearance == .locationColor ? (emphasized ? ", 앱별 최근 창" : ", 같은 앱의 다른 창") : ""))
             .contextMenu {
                 if window.isApplication {
                     Button("\(window.appName) 종료") { quitApplication(window) }

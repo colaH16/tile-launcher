@@ -43,7 +43,7 @@ struct GeneralSettingsContent: View {
                         Picker("기본 조합", selection: $settings.numberShortcuts) {
                             ForEach(NumberShortcutAssignment.allCases) { Text($0.title).tag($0) }
                         }.pickerStyle(.radioGroup)
-                        Text("오버레이를 연 뒤 1–9, 0으로 첫 10개 중 하나를 고르고 Option을 놓으면 실행합니다. 0은 10번째입니다. 직접 프로필을 넘기면 등록 항목 번호도 해당 목록으로 바뀝니다.")
+                        Text("1–9, 0으로 선택하고 Option을 놓으면 실행합니다. 0은 10번째이며 등록 항목 번호는 현재 프로필을 따릅니다.")
                             .font(.caption).foregroundStyle(.secondary)
                         Text("⌥X 고정 · ⌘, / ⌥, 설정 · Esc / ⌘W / ⌥W 닫기").font(.caption)
                         Text("⌥A 또는 ⌥S: 이전 프로필 · ⌥D 또는 ⌥F: 다음 프로필").font(.caption)
@@ -58,8 +58,9 @@ struct GeneralSettingsContent: View {
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("개별 창을 최근 사용 순서로 표시합니다. 활성 앱이 있는 모니터의 보이는 데스크탑은 4×2, 다른 모니터의 보이는 데스크탑은 2×2, 보이지 않는 데스크탑은 1×1입니다. 목록에서 앱이 처음 나오면 진한색, 이후 창은 파스텔이며 창 없는 앱은 회색 1×1입니다. 작은 타일은 두 개씩 세로로 쌓으며 최대 3.3줄과 다음 줄 일부를 표시하고 아래로 스크롤할 수 있습니다.")
+                        Text("최근 사용한 창부터 표시합니다. 최대 3.3줄을 보여주며 아래로 스크롤할 수 있습니다.")
                             .font(.caption).foregroundStyle(.secondary)
+                        RecentWindowExplanation()
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
                 PermissionsSettingsSection(requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)

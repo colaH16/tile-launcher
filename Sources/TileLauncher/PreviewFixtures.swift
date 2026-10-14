@@ -294,11 +294,13 @@ final class PreviewFixture: ObservableObject {
 
 struct DeckPreview: View {
     @StateObject var fixture: PreviewFixture
+    @StateObject var launches: ApplicationLaunchMonitor
     var recentAppearance: RecentAppearance
     var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
          recentAppearance: RecentAppearance = .locationColor, comparisonSample: Bool = false, recentCount: Int = 16,
-         menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false, deliveredScale: Bool = false) {
+         menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false, deliveredScale: Bool = false,
+         keyboardFeedback: Bool = false, launchFeedback: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
         let fixture = PreviewFixture(theme: theme, customColors: customColors,
@@ -324,11 +326,19 @@ struct DeckPreview: View {
                 profileID: "default", profileName: "기본", shortcuts: .registeredFirst,
                 commands: fixture.content.snapshot.commands, frequentMenuIDs: fixture.content.snapshot.frequentMenuIDs)
         }
+        if keyboardFeedback, let pin = fixture.content.snapshot.pins.first {
+            fixture.presentation.showExecution(target: "pin:\(pin.id)", title: pin.name)
+        }
+        let launches = ApplicationLaunchMonitor(running: { [] }, observesSystem: false, open: { _, _ in })
+        if launchFeedback, let pin = fixture.content.snapshot.pins.first {
+            launches.launch(at: pin.url, title: pin.name, failure: { _ in })
+        }
+        _launches = StateObject(wrappedValue: launches)
         _fixture = StateObject(wrappedValue: fixture)
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
-                 presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in },
+                 presentation: fixture.presentation, launches: launches, selectApp: { _ in }, selectPin: { _ in },
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
                  showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, recentAppearance: recentAppearance,
@@ -455,6 +465,7 @@ enum PreviewExport {
         let delegate = AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
                                    settings: verification.settings)
         try delegate.verifyClickExecutionForPreview()
+        try ApplicationLaunchMonitor.verifyForPreview()
         try verifySettingsNavigation()
         try verifyGroupedWindowContent()
         try verifyScaledDragTargets()
@@ -463,7 +474,16 @@ enum PreviewExport {
         try verifyMenuCatalogChoices()
         let loginItem = LoginItemManager()
         let fittedSize = SettingsWindowLayout.fittedContentSize(settings: verification.settings, loginItem: loginItem)
-        try verifySettingsWindowLayout(contentSize: fittedSize)
+        try verifySettingsWindowLayout(contentSize: fittedSize, settings: verification.settings, loginItem: loginItem, directory: directory)
+        try save(RecentWindowExplanation().padding(20).frame(width: 548)
+                    .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("recent-window-explanation.png"))
+        try save(DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
+                             deliveredScale: true, keyboardFeedback: true).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("keyboard-execution-feedback.png"))
+        try save(DeckPreview(theme: .classic, registeredCount: 18, realisticSample: true,
+                             deliveredScale: true, launchFeedback: true).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("application-launch-feedback.png"))
         try save(GeneralSettingsContent(settings: verification.settings, loginItem: loginItem,
                                        requestPermission: {}, openAppManagementSettings: {})
                     .padding(SettingsWindowLayout.outerPadding)
@@ -472,7 +492,7 @@ enum PreviewExport {
                  to: directory.appendingPathComponent("settings-general-fitted.png"))
         for size in [fittedSize, CGSize(width: 540, height: 638)] {
             for tab in [SettingsTab.general, .appearance, .menus, .registered] {
-                try save(SettingsLayoutPreview(tab: tab, size: size).environment(\.colorScheme, .dark),
+                try save(SettingsLayoutPreview(tab: tab, size: size).environment(\.colorScheme, .dark), titled: true,
                          to: directory.appendingPathComponent("settings-\(tab)-\(Int(size.width)).png"))
             }
         }
@@ -671,14 +691,51 @@ enum PreviewExport {
         print("Individual window MRU: shared numbered snapshot, manual limit, no app regrouping on app activation passed.")
     }
 
-    @MainActor private static func verifySettingsWindowLayout(contentSize: CGSize) throws {
+    @MainActor private static func verifySettingsWindowLayout(contentSize: CGSize, settings: SettingsStore, loginItem: LoginItemManager, directory: URL) throws {
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 700),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.titleVisibility = .hidden
+        let navigation = SettingsNavigation()
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, loginItem: loginItem,
+            navigation: navigation, requestPermission: {}, openAppManagementSettings: {}, applicationProvider: { [] }))
         let largeScreen = CGRect(x: 0, y: 0, width: 1920, height: 1400)
         SettingsWindowLayout.apply(to: window, contentSize: contentSize, visibleFrame: largeScreen)
         guard window.contentLayoutRect.size == contentSize, contentSize.height < 1000,
               window.styleMask.contains(.resizable) else { throw NSError(domain: "TileLauncher.Preview", code: 76) }
+        window.contentView?.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        window.contentView?.layoutSubtreeIfNeeded()
+        func scrolls(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
+        }
+        for scroll in scrolls(window.contentView!) {
+            guard let document = scroll.documentView,
+                  document.frame.height <= scroll.contentView.bounds.height + 1 else {
+                throw NSError(domain: "TileLauncher.Preview", code: 95,
+                              userInfo: [NSLocalizedDescriptionKey: "General settings require scrolling at the default size"])
+            }
+        }
+        // No fixed frame around SettingsView: let the titled window move the
+        // native tab selector into its title bar, exactly as production does.
+        for tab in [SettingsTab.general, .appearance, .menus, .registered] {
+            navigation.tab = tab
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            window.contentView?.layoutSubtreeIfNeeded()
+            if tab == .general || tab == .appearance {
+                for scroll in scrolls(window.contentView!) where !scroll.isHidden {
+                    guard (scroll.documentView?.frame.height ?? 0) <= scroll.contentView.bounds.height + 1 else {
+                        throw NSError(domain: "TileLauncher.Preview", code: 96)
+                    }
+                }
+            }
+            let frameView = window.contentView!.superview ?? window.contentView!
+            if let bitmap = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) {
+                frameView.cacheDisplay(in: frameView.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])?.write(
+                    to: directory.appendingPathComponent("settings-native-\(tab).png"))
+            } else { throw NSError(domain: "TileLauncher.Preview", code: 97) }
+        }
         window.setContentSize(CGSize(width: 800, height: 850))
         guard window.contentLayoutRect.width == 800 else { throw NSError(domain: "TileLauncher.Preview", code: 77) }
         SettingsWindowLayout.apply(to: window, contentSize: contentSize, visibleFrame: largeScreen)
@@ -876,7 +933,7 @@ enum PreviewExport {
         guard !window.isVisible else { throw NSError(domain: "TileLauncher.Preview", code: 34) }
         print("Panel surface: all four corners transparent at 1x/2x, fill preserved, resize covered; never shown onscreen.")
     }
-    @MainActor private static func save<V: View>(_ view: V, dark: Bool = true, scrollToEnd: Bool = false, to url: URL) throws {
+    @MainActor private static func save<V: View>(_ view: V, dark: Bool = true, scrollToEnd: Bool = false, titled: Bool = false, to url: URL) throws {
         // AppKit hosts render native controls/scroll views that ImageRenderer omits.
         // This window is never ordered onscreen and never becomes key.
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -884,8 +941,10 @@ enum PreviewExport {
         hosting.appearance = NSApp.appearance
         let size = hosting.fittingSize
         let window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
-                              styleMask: .borderless, backing: .buffered, defer: false)
+                              styleMask: titled ? [.titled, .closable, .miniaturizable, .resizable] : .borderless,
+                              backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.titleVisibility = .hidden
         window.appearance = NSApp.appearance
         window.contentView = hosting
         hosting.frame = CGRect(origin: .zero, size: size)

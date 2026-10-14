@@ -1,5 +1,13 @@
 # macOS 업그레이드 및 Apple 디자인 지침 대응
 
+## R164–R169 · 설정 맞춤·실행 상태·Space 전환
+
+- 최근 창 범례는 크기와 모니터 위치만 보여준다. 일반 설정은 크기 세 줄·색 두 줄을 항상 보이게 둔다. 기본 창에서 일반 전체가 스크롤 없이 들어가는지 실제 titled NSWindow/NSScrollView의 문서·뷰포트 높이로 검사한다. 네 탭의 시작선/좌우 여백과 메뉴 목록/하단 버튼도 확인한다. 수동 리사이즈와 작은 화면 안전망은 유지한다.
+- 실행 대기는 NSWorkspace.runningApplications와 NSRunningApplication.isFinishedLaunching/isTerminated를 확인한다. background/LSUIElement는 willLaunch 알림이 없을 수 있어 목록 KVO와 제한된 폴링을 쓴다. 일부 앱은 완료 알림을 주지 않으므로3초 시작/60초 완료 상한·오류·종료·오래된 콜백·중복 요청을 검증한다. [구현 근거](application-launch-feedback.md)를 참고한다.
+- 숫자 선택과 실행 요청 피드백은 별개다. Option 해제 전에는 실행하지 않고, 고정 모드는0.45초 표시를 유지하며 다음 선택/닫기/프로필 변경 시 취소한다. 동작 줄이기·고대비·두 테마에서 테두리/음영·이름을 확인한다. 실제 앱의 실행 성공은 별도 오류 경로다.
+- CGSManagedDisplaySetCurrentSpace/SLS 별칭을 다시 도입하지 않는다. 다른 Space 창을 기존 화면 위에 겹쳐 보이게 할 수 있는 직접 상태 변경 대신 앱/창 활성화에 전환을 맡긴다. 출처와 재현 한계는 space-transition-diagnostics.md에 기록한다.
+- AXRaise/activate 반환값만으로 정확한 창 전환을 확인하지 않는다. 전면 앱·AXFocusedWindow·확인 가능한 Space 상태를 제한된 횟수로 읽고 실패/닫힘을 구분한다. 후속 선택이 이전 지연 요청을 취소하는지 점검한다. 실제 애니메이션·같은 앱/다른 앱·최소화·전체 화면/여러 모니터는 별도 실기 범위다.
+
 ## R163 · 위치 크기·첫 등장 색·실제 크기 렌더
 
 - R147의 앱 묶음은 비교 전용으로 남기고 production은 WindowTracker의 개별 창 MRU를 그대로 사용한다. 수동 제한 전에 위치만 부여하며 순서를 바꾸지 않는다. 색은 앱 ID의 첫 실제 창만 강조하고 창 없는 앱을 반복 판정에 넣지 않는다.
