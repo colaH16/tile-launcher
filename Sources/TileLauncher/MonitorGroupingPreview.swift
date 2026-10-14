@@ -71,7 +71,11 @@ struct MonitorGroupingPreview: View {
             for window in windows where !appOrder.contains(window.pid) { appOrder.append(window.pid) }
             windows = appOrder.flatMap { pid in windows.filter { $0.pid == pid } }
         }
-        emphasized = grouped ? Set(windows.filter { monitor[$0.id] == activeMonitor && !$0.isApplication }.map(\.id)) : nil
+        emphasized = grouped ? Set(windows.indices.filter { index in
+            let window = windows[index]
+            let firstWindow = index == 0 || windows[index - 1].pid != window.pid
+            return firstWindow && !window.isApplication && window.desktop == .current
+        }.map { windows[$0].id }) : nil
         sizes = grouped ? windows.indices.map { index in
             let window = windows[index]
             if window.isApplication || (index > 0 && windows[index - 1].pid == window.pid) { return .application }
@@ -98,7 +102,7 @@ struct MonitorGroupingPreview: View {
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
                  showSettings: { _ in }, requestPermission: {}, pinOverlay: {},
                  previewWindowSizes: sizes, previewEmphasizedWindows: emphasized,
-                 previewRecentLegend: grouped ? "활성 모니터" : nil, dismiss: {})
+                 previewRecentLegend: grouped ? "보이는 데스크탑 · 첫 창" : nil, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)

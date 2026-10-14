@@ -1,5 +1,12 @@
 # 네이티브 빌드 검증
 
+## R143 · 보이는 데스크탑의 첫 창만 강조하는 시안
+
+- 비교 fixture의 강조 대상만 정정했다. 모니터와 무관하게 visible 데스크탑의 앱 묶음 첫 실제 창을 강조하며 후속 창/보이지 않는 데스크탑은 파스텔, 앱 전용 항목은 회색이다. 크기는 기존 시안의 활성 모니터 첫 창 4×2/그 외 첫 창 2×2/후속·앱 1×1을 유지한다.
+- native 개발 빌드 1.84초·전체 격리 --render-previews 통과. /tmp/tile-monitor-colors-build.log, tile-monitor-colors-previews.log. ChatGPT활성 오른쪽 위 iTerm의 진한 2×2, iTerm활성에서 다른 모니터 앱들의 진한 2×2, 두 화면의 모든 작은 후속 창 파스텔/앱 회색을 이미지로 확인했다. 앞선 XCTest/Python을 새로 실행했다고 기록하지 않는다.
+- 같은 23개 합성 목록과 모니터 B 가정을 사용한 정적 공유 뷰 렌더다. 실시간 모니터 판정/앱 묶기를 실제 구현·검증했다고 하지 않는다. 이전 시안 PNG는 보존하며 새 전달 파일은 monitor-visible-heads-active-20261014.png / monitor-visible-heads-terminal-20261014.png다.
+- 변경은 MonitorGroupingPreview에만 있으며 production 비교 입력 nil·설치/공개 버전 1.1.5(20)은 유지한다. 새 서명/공증/설치/릴리스는 하지 않았다.
+
 ## R142 · 활성 모니터·앱 묶기 비교 시안
 
 - DesktopWindows.refresh가 모든 display의 Current Space ID를 activeSpaces 합집합에 넣고 resolve에 전달하는 것을 확인했다. 현재 모든 모니터의 보이는 데스크탑을 강조하는 이유다. 이 production 코드는 수정하지 않았다.
