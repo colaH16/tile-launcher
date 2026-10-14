@@ -469,7 +469,7 @@ struct DeckView: View {
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
-                DesktopColumnsPreview(data: columns, sizes: sizes, width: geometry.windowWidth) { index, size in
+                DesktopColumnsPreview(data: columns, sizes: sizes, width: columns.preferredWidth ?? geometry.windowWidth) { index, size in
                     windowTile(snapshot.windows[index], index: index, wide: size == .wide, small: size == .application)
                 }
             } else {
@@ -510,7 +510,7 @@ struct DeckView: View {
     /// Unclipped version of the same comparison for reviewing every app group.
     @ViewBuilder var desktopColumnDetails: some View {
         if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
-            DesktopColumnsPreview(data: columns, sizes: sizes, width: geometry.windowWidth, expanded: true) { index, size in
+            DesktopColumnsPreview(data: columns, sizes: sizes, width: columns.preferredWidth ?? geometry.windowWidth, expanded: true) { index, size in
                 windowTile(snapshot.windows[index], index: index, wide: size == .wide, small: size == .application)
             }
             .environment(\.deckTheme, settings.theme)

@@ -1,7 +1,7 @@
 import SwiftUI
 import DeckCore
 
-/// R148–R152 comparisons only. No live inventory, ordering, or keyboard behavior.
+/// R148–R153 comparisons only. No live inventory, ordering, or keyboard behavior.
 struct DesktopColumnsPreviewData {
     struct Column {
         let title: String
@@ -12,6 +12,41 @@ struct DesktopColumnsPreviewData {
     let columns: [Column]
     var referenceModules: Int? = nil
     var relaxedSpacing = false
+    var fixedModule: CGFloat? = nil
+
+    var preferredWidth: CGFloat? {
+        guard let unit = fixedModule else { return nil }
+        return columns.reduce(CGFloat(0)) { $0 + CGFloat($1.modules) * unit + CGFloat($1.modules - 1) * 8 }
+            + CGFloat(max(0, columns.count - 1)) * 24
+    }
+
+    /// Preview proposal: fit each column's widest app group, cap at four modules,
+    /// then wrap excess followers vertically. App-only tiles use at most three.
+    func fittingGroups(sizes: [RecentTileSize], module: CGFloat) -> Self {
+        let fitted = columns.map { column in
+            let groupWidth = column.groups.map { indices -> Int in
+                var width = 0, pendingSmall = false
+                for index in indices {
+                    let size = sizes[index]
+                    if size == .application {
+                        if !pendingSmall { width += 1 }
+                        pendingSmall.toggle()
+                    } else {
+                        width += size.width
+                        pendingSmall = false
+                    }
+                }
+                return width
+            }.max() ?? 2
+            let applicationWidth = min(3, (column.applications.count + 1) / 2)
+            return Column(title: column.title, modules: max(2, min(4, max(groupWidth, applicationWidth))),
+                          groups: column.groups, applications: column.applications)
+        }
+        var result = Self(columns: fitted, referenceModules: referenceModules ?? 12)
+        result.fixedModule = module
+        result.relaxedSpacing = relaxedSpacing
+        return result
+    }
 
     init(visible: [[Int]], other: [[Int]], applications: [Int]) {
         columns = [Column(title: "보이는 데스크탑", modules: 6, groups: visible),
@@ -32,6 +67,7 @@ struct DesktopColumnsPreview<Tile: View>: View {
     let tile: (Int, RecentTileSize) -> Tile
     private let gap: CGFloat = 8
     private var micro: CGFloat {
+        if let unit = data.fixedModule { return unit }
         if let modules = data.referenceModules {
             return (width - CGFloat(modules - 1) * gap) / CGFloat(modules)
         }
@@ -53,7 +89,8 @@ struct DesktopColumnsPreview<Tile: View>: View {
 
     private func column(_ column: DesktopColumnsPreviewData.Column) -> some View {
         VStack(alignment: .leading, spacing: data.relaxedSpacing ? 16 : 12) {
-            Text(column.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            Text(column.title).font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(data.fixedModule == nil ? Color.secondary : Color.primary)
             if expanded {
                 contents(column)
             } else {

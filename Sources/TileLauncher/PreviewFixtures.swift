@@ -542,6 +542,10 @@ enum PreviewExport {
                                         largeIcons: true, relaxedSpacing: true)
                     .environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("desktop-spaced-icons-full.png"))
+        try save(MonitorGroupingPreview(grouped: true, detail: true, threeColumns: true, squareColumnHeads: true,
+                                        largeIcons: true, relaxedSpacing: true, fittedColumns: true)
+                    .environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("desktop-fitted-columns-full.png"))
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")

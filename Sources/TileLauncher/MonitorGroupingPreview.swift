@@ -21,7 +21,7 @@ struct MonitorGroupingPreview: View {
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
          production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
          threeColumns: Bool = false, squareColumnHeads: Bool = false, largeIcons: Bool = false,
-         relaxedSpacing: Bool = false) {
+         relaxedSpacing: Bool = false, fittedColumns: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
@@ -152,6 +152,11 @@ struct MonitorGroupingPreview: View {
             if threeColumns {
                 var data = DesktopColumnsPreviewData(columns: mapped, referenceModules: 12)
                 data.relaxedSpacing = relaxedSpacing
+                if fittedColumns {
+                    let geometry = DeckGeometry(width: fixture.content.snapshot.layout.frame.width, compact: false)
+                    data = data.fittingGroups(sizes: sizes!, module: (geometry.unit - geometry.gap) / 2)
+                    print("Fitted desktop columns: \(data.columns.map(\.modules)), width=\(data.preferredWidth!), module=\(data.fixedModule!)")
+                }
                 columns = data
             } else {
                 columns = DesktopColumnsPreviewData(visible: mapped[0].groups, other: mapped[1].groups,
