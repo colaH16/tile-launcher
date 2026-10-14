@@ -30,14 +30,8 @@ struct AppearanceView: View {
                                     .disabled(settings.tileColors[section] == nil)
                                     .help("\(section.title) 색만 기본값으로 복원")
                             }
-                            HStack(spacing: 8) {
-                                sample(section == .menus ? "최근 사용" : "기본", section: section, emphasized: false, width: 56, gray: section == .menus)
-                                sample(section == .menus ? "자주 사용" : "기본 · 긴 타일",
-                                       section: section, emphasized: false, width: section == .menus ? 56 : 120)
-                                if section != .registered {
-                                    sample(section == .menus ? "고정 메뉴" : "현재 데스크탑",
-                                           section: section, emphasized: true, width: 120)
-                                }
+                            HStack(alignment: .top, spacing: 8) {
+                                sectionSamples(section)
                                 Spacer(minLength: 0)
                             }.accessibilityElement(children: .combine)
                         }.padding(8)
@@ -54,16 +48,40 @@ struct AppearanceView: View {
         Binding(get: { settings.tileColors.seed(for: section, theme: settings.theme).swiftUIColor },
                 set: { if let rgb = TileColor(color: $0) { settings.tileColors[section] = rgb } })
     }
-    private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat, gray: Bool = false) -> some View {
+    @ViewBuilder private func sectionSamples(_ section: TileSection) -> some View {
+        switch section {
+        case .menus:
+            sample("최근 사용", section: section, emphasized: false, width: 56, gray: true)
+            sample("자주 사용", section: section, emphasized: false, width: 56)
+            sample("고정 메뉴", section: section, emphasized: true, width: 120)
+        case .windows:
+            sample("현재 데스크탑", section: section, emphasized: true, width: 56)
+            sample("다른 데스크탑", section: section, emphasized: false, width: 56)
+            smallWindowSample()
+        case .registered:
+            sample("기본", section: section, emphasized: false, width: 56)
+            sample("기본 · 긴 타일", section: section, emphasized: false, width: 120)
+        }
+    }
+    private func smallWindowSample() -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sample("", section: .windows, emphasized: false, width: 24, height: 24, gray: true)
+            Text("창 없는 앱\n1×1").font(.caption2).foregroundStyle(.secondary)
+        }.frame(width: 64, alignment: .leading)
+    }
+    private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat,
+                        height: CGFloat = 56, gray: Bool = false) -> some View {
         var colors = settings.tileColors
         if gray { colors[section] = TileColor(0x777777) }
         let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark,
                                   theme: settings.theme, colors: colors)
         return VStack(alignment: .leading, spacing: 5) {
             Image(systemName: emphasized && section == .menus ? "pin.fill" : "square.fill")
-            Text(title).font(.caption2).lineLimit(2)
+                .font(height < 56 ? .caption2 : .body)
+            if !title.isEmpty { Text(title).font(.caption2).lineLimit(2) }
         }
-        .foregroundStyle(palette.ink).padding(8).frame(width: width, height: 56, alignment: .leading)
-        .background(palette.fill, in: RoundedRectangle(cornerRadius: settings.theme.isClassic ? 0 : 10))
+        .foregroundStyle(palette.ink).padding(height < 56 ? 4 : 8)
+        .frame(width: width, height: height, alignment: .leading)
+        .background(palette.fill, in: RoundedRectangle(cornerRadius: settings.theme.isClassic ? 0 : min(10, height / 2)))
     }
 }

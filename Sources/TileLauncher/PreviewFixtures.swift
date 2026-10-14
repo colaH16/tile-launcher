@@ -318,7 +318,10 @@ struct DeckPreview: View {
 }
 
 struct AppearancePreview: View {
-    @StateObject private var fixture = PreviewFixture(theme: .classic)
+    @StateObject private var fixture: PreviewFixture
+    init(theme: DeckTheme = .classic) {
+        _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme))
+    }
     var body: some View { AppearanceView(settings: fixture.settings).frame(width: 580, height: 760) }
 }
 
@@ -464,6 +467,8 @@ enum PreviewExport {
                  to: directory.appendingPathComponent("menu-usage-dark.png"))
         for theme in DeckTheme.allCases {
             for dark in [false, true] {
+                try save(AppearancePreview(theme: theme).environment(\.colorScheme, dark ? .dark : .light),
+                         dark: dark, to: directory.appendingPathComponent("appearance-\(theme.rawValue)-\(dark ? "dark" : "light").png"))
                 let view = DeckPreview(theme: theme).environment(\.colorScheme, dark ? .dark : .light)
                 try save(view, dark: dark, to: directory.appendingPathComponent("\(theme.rawValue)-\(dark ? "dark" : "light").png"))
             }
