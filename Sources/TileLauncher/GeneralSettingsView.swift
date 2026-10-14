@@ -58,7 +58,7 @@ struct GeneralSettingsContent: View {
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("앱이 바뀌는 곳은 가로형, 같은 앱이 연속되면 정사각형입니다. 현재 데스크탑은 배경색으로 구분합니다. 최대 3.3줄로 다음 줄의 일부까지 보여주며 아래로 스크롤할 수 있습니다. 작은 화면에서는 표시 영역을 줄입니다.")
+                        Text("앱이 바뀌는 곳은 큰 정사각형, 같은 앱이 연속되면 창 이름을 넣은 작은 타일입니다. 작은 타일은 두 개씩 세로로 쌓고 왼쪽에서 오른쪽으로 배치합니다. 창 없는 앱은 회색이며 현재 데스크탑 창은 배경색으로 강조합니다. 최대 3.3줄과 다음 줄 일부를 표시하고 아래로 스크롤할 수 있습니다.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }

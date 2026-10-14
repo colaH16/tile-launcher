@@ -10,7 +10,7 @@ final class PreviewFixture: ObservableObject {
     let browser = FolderBrowser()
     private let suite: String
     private let defaults: UserDefaults
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false) {
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16) {
         suite = "dev.cola16.TileLauncher.preview.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         settings = SettingsStore(defaults: defaults)
@@ -40,7 +40,7 @@ final class PreviewFixture: ObservableObject {
         let sampleGroups = [0, 0, 1, 4, 2, 2, 1, 5, 0, 0, 0, 3, 3, 2, 2, 1]
         let sampleNames = ["Terminal", "Finder", "메모", "캘린더", "계산기", "음악"]
         let sampleTitles = ["cc2", "se3", "", "", "기획 노트", "회의 기록", "다운로드", "", "개발 서버", "로컬 로그", "배포 로그", "이번 주", "다음 주", "설계 문서", "변경 이력", "프로젝트"]
-        for index in 0..<16 {
+        for index in 0..<(comparisonSample ? 16 : recentCount) {
             let pid: pid_t = index < 2 ? 1 : Int32(index)
             let applicationOnly = [2, 3, 7].contains(index)
             let name = index == 2 ? "USBClean" : index < 2 ? "Terminal" : "앱 \(index + 1)"
@@ -192,11 +192,11 @@ struct DeckPreview: View {
     @StateObject var fixture: PreviewFixture
     var recentAppearance: RecentAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
-         recentAppearance: RecentAppearance = .original) {
+         recentAppearance: RecentAppearance = .consecutiveSmall, comparisonSample: Bool = false, recentCount: Int = 16) {
         self.recentAppearance = recentAppearance
         _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme, customColors: customColors,
                                                           compact: compact, registeredCount: registeredCount,
-                                                          comparisonSample: recentAppearance != .original))
+                                                          comparisonSample: comparisonSample, recentCount: recentCount))
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
@@ -367,10 +367,10 @@ enum PreviewExport {
             try save(DeckPreview(theme: .classic, registeredCount: count).environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("profile-\(count).png"))
         }
-        try save(DeckPreview(theme: .classic, registeredCount: 36).environment(\.colorScheme, .dark),
+        try save(DeckPreview(theme: .classic, registeredCount: 36, recentCount: 100).environment(\.colorScheme, .dark),
                  scrollToEnd: true, to: directory.appendingPathComponent("recent-scroll-bottom.png"))
         for (name, appearance): (String, RecentAppearance) in [("mixed", .mixedNeutral), ("squares-color", .squares), ("consecutive-small", .consecutiveSmall)] {
-            try save(DeckPreview(theme: .classic, registeredCount: 18, recentAppearance: appearance)
+            try save(DeckPreview(theme: .classic, registeredCount: 18, recentAppearance: appearance, comparisonSample: true)
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("recent-compare-\(name).png"))
         }
@@ -608,7 +608,7 @@ enum PreviewExport {
                 ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height + 1
             }), let document = scroll.documentView else {
                 throw NSError(domain: "TileLauncher.Preview", code: 75,
-                              userInfo: [NSLocalizedDescriptionKey: "Small General tab has no usable overflow scroll view"])
+                              userInfo: [NSLocalizedDescriptionKey: "Preview has no usable overflow scroll view: \(url.lastPathComponent)"])
             }
             let end = document.isFlipped ? document.frame.height - scroll.contentView.bounds.height : 0
             scroll.contentView.scroll(to: NSPoint(x: 0, y: end))

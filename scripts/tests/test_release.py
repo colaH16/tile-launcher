@@ -51,7 +51,7 @@ class ReleasePolicyTests(unittest.TestCase):
     def test_refresh_notes_refuses_to_modify_an_existing_release_or_draft(self):
         args = type('Args', (), {'output': Path('/tmp/unused')})()
         manifest = {'local_only': False, 'config': {'version': '1.1.0'}}
-        with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', return_value=''), mock.patch.object(r, 'current_notes', return_value=('notes', {})), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.1.0', 'draft': True}]):
+        with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', return_value=''), mock.patch.object(r, 'current_notes', return_value=('notes', {})), mock.patch.object(r, 'config', return_value={'version': '1.1.0'}), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.1.0', 'draft': True}]):
             with self.assertRaises(r.ReleaseError): r.refresh_notes(args)
 
     def test_refresh_notes_refuses_a_different_artifact_version(self):
@@ -70,7 +70,7 @@ class ReleasePolicyTests(unittest.TestCase):
             args = type('Args', (), {'output': root})()
             manifest = {'local_only': False, 'config': {'version': '1.1.0'}, 'signing': 'notarized'}
             plan = {'previous_release': 'v1.0.0', 'included_versions': ['1.1.0']}
-            with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', side_effect=['', 'a' * 40]), mock.patch.object(r, 'current_notes', return_value=('reviewed changes', plan)), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.0.0', 'published_at': '2026-10-01T00:00:00Z'}]), mock.patch.object(r, 'archive') as archive, mock.patch('builtins.print'):
+            with mock.patch.object(r, 'verify', return_value=manifest), mock.patch.object(r, 'run', side_effect=['', 'a' * 40]), mock.patch.object(r, 'current_notes', return_value=('reviewed changes', plan)), mock.patch.object(r, 'config', return_value={'version': '1.1.0'}), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.0.0', 'published_at': '2026-10-01T00:00:00Z'}]), mock.patch.object(r, 'archive') as archive, mock.patch('builtins.print'):
                 r.refresh_notes(args)
                 archive.assert_not_called()
             for name in ['app.zip', 'release-metadata.json', 'SHA256SUMS.txt']:
@@ -91,7 +91,7 @@ class ReleasePolicyTests(unittest.TestCase):
             args = type('Args', (), {'output': root})()
             manifest = {'local_only': False, 'config': {'version': '1.1.0'}, 'signing': 'notarized'}
             plan = {'previous_release': 'v1.0.0', 'included_versions': ['1.1.0']}
-            with mock.patch.object(r, 'verify', side_effect=[manifest, r.ReleaseError('verification failed')]), mock.patch.object(r, 'run', side_effect=['', 'a' * 40]), mock.patch.object(r, 'current_notes', return_value=('new source', plan)), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.0.0', 'published_at': '2026-10-01T00:00:00Z'}]):
+            with mock.patch.object(r, 'verify', side_effect=[manifest, r.ReleaseError('verification failed')]), mock.patch.object(r, 'run', side_effect=['', 'a' * 40]), mock.patch.object(r, 'current_notes', return_value=('new source', plan)), mock.patch.object(r, 'config', return_value={'version': '1.1.0'}), mock.patch.object(r, 'list_releases', return_value=[{'tag_name': 'v1.0.0', 'published_at': '2026-10-01T00:00:00Z'}]):
                 with self.assertRaises(r.ReleaseError): r.refresh_notes(args)
             for name, data in originals.items(): self.assertEqual((root / name).read_bytes(), data)
 

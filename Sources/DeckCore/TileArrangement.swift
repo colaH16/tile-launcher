@@ -70,7 +70,8 @@ public struct RecentTilePlacement: Equatable {
     public let height: Int
 }
 
-/// Sequential two-dimensional packing; later entries never fill an earlier gap.
+/// Fill two-module row bands left to right. Adjacent small tiles share a column;
+/// unused cells in a completed column or band are never backfilled.
 public enum RecentTileArrangement {
     public static func visible(_ placements: [RecentTilePlacement], module: CGFloat, gap: CGFloat,
                                offset: CGFloat, viewport: CGFloat) -> [RecentTilePlacement] {
@@ -82,29 +83,30 @@ public enum RecentTileArrangement {
             return top < upper && top + CGFloat($0.height) * stride - gap > lower
         }
     }
-    public static func sizes<App: Equatable>(apps: [App], applications: [Bool]) -> [RecentTileSize] {
+    public static func sizes<App: Equatable>(apps: [App], applications: [Bool], consecutiveSmall: Bool = false) -> [RecentTileSize] {
         precondition(apps.count == applications.count)
         return apps.indices.map { index in
             if applications[index] { return .application }
-            return index == 0 || apps[index] != apps[index - 1] || applications[index - 1] ? .wide : .square
+            let startsApp = index == 0 || apps[index] != apps[index - 1] || applications[index - 1]
+            if consecutiveSmall { return startsApp ? .square : .application }
+            return startsApp ? .wide : .square
         }
     }
     public static func place(sizes: [RecentTileSize], columns: Int) -> [RecentTilePlacement] {
         let columns = max(4, columns)
-        var occupied = Set<Int>(), cursor = 0
+        var band = 0, column = 0
+        var pendingSmallColumn: Int?
         return sizes.enumerated().map { index, size in
-            while true {
-                let row = cursor / columns, column = cursor % columns
-                let cells = (0..<size.height).flatMap { y in
-                    (0..<size.width).map { x in (row + y) * columns + column + x }
-                }
-                if column + size.width <= columns && cells.allSatisfy({ !occupied.contains($0) }) {
-                    occupied.formUnion(cells)
-                    cursor += size.width
-                    return RecentTilePlacement(index: index, row: row, column: column, width: size.width, height: size.height)
-                }
-                cursor += 1
+            if size == .application, let smallColumn = pendingSmallColumn {
+                pendingSmallColumn = nil
+                return RecentTilePlacement(index: index, row: band + 1, column: smallColumn, width: 1, height: 1)
             }
+            pendingSmallColumn = nil
+            if column + size.width > columns { band += 2; column = 0 }
+            let item = RecentTilePlacement(index: index, row: band, column: column, width: size.width, height: size.height)
+            if size == .application { pendingSmallColumn = column }
+            column += size.width
+            return item
         }
     }
 }

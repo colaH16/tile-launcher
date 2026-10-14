@@ -36,7 +36,8 @@ final class WindowPresenceTests: XCTestCase {
             XCTAssertEqual(placements.map(\.index), Array(0..<sizes.count))
             var used = Set<Int>(), previous = -1
             for tile in placements {
-                let position = tile.row * columns + tile.column
+                // Small pairs are top/bottom within one column, then move right.
+                let position = (tile.row / 2) * columns * 2 + tile.column * 2 + tile.row % 2
                 XCTAssertGreaterThan(position, previous)
                 previous = position
                 XCTAssertLessThanOrEqual(tile.column + tile.width, columns)
@@ -44,6 +45,47 @@ final class WindowPresenceTests: XCTestCase {
                     for x in 0..<tile.width { XCTAssertTrue(used.insert((tile.row + y) * columns + tile.column + x).inserted) }
                 }
             }
+        }
+    }
+    func testConsecutiveWindowsAreSmallButNewAppStartsWithASquare() {
+        let sizes = RecentTileArrangement.sizes(apps: ["T", "T", "T", "S", "T", "USB", "USB"],
+                                               applications: [false, false, false, false, false, true, false],
+                                               consecutiveSmall: true)
+        XCTAssertEqual(sizes, [.square, .application, .application, .square, .square, .application, .square])
+    }
+    func testTwoSmallWindowsStackVerticallyBeforeNextSquare() {
+        let p = RecentTileArrangement.place(sizes: [.square, .application, .application, .square], columns: 8)
+        XCTAssertEqual(p.map(\.row), [0, 0, 1, 0])
+        XCTAssertEqual(p.map(\.column), [0, 2, 2, 3])
+        XCTAssertEqual(p.map(\.index), [0, 1, 2, 3])
+    }
+    func testNextBandCannotMoveUpIntoOddSmallTileGap() {
+        let p = RecentTileArrangement.place(sizes: [.application, .square, .square, .application, .square], columns: 4)
+        XCTAssertEqual(p.map(\.row), [0, 0, 2, 2, 4])
+        XCTAssertEqual(p.map(\.column), [0, 1, 0, 2, 0])
+        // The cell below the first small tile and right edge of band zero stay empty.
+        XCTAssertFalse(p.dropFirst().contains { $0.row == 1 })
+    }
+    func testSmallPairAtRightEdgeStaysTogetherBeforeWrapping() {
+        let p = RecentTileArrangement.place(sizes: [.square, .application, .application, .application, .application, .square], columns: 4)
+        XCTAssertEqual(p.map(\.row), [0, 0, 1, 0, 1, 2])
+        XCTAssertEqual(p.map(\.column), [0, 2, 2, 3, 3, 0])
+    }
+    func testDenseMixedInventoryNeverOverlapsOrBackfillsPreviousBands() {
+        let sizes: [RecentTileSize] = (0..<1000).map { $0 % 7 < 4 ? .application : $0 % 7 == 4 ? .wide : .square }
+        for columns in [4, 8, 12] {
+            let p = RecentTileArrangement.place(sizes: sizes, columns: columns)
+            var cells = Set<Int>(), previous = -1
+            for tile in p {
+                let position = (tile.row / 2) * columns * 2 + tile.column * 2 + tile.row % 2
+                XCTAssertGreaterThan(position, previous)
+                previous = position
+                XCTAssertLessThanOrEqual(tile.column + tile.width, columns)
+                for y in 0..<tile.height {
+                    for x in 0..<tile.width { XCTAssertTrue(cells.insert((tile.row + y) * columns + tile.column + x).inserted) }
+                }
+            }
+            XCTAssertEqual(p.map(\.index), Array(sizes.indices))
         }
     }
 }

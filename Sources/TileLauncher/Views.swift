@@ -127,7 +127,7 @@ struct DeckView: View {
     let pinOverlay: () -> Void
     var resizeForProfile: (Int) -> Void = { _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
-    var recentAppearance: RecentAppearance = .original
+    var recentAppearance: RecentAppearance = .consecutiveSmall
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -421,12 +421,9 @@ struct DeckView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let identities = snapshot.windows.map { $0.appURL?.path ?? String($0.pid) }
-                let sizes = recentAppearance == .consecutiveSmall ? snapshot.windows.indices.map { index in
-                    let repeated = index > 0 && identities[index] == identities[index - 1] && !snapshot.windows[index - 1].isApplication
-                    return snapshot.windows[index].isApplication || repeated ? RecentTileSize.application : .square
-                } : recentAppearance.uniform ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
-                    : RecentTileArrangement.sizes(apps: snapshot.windows.map { $0.appURL?.path ?? String($0.pid) },
-                                                 applications: snapshot.windows.map(\.isApplication))
+                let sizes = recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
+                    : RecentTileArrangement.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
+                                                 consecutiveSmall: recentAppearance == .consecutiveSmall)
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
                 let micro = (geometry.unit - geometry.gap) / 2
                 let bottom = packed.map { $0.row + $0.height }.max() ?? 0
