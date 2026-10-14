@@ -13,11 +13,14 @@ struct MonitorGroupingPreview: View {
     private let emphasized: Set<UUID>?
     private let grouped: Bool
     private let production: Bool
+    private let columns: DesktopColumnsPreviewData?
+    private let detail: Bool
 
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
-         production: Bool = false) {
+         production: Bool = false, desktopColumns: Bool = false, detail: Bool = false) {
         self.grouped = grouped
         self.production = production
+        self.detail = detail
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
         fixture.settings.tileColors.windows = TileColor(0x2FA3E7)
@@ -84,7 +87,7 @@ struct MonitorGroupingPreview: View {
             !$0.isApplication && $0.desktop == .current
         }.map(\.id)) : nil
         let contextName = terminalSelected ? "iTerm2" : "ChatGPT"
-        sizes = grouped ? windows.indices.map { index in
+        let conventionalSizes: [RecentTileSize]? = grouped ? windows.indices.map { index in
             let window = windows[index]
             let firstWindow = index == 0 || windows[index - 1].pid != window.pid
             if window.isApplication { return .application }
@@ -100,6 +103,33 @@ struct MonitorGroupingPreview: View {
                 return firstWindow && window.appName == contextName ? .wide : .square
             }
         } : nil
+        if desktopColumns {
+            func groups(visible: Bool) -> [[Int]] {
+                var keys: [String] = []
+                let indices = windows.indices.filter { !windows[$0].isApplication && (windows[$0].desktop == .current) == visible }
+                for index in indices where !keys.contains(windows[index].appKey) { keys.append(windows[index].appKey) }
+                return keys.map { key in indices.filter { windows[$0].appKey == key } }
+            }
+            let visible = groups(visible: true), other = groups(visible: false)
+            let applications = windows.indices.filter { windows[$0].isApplication }
+            var columnSizes = Array(repeating: RecentTileSize.application, count: windows.count)
+            for group in visible {
+                if let first = group.first { columnSizes[first] = monitor[windows[first].id] == activeMonitor ? .wide : .square }
+            }
+            for group in other { if let first = group.first { columnSizes[first] = .square } }
+            let all = visible.flatMap { $0 } + other.flatMap { $0 } + applications
+            precondition(Set(all) == Set(windows.indices) && all.count == windows.count)
+            // The comparison's number badges follow the left column top-to-bottom,
+            // then the right column, with the gray app-only section last.
+            windows = all.map { windows[$0] }
+            sizes = all.map { columnSizes[$0] }
+            columns = DesktopColumnsPreviewData(visible: groups(visible: true), other: groups(visible: false),
+                                                applications: windows.indices.filter { windows[$0].isApplication })
+            print("Desktop columns: visible=\(visible.count) groups/\(visible.flatMap { $0 }.count) windows, other=\(other.count) groups/\(other.flatMap { $0 }.count) windows, applications=\(applications.count); all indices preserved")
+        } else {
+            columns = nil
+            sizes = conventionalSizes
+        }
         if let sizes, sizing != .smallFollowers {
             print("Monitor sizing \(sizing): wide=\(sizes.filter { $0 == .wide }.count), square=\(sizes.filter { $0 == .square }.count), small=\(sizes.filter { $0 == .application }.count)")
         }
@@ -116,7 +146,7 @@ struct MonitorGroupingPreview: View {
         _fixture = StateObject(wrappedValue: fixture)
     }
 
-    var body: some View {
+    private var deck: DeckView {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
                  presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in },
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
@@ -125,9 +155,20 @@ struct MonitorGroupingPreview: View {
                  recentAppearance: production ? .grouped : .consecutiveSmall,
                  previewWindowSizes: production ? nil : sizes,
                  previewEmphasizedWindows: production ? nil : emphasized,
-                 previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil, dismiss: {})
+                 previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil,
+                 previewDesktopColumns: columns, dismiss: {})
+    }
+
+    var body: some View {
+        if detail {
+            deck.desktopColumnDetails.padding(24)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+        } else {
+            deck
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)
+        }
     }
 }

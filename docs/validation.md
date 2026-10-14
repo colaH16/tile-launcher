@@ -1,5 +1,13 @@
 # 네이티브 빌드 검증
 
+## R148 · 데스크탑 두 열 비교 시안
+
+- R147의 격리된 서명/공증 산출물은 그대로 설치하고, 추가 소스는 비교 전용 DesktopColumnsPreviewData 및 nil 기본값의 DeckView 입력이다. 설치된 소스2980b02에는 이 비교 변경이 들어 있지 않다. 앱 버전은 올리지 않았다.
+- 각 열은 작은 타일6칸이며 열 사이24pt, 타일 사이8pt다. 현재 최근 창 전체 폭630.4pt 안에서 1×1은43.87pt/2×2는95.73pt/4×2는199.47pt다. 왼쪽7개 그룹·10개 창, 오른쪽3개 그룹·5개 창과 회색 앱8개, 전체23개 인덱스를 중복/누락 없이 확인했다. 같은 앱의 보이는/안 보이는 창은 각 열에서 독립 그룹이다.
+- 숫자 순서는 왼쪽 그룹 위→아래 다음 오른쪽이며, 작은 창의 진한색과 파스텔·앱 회색은 크기와 독립적이다. 공유 windowTile과 RecentTileArrangement를 써 작은 후속 둘의 세로 스택/이전 줄 미채움을 유지했다. 기본 실행 경로의 입력은 nil이다.
+- native 개발 빌드 및 전체 격리 렌더 통과: /tmp/tile-columns-build.log, /tmp/tile-columns-previews.log. 실제1120×729pt 오버레이와 잘리지 않은 두 열 상세를 눈으로 확인했다. 현 높이에서는 왼쪽3개 앱 그룹이 보이고 나머지는 독립 세로 스크롤 대상이다. 상세는 전체 구성을 검토하는 이미지이며 실제 패널 높이를 바꾼 것이 아니다.
+- 사용자 화면·실제 창·설정을 읽거나 조작하지 않았으며 이전 캡처 기반 합성23개를 사용했다. 모니터B는 이전과 같은 가정이고 현재 Aside 상태를 재진단하지 않았다. R148에 대해 단위 테스트를 새로 작성하거나 전체 XCTest/Python을 다시 돌렸다고 기록하지 않는다.
+
 ## R147 · 1.2.0 앱별 창 묶기·활성 앱 대표 창
 
 - 사용자 적용 요청을 직전 추천 두 번째 안으로 해석해 먼저 안내하고 기본 RecentAppearance를 grouped로 바꿨다. 실제 appID를 AX/CG-only/앱 전용 항목에 전달하며 ID/경로/PID 기반으로 동일 앱을 묶는다. 활성 그룹을 앞에 두고 그룹 및 내부 MRU를 보존한다. 개별 창 ID는 유지한다.
@@ -8,6 +16,10 @@
 - 실제 OverlayContent.refresh 격리 검사에서 그룹화 뒤 수동6 적용으로 첫 그룹의 떨어진 창들을 보존하고 번호2가 해당 그룹의 두 번째 창 ID인 것을 확인했다. 앱 전환 뒤 새 snapshot 번호와 기존 캡처 snapshot의 번호/ID도 대조했다. 기존 HoldMonitor/핀 갱신 정책·메뉴·아이콘·설정 크기·표면 마스크·스크롤 검사도 통과했다.
 - debug 빌드 및 production override 없는 공유 DeckView 렌더 통과. /tmp/tile-120-debug-build.log, tile-120-previews.log, tile-120-production-build.log, tile-120-production-previews.log. grouped-production-chatgpt/terminal.png의 23개 합성 목록에서 대표 wide 하나/모든 보이는 square·다른 small/색 독립성·앱 회색과 번호를 확인했다. 두 테마/명암·작은 화면/프로필별 높이·최근100개 끝 스크롤도 통과했다. 사용자 화면을 조작하거나 실제 앱 전환 수신을 검증한 것으로 기록하지 않는다.
 - 기능 minor1.2.0(21), 누적 노트 v1.1.5→v1.2.0 범위를 검사했다. 메인 Source의 번호 선택은 그룹화된 visibleSnapshot.windows를 사용함을 대조했다. Aside 조사 보류는 유지했고 AX/CG 후보 판정·focus 경로는 변경하지 않았다. 서명·공증·설치 결과는 이어 기록한다. 새 GitHub 공개는 별도다.
+- 전달 완료: 소스2980b02a54feb2ae7179d19134a09e926b9a3a24에서 격리 release 빌드, Developer ID Team VV2W9U5XT3 서명 및 실제 서명 실행 파일 --render-previews 검사가 통과했다. /tmp/tile-120-prepare.log, tile-120-sign.log, tile-120-signed-previews.log. production override 없는 ChatGPT/iTerm 그룹 렌더와 기존 설정·마스크·스크롤 검사를 확인했다.
+- Apple 제출af2f41a0-f10d-4178-a542-10f2448d1ca2는 Accepted다. 티켓 부착/검증·Gatekeeper·최종 ZIP 검증을 완료했다. 산출물은 ~/Library/Developer/TileLauncher/releases/v1.2.0에 있고 공증 인증은 기존 Keychain 프로필만 사용했다.
+- 번들 SHA256 4cfdd4083f0f5158c79d957128e52fc7fcab484bc32699468a8400b4ebafa718, ZIP 8c82a0820445208ad361aef051efd3fc68d8f65d60bf029d200af02490c897a7, 메타데이터4b8c327787044e0a8a08264f9bdd05d815a7fc43e1a9c6281b03686c314d4c00, SHA256SUMS fd3e9b430a1752038936371138f566b2caff9cf0e3e5d099583c73a620f920f2다.
+- /Applications/launch at Login/Tile Launcher.app에 이전 앱을 백업한 뒤 설치했고 버전1.2.0/빌드21·동일 번들 해시·codesign/stapler/spctl을 다시 확인했다. /tmp/tile-120-install.json과 tile-120-install.log에 근거가 있다. 실행 소유자 파일이 같아 기존 인스턴스를 보존했으며 자동 재시작은 하지 않았다. 다음 재열기에서 새 빌드로 전환한다. 사용자 설정/권한을 변경하지 않았고 실제 입력/Aside 재현을 통과했다고 주장하지 않는다. 공개는1.1.5로 유지한다.
 
 ## R146 · Aside 일시 누락의 읽기 진단·현재 정상
 

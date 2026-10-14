@@ -138,6 +138,7 @@ struct DeckView: View {
     var previewWindowSizes: [RecentTileSize]? = nil
     var previewEmphasizedWindows: Set<UUID>? = nil
     var previewRecentLegend: String? = nil
+    var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -465,6 +466,10 @@ struct DeckView: View {
                 Text("열린 창을 확인하고 있어요.\n잠시 후 다시 열어 주세요.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
+                DesktopColumnsPreview(data: columns, sizes: sizes, width: geometry.windowWidth) { index, size in
+                    windowTile(snapshot.windows[index], index: index, wide: size == .wide, small: size == .application)
+                }
             } else {
                 let identities = snapshot.windows.map(\.appKey)
                 // Snapshot desktops keep geometry and numbered targets stable
@@ -499,6 +504,16 @@ struct DeckView: View {
                 .scrollIndicators(.visible).id(snapshot.windows.map(\.id))
             }
         }.frame(height: height)
+    }
+    /// Unclipped version of the same comparison for reviewing every app group.
+    @ViewBuilder var desktopColumnDetails: some View {
+        if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
+            DesktopColumnsPreview(data: columns, sizes: sizes, width: geometry.windowWidth, expanded: true) { index, size in
+                windowTile(snapshot.windows[index], index: index, wide: size == .wide, small: size == .application)
+            }
+            .environment(\.deckTheme, settings.theme)
+            .environment(\.tileColors, settings.tileColors)
+        }
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false) -> some View {
         let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
