@@ -9,8 +9,8 @@ struct AppItem: Identifiable, Equatable {
     let url: URL?
 }
 enum RecentAppearance {
-    case original, squares, mixedNeutral, consecutiveSmall, grouped
-    var uniform: Bool { self == .squares || self == .consecutiveSmall || self == .grouped }
+    case original, squares, mixedNeutral, consecutiveSmall, grouped, locationColor
+    var uniform: Bool { self == .squares || self == .consecutiveSmall || self == .grouped || self == .locationColor }
     var neutralApplications: Bool { self != .original }
 }
 /// R135 selects gray 2×2 recent menus; earlier variants remain for comparison previews.
@@ -30,6 +30,8 @@ struct WindowItem: Identifiable, Equatable {
     var desktop: WindowDesktop = .unknown
     var isApplication = false
     var runningApplication: NSRunningApplication? = nil
+    var bounds: CGRect? = nil
+    var location: RecentWindowLocation = .unknown
     var appKey: String {
         appID.map { "app:\($0)" } ?? appURL.map { "file:\($0.standardizedFileURL.path)" } ?? "pid:\(pid)"
     }
@@ -73,15 +75,32 @@ final class OverlayContent: ObservableObject {
         GroupedRecentWindows.order(apps: windows.map(\.appKey), activeApp: activeAppKey(context, in: windows))
             .map { windows[$0] }
     }
+    static func recentWindows(_ windows: [WindowItem], context: AppItem?) -> [WindowItem] {
+        let displays = NSScreen.screens.compactMap { screen -> CGRect? in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            return CGDisplayBounds(id.uint32Value)
+        }
+        // The tracker's list is already individual-window MRU. Its first visible
+        // window for the active app supplies the active monitor, not the cursor.
+        let activeKey = activeAppKey(context, in: windows)
+        let focused = windows.first { !$0.isApplication && $0.appKey == activeKey && $0.desktop == .current && $0.bounds != nil }
+        let active = RecentWindowPolicy.display(containing: focused?.bounds, displays: displays)
+        return windows.map { window in
+            var item = window
+            item.location = RecentWindowPolicy.location(desktop: window.desktop, bounds: window.bounds,
+                                                        displays: displays, activeDisplay: active)
+            return item
+        }
+    }
     func refresh(context: AppItem?, apps: [AppItem], windows: [WindowItem],
                  trusted: Bool, commands: [MenuCommand], manualCount: Int?,
                  menuHistory: MenuHistoryPreferences = .init(), now: Date = Date()) {
         let old = snapshot
         let count = old.layout.windowLimit(manual: manualCount, actual: windows.count)
-        let grouped = Self.groupedWindows(windows, context: context)
+        let recent = Self.recentWindows(windows, context: context)
         let next = OverlaySnapshot(context: context,
                                    contextWindowTitle: windows.first { $0.pid == context?.pid && !$0.isApplication }?.title,
-                                   apps: Array(apps.prefix(3)), windows: Array(grouped.prefix(count)),
+                                   apps: Array(apps.prefix(3)), windows: Array(recent.prefix(count)),
                                    layout: old.layout, permission: trusted, pins: old.pins,
                                    profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
                                    commands: MenuCommand.ordered(commands, appID: context?.id ?? "", history: menuHistory, at: now),
@@ -288,10 +307,9 @@ final class AppIconCache {
         let key = url.path as NSString
         if let image = cache.object(forKey: key) { return image }
         let original = Self.webAppIcon(url) ?? NSWorkspace.shared.icon(forFile: url.path)
-        let image = NSImage(size: NSSize(width: 64, height: 64))
-        image.lockFocus()
-        original.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
-        image.unlockFocus()
+        // Keep all native/ICNS representations for the larger physical icons.
+        // Flattening into a 64pt bitmap discards higher-resolution variants.
+        let image = (original.copy() as? NSImage) ?? original
         cache.setObject(image, forKey: key)
         return image
     }

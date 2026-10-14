@@ -23,7 +23,8 @@ final class WindowTracker {
     private var pending: [pid_t: DispatchWorkItem] = [:]
     private var applicationIDs: [pid_t: UUID] = [:]
     private let windowEvents = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
-                                kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification]
+                                kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
+                                kAXMovedNotification, kAXResizedNotification]
 
     func synchronize(apps list: [AppItem], active: pid_t?, trusted: Bool) {
         queue.async {
@@ -229,7 +230,9 @@ final class WindowTracker {
             let item = WindowItem(id: id, pid: pid, appName: appInfo.name, appURL: appInfo.url,
                                   title: title, minimized: value(element, kAXMinimizedAttribute) as? Bool ?? false,
                                   windowID: number ?? prior?.item.windowID, appID: appInfo.id,
-                                  desktop: desktops.desktop(for: number ?? prior?.item.windowID))
+                                  desktop: desktops.desktop(for: number ?? prior?.item.windowID),
+                                  bounds: (number ?? prior?.item.windowID).flatMap { desktops.records[$0]?.bounds }
+                                      ?? Self.bounds(of: element) ?? prior?.item.bounds)
             next.append(TrackedWindow(element: element, item: item))
             if prior?.element == nil, let observer = observers[pid] {
                 for key in windowEvents {
@@ -259,6 +262,7 @@ final class WindowTracker {
                 continue
             }
             missing.item.desktop = desktops.desktop(for: number)
+            missing.item.bounds = record?.bounds ?? missing.item.bounds
             next.append(missing)
         }
         // A cold start may not have an AX object for a different Space yet. Keep
@@ -271,7 +275,7 @@ final class WindowTracker {
             next.append(TrackedWindow(element: nil, item: WindowItem(
                 id: UUID(), pid: pid, appName: appInfo.name, appURL: appInfo.url,
                 title: server.title ?? "다른 데스크탑의 창", minimized: false,
-                windowID: server.id, appID: appInfo.id, desktop: .other)))
+                windowID: server.id, appID: appInfo.id, desktop: .other, bounds: server.bounds)))
         }
         let serverCandidates = desktops.records.values.filter { $0.pid == pid && $0.isCandidate }.count
         if WindowPresence.applicationOnly(axComplete: axComplete, inventoryComplete: desktops.valid,
@@ -299,6 +303,19 @@ final class WindowTracker {
         if let observer = observers.removeValue(forKey: pid) {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         }
+    }
+    private static func bounds(of element: AXUIElement) -> CGRect? {
+        var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &rawPosition) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &rawSize) == .success,
+              let rawPosition, let rawSize, CFGetTypeID(rawPosition) == AXValueGetTypeID(),
+              CFGetTypeID(rawSize) == AXValueGetTypeID() else { return nil }
+        let position = unsafeBitCast(rawPosition, to: AXValue.self)
+        let size = unsafeBitCast(rawSize, to: AXValue.self)
+        guard AXValueGetType(position) == .cgPoint, AXValueGetType(size) == .cgSize else { return nil }
+        var origin = CGPoint.zero, dimensions = CGSize.zero
+        guard AXValueGetValue(position, .cgPoint, &origin), AXValueGetValue(size, .cgSize, &dimensions) else { return nil }
+        return CGRect(origin: origin, size: dimensions)
     }
     private func publish() {
         let all = windows.keys.sorted().flatMap { windows[$0, default: []].map(\.item) }

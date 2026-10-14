@@ -56,8 +56,8 @@ struct AppearanceView: View {
             sample("고정 메뉴", section: section, emphasized: true, width: 120)
         case .windows:
             smallWindowSample()
-            sample("연한색", section: section, emphasized: false, width: 56).help("다른 데스크탑 창")
-            sample("진한색", section: section, emphasized: true, width: 56).help("현재 데스크탑 창")
+            sample("반복 앱", section: section, emphasized: false, width: 56).help("목록에 이미 나온 앱의 다른 창 · 크기는 데스크탑 위치 기준")
+            sample("첫 등장", section: section, emphasized: true, width: 56).help("최근 창 목록에서 해당 앱의 첫 창 · 크기는 데스크탑 위치 기준")
         case .registered:
             sample("폴더", section: section, emphasized: false, width: 56, symbol: "folder.fill")
             sample("앱", section: section, emphasized: true, width: 56, symbol: "app.fill")

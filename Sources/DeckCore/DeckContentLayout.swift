@@ -4,15 +4,18 @@ import CoreGraphics
 public struct RegisteredGridGeometry {
     public let columns: Int
     public let side: CGFloat
-    public let gap: CGFloat = 8
-    public init(width: CGFloat) {
+    public let gap: CGFloat
+    public init(width: CGFloat, scale: CGFloat = 1) {
+        gap = 8 * scale
         let content = max(1, width - DeckSpacing.edge * 2)
-        columns = max(1, Int((content + gap) / (60 + gap)))
-        side = (content - CGFloat(columns - 1) * gap) / CGFloat(columns)
+        columns = max(1, Int((content + 8) / (60 + 8)))
+        side = (content - CGFloat(columns - 1) * 8) / CGFloat(columns) * scale
+        headerHeight = DeckSpacing.shelfHeader * scale
     }
+    private let headerHeight: CGFloat
     public func shelfHeight(count: Int, maximumRows: Int) -> CGFloat {
         let rows = min(maximumRows, max(1, (max(0, count) + columns - 1) / columns))
-        return CGFloat(rows) * side + CGFloat(rows - 1) * gap + DeckSpacing.shelfHeader
+        return CGFloat(rows) * side + CGFloat(rows - 1) * gap + headerHeight
     }
 }
 

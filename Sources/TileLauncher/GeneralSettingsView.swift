@@ -58,7 +58,7 @@ struct GeneralSettingsContent: View {
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("같은 앱의 창을 모으고 활성 앱 묶음을 맨 앞에 둡니다. 활성 앱의 보이는 대표 창 하나는 가로형, 모든 모니터에서 보이는 나머지 창은 정사각형, 다른 데스크탑 창은 작은 타일입니다. 보이는 창은 크기와 관계없이 진한색, 창 없는 앱은 회색입니다. 작은 타일은 두 개씩 세로로 쌓으며 최대 3.3줄과 다음 줄 일부를 표시하고 아래로 스크롤할 수 있습니다.")
+                        Text("개별 창을 최근 사용 순서로 표시합니다. 활성 앱이 있는 모니터의 보이는 데스크탑은 4×2, 다른 모니터의 보이는 데스크탑은 2×2, 보이지 않는 데스크탑은 1×1입니다. 목록에서 앱이 처음 나오면 진한색, 이후 창은 파스텔이며 창 없는 앱은 회색 1×1입니다. 작은 타일은 두 개씩 세로로 쌓으며 최대 3.3줄과 다음 줄 일부를 표시하고 아래로 스크롤할 수 있습니다.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }

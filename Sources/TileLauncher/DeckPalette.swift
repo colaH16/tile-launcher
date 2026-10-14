@@ -8,7 +8,14 @@ private struct DeckThemeKey: EnvironmentKey {
 private struct TileColorsKey: EnvironmentKey {
     static let defaultValue = TileColors()
 }
+private struct DeckScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
 extension EnvironmentValues {
+    var deckScale: CGFloat {
+        get { self[DeckScaleKey.self] }
+        set { self[DeckScaleKey.self] = newValue }
+    }
     var deckTheme: DeckTheme {
         get { self[DeckThemeKey.self] }
         set { self[DeckThemeKey.self] = newValue }

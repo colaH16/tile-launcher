@@ -12,6 +12,7 @@ private struct HeaderControlsKey: PreferenceKey {
 struct Icon: View {
     let url: URL?
     var size: CGFloat = 34
+    @Environment(\.deckScale) private var scale
     var body: some View {
         Group {
             if let image = PreviewIconAssets.image(for: url) {
@@ -21,14 +22,14 @@ struct Icon: View {
                 // WindowServer's native app-icon representation caching.
                 let color: Color = symbol == "terminal" ? .green : symbol == "calendar" ? .red : symbol == "note.text" ? .orange : .blue
                 ZStack {
-                    RoundedRectangle(cornerRadius: size / 5).fill(color)
-                    Image(systemName: symbol).font(.system(size: size * 0.58, weight: .semibold)).foregroundStyle(.white)
+                    RoundedRectangle(cornerRadius: size * scale / 5).fill(color)
+                    Image(systemName: symbol).font(.system(size: size * scale * 0.58, weight: .semibold)).foregroundStyle(.white)
                 }
             } else {
                 Image(nsImage: AppIconCache.shared.icon(url)).resizable().interpolation(.high)
             }
         }
-            .frame(width: size, height: size)
+            .frame(width: size * scale, height: size * scale)
             .accessibilityHidden(true)
     }
 }
@@ -47,8 +48,9 @@ private struct RegisteredTileStyle: ButtonStyle {
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
         @Environment(\.deckTheme) private var theme
         @Environment(\.tileColors) private var colors
+        @Environment(\.deckScale) private var scale
         @State private var hovering = false
-        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 12, style: .continuous) }
+        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: theme.isClassic ? 0 : 12 * scale, style: .continuous) }
         var body: some View {
             let palette = DeckPalette(section: .registered, emphasized: emphasized,
                                       dark: scheme == .dark, theme: theme, colors: colors)
@@ -89,10 +91,11 @@ private struct TileStyle: ButtonStyle {
         @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
         @Environment(\.deckTheme) private var theme
         @Environment(\.tileColors) private var colors
+        @Environment(\.deckScale) private var scale
         @State private var hovering = false
         var body: some View {
             let palette = DeckPalette(section: section, emphasized: emphasized, dark: scheme == .dark, theme: theme, colors: colors)
-            let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : compact ? 8 : 14, style: .continuous)
+            let shape = RoundedRectangle(cornerRadius: theme.isClassic ? 0 : (compact ? 8 : 14) * scale, style: .continuous)
             configuration.label
                 .foregroundStyle(palette.ink, palette.secondary)
                 .contentShape(shape)
@@ -134,7 +137,7 @@ struct DeckView: View {
     let pinOverlay: () -> Void
     var resizeForProfile: (Int) -> Void = { _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
-    var recentAppearance: RecentAppearance = .grouped
+    var recentAppearance: RecentAppearance = .locationColor
     var menuAppearance: MenuAppearance = .selected
     var startTileLabels = true
     // Synthetic comparison inputs only; production callers keep all defaults.
@@ -150,14 +153,23 @@ struct DeckView: View {
     private var profileName: String { presentation.profile?.name ?? snapshot.profileName }
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var deckScheme
+    private func u(_ value: CGFloat) -> CGFloat { value * snapshot.layout.scale }
+    private func font(_ style: NSFont.TextStyle) -> Font {
+        .system(size: u(NSFont.preferredFont(forTextStyle: style).pointSize))
+    }
+    private var firstWindowIDs: Set<UUID> {
+        let first = RecentWindowPolicy.firstAppearances(apps: snapshot.windows.map(\.appKey),
+                                                       applications: snapshot.windows.map(\.isApplication))
+        return Set(snapshot.windows.indices.filter { first[$0] }.map { snapshot.windows[$0].id })
+    }
 
     var body: some View {
         deckContents
-            .frame(width: snapshot.layout.contentSize.width, height: snapshot.layout.contentSize.height)
-            .scaleEffect(snapshot.layout.scale, anchor: .topLeading)
             .frame(width: snapshot.layout.frame.width, height: snapshot.layout.frame.height, alignment: .topLeading)
-            // Keep the native drag view in physical window coordinates. Resolve
-            // the scaled SwiftUI anchors here so header controls stay clickable.
+            .environment(\.deckScale, snapshot.layout.scale)
+            .font(.system(size: u(NSFont.systemFontSize)))
+            // Layout and text are drawn at their final point sizes. The native
+            // drag view and SwiftUI button anchors share physical coordinates.
             .overlayPreferenceValue(HeaderControlsKey.self) { controls in
                 GeometryReader { geometry in
                     OverlayDragHandle(enabled: presentation.isPinned,
@@ -170,38 +182,38 @@ struct DeckView: View {
     }
 
     private var deckContents: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: u(0)) {
             header
-            VStack(alignment: .leading, spacing: DeckSpacing.sections(compact: compact)) {
+            VStack(alignment: .leading, spacing: u(DeckSpacing.sections(compact: compact))) {
                 if browser.current != nil {
                     folderContents
                 } else {
                     GeometryReader { area in
                         let content = DeckContentLayout(width: snapshot.layout.contentSize.width,
-                                                        availableHeight: area.size.height,
+                                                        availableHeight: area.size.height / snapshot.layout.scale,
                                                         registeredCount: registeredItems.count, compact: compact)
-                        VStack(spacing: 0) {
-                            workArea(height: content.workHeight)
-                            Color.clear.frame(height: content.gap)
-                            registeredSection.frame(height: content.registeredHeight)
-                            Spacer(minLength: 0)
+                        VStack(spacing: u(0)) {
+                            workArea(height: u(content.workHeight))
+                            Color.clear.frame(height: u(content.gap))
+                            registeredSection.frame(height: u(content.registeredHeight))
+                            Spacer(minLength: u(0))
                         }
                     }
                 }
-                HStack {
+                HStack(spacing: u(8)) {
                     Image(systemName: presentation.isPinned ? "pin.fill" : "option")
                     Text(compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
                          : presentation.isPinned ? "상단 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정")
-                        .font(.caption).lineLimit(1)
+                        .font(font(.caption1)).lineLimit(1)
                     Spacer()
                     Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
-                        .font(.caption).lineLimit(1).foregroundStyle(.secondary)
+                        .font(font(.caption1)).lineLimit(1).foregroundStyle(.secondary)
                 }
-                .frame(height: 18)
+                .frame(height: u(18))
                 .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, DeckSpacing.edge)
-            .padding(.bottom, DeckSpacing.edge)
+            .padding(.horizontal, u(DeckSpacing.edge))
+            .padding(.bottom, u(DeckSpacing.edge))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.deckTheme, settings.theme)
@@ -217,23 +229,23 @@ struct DeckView: View {
 
     private var header: some View {
         ZStack {
-            VStack(spacing: 3) {
+            VStack(spacing: u(3)) {
                 Text(headerTitle)
-                    .font(.system(size: compact ? 18 : 23, weight: .semibold))
+                    .font(.system(size: u(compact ? 18 : 23), weight: .semibold))
                     .lineLimit(1).truncationMode(.middle)
-                Text(headerSubtitle).font(.caption).foregroundStyle(.secondary)
+                Text(headerSubtitle).font(font(.caption1)).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 104)
+            .padding(.horizontal, u(104))
             .allowsHitTesting(false)
 
-            HStack(spacing: 8) {
+            HStack(spacing: u(8)) {
                 Button {
                     if presentation.isPinned { dismiss() } else { pinOverlay() }
                 } label: {
                     Image(systemName: presentation.isPinned ? "xmark" : "pin")
-                        .frame(width: 34, height: 34).contentShape(Circle())
+                        .frame(width: u(34), height: u(34)).contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: Circle())
@@ -244,7 +256,7 @@ struct DeckView: View {
                 if browser.current != nil {
                     Button(action: browser.back) {
                         Image(systemName: "chevron.left")
-                            .frame(width: 34, height: 34).contentShape(Circle())
+                            .frame(width: u(34), height: u(34)).contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                     .glassEffect(.regular.interactive(), in: Circle())
@@ -254,7 +266,7 @@ struct DeckView: View {
                 }
                 Spacer()
                 Button { showSettings(.general) } label: {
-                    Image(systemName: "slider.horizontal.3").frame(width: 34, height: 34).contentShape(Circle())
+                    Image(systemName: "slider.horizontal.3").frame(width: u(34), height: u(34)).contentShape(Circle())
                 }
                 .buttonStyle(.plain).help("설정 · ⌘, 또는 ⌥,")
                 .accessibilityLabel("설정")
@@ -262,10 +274,10 @@ struct DeckView: View {
                 .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
             }
         }
-        .frame(height: compact ? 40 : 52)
-        .padding(.horizontal, DeckSpacing.edge)
-        .padding(.top, DeckSpacing.edge)
-        .padding(.bottom, DeckSpacing.sections(compact: compact))
+        .frame(height: u(compact ? 40 : 52))
+        .padding(.horizontal, u(DeckSpacing.edge))
+        .padding(.top, u(DeckSpacing.edge))
+        .padding(.bottom, u(DeckSpacing.sections(compact: compact)))
     }
 
     private var headerTitle: String {
@@ -277,10 +289,10 @@ struct DeckView: View {
         return snapshot.contextWindowTitle ?? "지금 하던 일에서, 다음으로"
     }
 
-    private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.contentSize.width, compact: compact) }
+    private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.contentSize.width, compact: compact, scale: snapshot.layout.scale) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
     private func workArea(height: CGFloat) -> some View {
-        HStack(alignment: .top, spacing: DeckSpacing.columns) {
+        HStack(alignment: .top, spacing: u(DeckSpacing.columns)) {
             if !compact { menuSection(height: height).frame(width: geometry.menuWidth) }
             recentSection(height: height).frame(width: geometry.windowWidth)
         }
@@ -292,21 +304,21 @@ struct DeckView: View {
     private func tileWidth(_ span: Int) -> CGFloat { geometry.unit * CGFloat(span) + geometry.gap * CGFloat(span - 1) }
 
     private func menuSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
-            HStack {
+        VStack(alignment: .leading, spacing: u(DeckSpacing.sectionTitle)) {
+            HStack(spacing: u(8)) {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
                 Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("설정에서 앱별 메뉴 추가")
-            }.frame(height: 20)
+            }.frame(height: u(20))
             if menuItems.isEmpty {
                 Button { showSettings(.addMenu) } label: {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Image(systemName: "command").font(.title2)
-                        Text("앱별 메뉴 추가").font(.callout.weight(.medium))
+                    VStack(alignment: .leading, spacing: u(9)) {
+                        Image(systemName: "command").font(font(.title2))
+                        Text("앱별 메뉴 추가").font(font(.callout).weight(.medium))
                         Text("설정 → 메뉴에서 자주 쓰는 동작을 등록하세요.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                            .font(font(.caption1)).foregroundStyle(.secondary)
+                    }.padding(u(14)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.buttonStyle(TileStyle())
             } else if menuAppearance == .recentPastel {
                 let sizes = menuItems.map { command in
@@ -339,7 +351,7 @@ struct DeckView: View {
                                 ForEach(packed[row], id: \.index) { place in
                                     menuTile(menuItems[place.index]).frame(width: tileWidth(place.span), height: geometry.unit)
                                 }
-                                Spacer(minLength: 0)
+                                Spacer(minLength: u(0))
                             }
                         }
                     }
@@ -355,41 +367,41 @@ struct DeckView: View {
         return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
             if startTileLabels {
                 ZStack(alignment: .bottomLeading) {
-                    Image(systemName: "command").font(.system(size: small ? 26 : 52, weight: .light))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, small ? 12 : 22)
-                    Text(command.title).font(.system(size: small ? 8 : 12, weight: .medium)).lineLimit(1)
-                        .padding(small ? 3 : 8)
+                    Image(systemName: "command").font(.system(size: u(small ? 26 : 52), weight: .light))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                    Text(command.title).font(.system(size: u(small ? 8 : 12), weight: .medium)).lineLimit(1)
+                        .padding(u(small ? 3 : 8))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .topTrailing) {
-                        VStack(spacing: 3) {
+                        VStack(spacing: u(3)) {
                             if command.isPinned { Image(systemName: "pin.fill") }
                             Text("\(command.totalUseCount)회")
-                        }.font(.system(size: 9)).padding(8)
+                        }.font(.system(size: u(9))).padding(u(8))
                     }
             } else {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: u(2)) {
                 HStack(alignment: .top) {
-                    Image(systemName: "command").font(.system(size: small ? 12 : 20))
-                    Spacer(minLength: small ? 0 : 4)
-                    VStack(alignment: .trailing, spacing: 1) {
+                    Image(systemName: "command").font(.system(size: u(small ? 12 : 20)))
+                    Spacer(minLength: u(small ? 0 : 4))
+                    VStack(alignment: .trailing, spacing: u(1)) {
                         if !small {
-                            Image(systemName: "pin.fill").font(.caption2)
+                            Image(systemName: "pin.fill").font(font(.caption2))
                                 .opacity(command.isPinned ? 1 : 0)
                         }
                         Text("\(command.totalUseCount.formatted(.number.notation(.compactName)))회")
-                            .font(.system(size: small ? 8 : 9, weight: .medium)).monospacedDigit()
+                            .font(.system(size: u(small ? 8 : 9), weight: .medium)).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.8)
                     }.foregroundStyle(.secondary).accessibilityHidden(true)
                 }
                 if small {
-                    Text(command.title).font(.system(size: 9, weight: .medium)).lineLimit(2)
+                    Text(command.title).font(.system(size: u(9), weight: .medium)).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text(command.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                    Text(command.title).font(.system(size: u(12), weight: .medium)).lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }.padding(small ? 4 : 10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }.padding(u(small ? 4 : 10)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : "") + "\n" + command.usageDescription)
@@ -408,17 +420,17 @@ struct DeckView: View {
     }
 
     private var registeredSection: some View {
-        let grid = RegisteredGridGeometry(width: snapshot.layout.contentSize.width)
-        return VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
-            HStack {
+        let grid = RegisteredGridGeometry(width: snapshot.layout.contentSize.width, scale: snapshot.layout.scale)
+        return VStack(alignment: .leading, spacing: u(DeckSpacing.sectionTitle)) {
+            HStack(spacing: u(8)) {
                 sectionTitle("등록 항목", symbol: "square.grid.2x2")
                 profilePicker
-                Text("\(registeredItems.count)개").font(.caption2).foregroundStyle(.tertiary)
+                Text("\(registeredItems.count)개").font(font(.caption2)).foregroundStyle(.tertiary)
                 Spacer()
-                Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
+                Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(font(.caption1)).foregroundStyle(.secondary)
                 Button { showSettings(.registered) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
-            }.frame(height: 26)
+            }.frame(height: u(26))
             if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가") { showSettings(.registered) }
                     .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -431,30 +443,30 @@ struct DeckView: View {
                                 if startTileLabels {
                                     ZStack(alignment: .bottomLeading) {
                                         Group {
-                                            if pin.kind == .trash { Image(systemName: "trash").font(.system(size: 34)) }
+                                            if pin.kind == .trash { Image(systemName: "trash").font(.system(size: u(34))) }
                                             else { Icon(url: pin.url, size: 36) }
-                                        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, 14)
-                                        Text(pin.name).font(.system(size: 9, weight: .medium)).lineLimit(1).padding(5)
+                                        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(14))
+                                        Text(pin.name).font(.system(size: u(9), weight: .medium)).lineLimit(1).padding(u(5))
                                     }.frame(width: grid.side, height: grid.side)
-                                        .overlay(alignment: .topTrailing) { numberBadge(index).padding(3) }
+                                        .overlay(alignment: .topTrailing) { numberBadge(index).padding(u(3)) }
                                 } else {
-                                VStack(spacing: 4) {
+                                VStack(spacing: u(4)) {
                                     Group {
                                         if pin.kind == .trash {
-                                            Image(systemName: "trash").font(.system(size: 28)).frame(width: 32, height: 32)
+                                            Image(systemName: "trash").font(.system(size: u(28))).frame(width: u(32), height: u(32))
                                         } else { Icon(url: pin.url, size: 32) }
                                     }
-                                    Text(pin.name).font(.system(size: 10, weight: .medium))
+                                    Text(pin.name).font(.system(size: u(10), weight: .medium))
                                         .lineLimit(1).truncationMode(.middle)
-                                }.padding(6).frame(width: grid.side, height: grid.side)
-                                    .overlay(alignment: .topTrailing) { numberBadge(index).padding(3) }
+                                }.padding(u(6)).frame(width: grid.side, height: grid.side)
+                                    .overlay(alignment: .topTrailing) { numberBadge(index).padding(u(3)) }
                                 }
                             }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)",
                                                               emphasized: pin.kind == .app))
                                 .help(pinHelp(pin, index: index))
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }
-                    }.padding(.top, 4)
+                    }.padding(.top, u(4))
                 }.id(presentation.profile?.id ?? snapshot.profileID)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -468,10 +480,10 @@ struct DeckView: View {
             }
         } label: {
             Label(profileName, systemImage: "circle.dotted")
-                .font(.caption).lineLimit(1).frame(maxWidth: 110)
+                .font(font(.caption1)).lineLimit(1).frame(maxWidth: u(110))
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .padding(.horizontal, 8).frame(height: 26)
+        .padding(.horizontal, u(8)).frame(height: u(26))
         .glassEffect(.regular.interactive(), in: Capsule())
         .help("프로필 선택 · ⌥A/S 이전 · ⌥D/F 다음 · 키/휠 임시 전환은 닫으면 복귀")
         .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
@@ -483,30 +495,30 @@ struct DeckView: View {
     }
     @ViewBuilder private func numberBadge(_ index: Int, side: CGFloat = 16) -> some View {
         if let digit = NumberShortcutAssignment.digit(for: index) {
-            Text(digit).font(.system(size: side == 16 ? 10 : 8, weight: .medium, design: .rounded)).monospacedDigit()
+            Text(digit).font(.system(size: u(side == 16 ? 10 : 8), weight: .medium, design: .rounded)).monospacedDigit()
                 .foregroundStyle(Color(nsColor: .labelColor))
-                .frame(width: side, height: side).background(Color(nsColor: .controlBackgroundColor), in: Circle())
+                .frame(width: u(side), height: u(side)).background(Color(nsColor: .controlBackgroundColor), in: Circle())
                 .accessibilityHidden(true)
         }
     }
     private func recentSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: DeckSpacing.sectionTitle) {
-            HStack {
+        VStack(alignment: .leading, spacing: u(DeckSpacing.sectionTitle)) {
+            HStack(spacing: u(8)) {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
-                Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
-                Circle().fill(settings.tileColors.seed(for: .windows, theme: settings.theme).swiftUIColor).frame(width: 5, height: 5)
-                Text(previewRecentLegend ?? "현재 보이는 데스크탑").font(.caption2).foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
-            }.frame(height: 20)
+                Text("\(snapshot.windows.count)개").font(font(.caption2)).foregroundStyle(.tertiary)
+                Circle().fill(settings.tileColors.seed(for: .windows, theme: settings.theme).swiftUIColor).frame(width: u(5), height: u(5))
+                Text(previewRecentLegend ?? (recentAppearance == .locationColor ? "앱 첫 등장" : "현재 보이는 데스크탑")).font(font(.caption2)).foregroundStyle(.secondary)
+                Spacer(minLength: u(4))
+                Text("\(snapshot.shortcuts.windowPrefix)1–0").font(font(.caption1)).foregroundStyle(.secondary)
+            }.frame(height: u(20))
             if !snapshot.permission {
-                VStack(spacing: 8) {
-                    Text("창을 보여주려면 접근성 권한이 필요해요.").font(.callout)
+                VStack(spacing: u(8)) {
+                    Text("창을 보여주려면 접근성 권한이 필요해요.").font(font(.callout))
                     Button("접근성 허용하기", action: requestPermission).buttonStyle(.borderedProminent)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if snapshot.windows.isEmpty {
                 Text("열린 창을 확인하고 있어요.\n잠시 후 다시 열어 주세요.")
-                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .font(font(.callout)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
                 DesktopColumnsPreview(data: columns, sizes: sizes, width: columns.preferredWidth ?? geometry.windowWidth) { index, size in
@@ -514,9 +526,11 @@ struct DeckView: View {
                 }
             } else {
                 let identities = snapshot.windows.map(\.appKey)
-                // Snapshot desktops keep geometry and numbered targets stable
-                // while Option is held; live desktop colors remain independent.
-                let sizes = previewWindowSizes ?? (recentAppearance == .grouped
+                // Location, first appearances and numbered targets all use the
+                // same snapshot while Option is held.
+                let sizes = previewWindowSizes ?? (recentAppearance == .locationColor
+                    ? snapshot.windows.map { $0.isApplication ? .application : $0.location.size }
+                    : recentAppearance == .grouped
                     ? GroupedRecentWindows.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
                                                  desktops: snapshot.windows.map(\.desktop),
                                                  activeApp: OverlayContent.activeAppKey(snapshot.context, in: snapshot.windows))
@@ -527,7 +541,7 @@ struct DeckView: View {
                 let micro = (geometry.unit - geometry.gap) / 2
                 let bottom = packed.map { $0.row + $0.height }.max() ?? 0
                 let visible = RecentTileArrangement.visible(packed, module: micro, gap: geometry.gap,
-                                                            offset: recentOffset, viewport: max(0, height - DeckSpacing.workHeader))
+                                                            offset: recentOffset, viewport: max(0, height - u(DeckSpacing.workHeader)))
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         ForEach(visible, id: \.index) { place in
@@ -559,7 +573,17 @@ struct DeckView: View {
     }
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false) -> some View {
         let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
-        let emphasized = previewEmphasizedWindows?.contains(window.id) ?? (desktop == .current)
+        let locationDescription: String = recentAppearance == .locationColor ? {
+            switch window.location {
+            case .activeDisplay: "활성 모니터의 보이는 데스크탑"
+            case .otherVisibleDisplay: "다른 모니터의 보이는 데스크탑"
+            case .hidden: "보이지 않는 데스크탑"
+            case .visibleUnknownDisplay: "보이는 데스크탑 · 모니터 확인 안 됨"
+            case .unknown: "데스크탑 확인 안 됨"
+            }
+        }() : desktop == .current ? "현재 데스크탑" : desktop == .other ? "다른 데스크탑" : "데스크탑 확인 안 됨"
+        let emphasized = previewEmphasizedWindows?.contains(window.id)
+            ?? (recentAppearance == .locationColor ? firstWindowIDs.contains(window.id) : desktop == .current)
         var colors = settings.tileColors
         if window.isApplication && recentAppearance.neutralApplications { colors.windows = TileColor(0x777777) }
         let palette = DeckPalette(section: .windows, emphasized: emphasized,
@@ -572,65 +596,65 @@ struct DeckView: View {
                     Icon(url: window.appURL, size: compactTile ? 26 : 58)
                         .frame(maxWidth: .infinity, maxHeight: .infinity,
                                alignment: compactTile && NumberShortcutAssignment.digit(for: index) != nil ? .leading : .center)
-                        .padding(.leading, compactTile ? 3 : 0)
-                        .padding(.bottom, compactTile ? 12 : 22)
+                        .padding(.leading, u(compactTile ? 3 : 0))
+                        .padding(.bottom, u(compactTile ? 12 : 22))
                     Text(window.isApplication ? window.appName : window.title)
-                        .font(.system(size: compactTile ? 8 : 12, weight: .medium)).lineLimit(1)
-                        .padding(compactTile ? 3 : 8)
+                        .font(.system(size: u(compactTile ? 8 : 12), weight: .medium)).lineLimit(1)
+                        .padding(u(compactTile ? 3 : 8))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
               } else if previewLargeWindowIcons {
                 if window.isApplication || small {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: u(1)) {
                         Icon(url: window.appURL, size: 24)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(window.isApplication ? window.appName : window.title)
-                            .font(.system(size: 8.5, weight: .medium)).lineLimit(1)
-                    }.padding(3).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .font(.system(size: u(8.5), weight: .medium)).lineLimit(1)
+                    }.padding(u(3)).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if previewBalancedWindowLabels {
-                    VStack(spacing: 6) {
+                    VStack(spacing: u(6)) {
                         Icon(url: window.appURL, size: 42).frame(maxWidth: .infinity)
-                        Text(window.title).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                        Text(window.title).font(.system(size: u(11), weight: .medium)).lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: 28, alignment: .topLeading)
-                    }.padding(8).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(height: u(28), alignment: .topLeading)
+                    }.padding(u(8)).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    VStack(spacing: 0) {
+                    VStack(spacing: u(0)) {
                         Icon(url: window.appURL, size: 42).frame(maxWidth: .infinity)
-                        Spacer(minLength: 4)
-                        Text(window.title).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                        Spacer(minLength: u(4))
+                        Text(window.title).font(.system(size: u(11), weight: .medium)).lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                    }.padding(8).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }.padding(u(8)).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
               } else if window.isApplication || small {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: u(2)) {
                     Icon(url: window.appURL, size: 20)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(window.isApplication ? window.appName : window.title).font(.system(size: 9, weight: .medium)).lineLimit(1)
-                }.padding(4).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Text(window.isApplication ? window.appName : window.title).font(.system(size: u(9), weight: .medium)).lineLimit(1)
+                }.padding(u(4)).frame(maxWidth: .infinity, maxHeight: .infinity)
               } else {
-                VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: u(5)) {
+                HStack(spacing: u(5)) {
                     Icon(url: window.appURL, size: 22)
-                    if wide || recentAppearance.uniform { Text(window.appName).font(.caption2).foregroundStyle(palette.secondary).lineLimit(1) }
-                    Spacer(minLength: 0)
-                }.padding(.trailing, 12)
-                Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(2)
+                    if wide || recentAppearance.uniform { Text(window.appName).font(font(.caption2)).foregroundStyle(palette.secondary).lineLimit(1) }
+                    Spacer(minLength: u(0))
+                }.padding(.trailing, u(12))
+                Text(window.title).font(.system(size: u(12), weight: .medium)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                }.padding(u(10)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
               }
             }
                 .overlay(alignment: .topTrailing) {
                     if startTileLabels && (small || window.isApplication) {
-                        numberBadge(index, side: 12).padding(2)
+                        numberBadge(index, side: 12).padding(u(2))
                     } else {
-                        numberBadge(index).padding(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5)
+                        numberBadge(index).padding(u(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5))
                     }
                 }
         }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)", compact: small || window.isApplication))
             .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
-                + (desktop == .current ? " · 현재 데스크탑" : desktop == .other ? " · 다른 데스크탑" : " · 데스크탑 확인 안 됨"))
-            .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title)" + (desktop == .current ? ", 현재 데스크탑" : desktop == .other ? ", 다른 데스크탑" : ""))
+                + " · " + locationDescription)
+            .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title), \(locationDescription)" + (recentAppearance == .locationColor ? (emphasized ? ", 앱 첫 등장" : ", 반복 앱") : ""))
             .contextMenu {
                 if window.isApplication {
                     Button("\(window.appName) 종료") { quitApplication(window) }
@@ -640,11 +664,11 @@ struct DeckView: View {
     }
 
     private var folderContents: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
+        VStack(alignment: .leading, spacing: u(14)) {
+            HStack(spacing: u(8)) {
                 Picker("정렬", selection: $browser.sort) {
                     ForEach(FolderSort.allCases) { Text($0.rawValue).tag($0) }
-                }.labelsHidden().frame(width: 160)
+                }.labelsHidden().frame(width: u(160))
                     .help("추가 날짜가 없는 파일은 생성일로 정렬합니다.")
                 Spacer()
                 Button("Finder에서 열기") { if let url = browser.current { openInFinder(url) } }
@@ -661,15 +685,15 @@ struct DeckView: View {
                 ContentUnavailableView("비어 있는 폴더", systemImage: "folder")
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 12)], spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: u(108)), spacing: u(12))], spacing: u(12)) {
                         ForEach(browser.entries) { entry in
                             Button {
                                 if entry.directory { browser.enter(entry) } else { openURL(entry.url) }
                             } label: {
-                                VStack(spacing: 9) {
+                                VStack(spacing: u(9)) {
                                     Icon(url: entry.url, size: 42)
-                                    Text(entry.name).font(.caption).lineLimit(2).multilineTextAlignment(.center)
-                                }.padding(10).frame(maxWidth: .infinity).frame(height: 108)
+                                    Text(entry.name).font(font(.caption1)).lineLimit(2).multilineTextAlignment(.center)
+                                }.padding(u(10)).frame(maxWidth: .infinity).frame(height: u(108))
                             }.buttonStyle(TileStyle(section: .registered)).help(entry.name)
                         }
                     }
@@ -679,9 +703,9 @@ struct DeckView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private func sectionTitle(_ title: String, symbol: String?) -> some View {
-        HStack(spacing: 6) {
-            if let symbol { Image(systemName: symbol).font(.caption) }
-            Text(title).font(.system(size: 12, weight: .semibold))
+        HStack(spacing: u(6)) {
+            if let symbol { Image(systemName: symbol).font(font(.caption1)) }
+            Text(title).font(.system(size: u(12), weight: .semibold))
         }.foregroundStyle(.secondary)
     }
 }

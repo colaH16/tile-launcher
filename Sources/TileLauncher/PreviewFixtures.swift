@@ -297,7 +297,7 @@ struct DeckPreview: View {
     var recentAppearance: RecentAppearance
     var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
-         recentAppearance: RecentAppearance = .grouped, comparisonSample: Bool = false, recentCount: Int = 16,
+         recentAppearance: RecentAppearance = .locationColor, comparisonSample: Bool = false, recentCount: Int = 16,
          menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false, deliveredScale: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
@@ -310,6 +310,19 @@ struct DeckPreview: View {
             fixture.content.snapshot.layout = PanelLayout.calculate(
                 visibleFrame: CGRect(x: 0, y: 0, width: compact ? 1024 : 2560, height: compact ? 768 : 1440),
                 cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: fixture.settings.pins.count)
+        }
+        if recentAppearance == .locationColor {
+            // Synthetic monitor attribution; never inspect the user's windows.
+            fixture.content.snapshot = OverlaySnapshot(context: fixture.content.snapshot.context,
+                contextWindowTitle: fixture.content.snapshot.contextWindowTitle, apps: fixture.content.snapshot.apps,
+                windows: fixture.content.snapshot.windows.enumerated().map { index, window in
+                    var copy = window
+                    copy.location = window.desktop == .current ? (index % 3 == 1 ? .otherVisibleDisplay : .activeDisplay)
+                        : window.desktop == .other ? .hidden : .unknown
+                    return copy
+                }, layout: fixture.content.snapshot.layout, permission: true, pins: fixture.content.snapshot.pins,
+                profileID: "default", profileName: "기본", shortcuts: .registeredFirst,
+                commands: fixture.content.snapshot.commands, frequentMenuIDs: fixture.content.snapshot.frequentMenuIDs)
         }
         _fixture = StateObject(wrappedValue: fixture)
     }
@@ -644,18 +657,18 @@ enum PreviewExport {
         content.refresh(context: terminal, apps: [terminal, safari], windows: raw,
                         trusted: true, commands: [], manualCount: 6)
         let frozen = content.snapshot
-        guard frozen.windows.map(\.id) == [0, 3, 6, 7, 1, 5].map({ raw[$0].id }),
-              frozen.windows[1].id == raw[3].id else {
+        guard frozen.windows.map(\.id) == Array(raw.prefix(6)).map(\.id),
+              frozen.windows[1].id == raw[1].id else {
             throw NSError(domain: "TileLauncher.Preview", code: 80)
         }
         content.refresh(context: safari, apps: [terminal, safari], windows: raw,
                         trusted: true, commands: [], manualCount: nil)
-        guard content.snapshot.windows.map(\.id) == [1, 5, 0, 3, 6, 7, 2, 4].map({ raw[$0].id }),
-              frozen.windows[1].id == raw[3].id,
-              content.snapshot.windows[1].id == raw[5].id else {
+        guard content.snapshot.windows.map(\.id) == raw.map(\.id),
+              frozen.windows[1].id == raw[1].id,
+              content.snapshot.windows[1].id == raw[1].id else {
             throw NSError(domain: "TileLauncher.Preview", code: 81)
         }
-        print("Grouped windows: shared numbered snapshot, grouping before manual limit, stable per-app MRU and active-app switch passed.")
+        print("Individual window MRU: shared numbered snapshot, manual limit, no app regrouping on app activation passed.")
     }
 
     @MainActor private static func verifySettingsWindowLayout(contentSize: CGSize) throws {
