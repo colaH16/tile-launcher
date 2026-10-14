@@ -228,7 +228,7 @@ final class WindowTracker {
             let title = (value(element, kAXTitleAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "제목 없는 창"
             let item = WindowItem(id: id, pid: pid, appName: appInfo.name, appURL: appInfo.url,
                                   title: title, minimized: value(element, kAXMinimizedAttribute) as? Bool ?? false,
-                                  windowID: number ?? prior?.item.windowID,
+                                  windowID: number ?? prior?.item.windowID, appID: appInfo.id,
                                   desktop: desktops.desktop(for: number ?? prior?.item.windowID))
             next.append(TrackedWindow(element: element, item: item))
             if prior?.element == nil, let observer = observers[pid] {
@@ -271,7 +271,7 @@ final class WindowTracker {
             next.append(TrackedWindow(element: nil, item: WindowItem(
                 id: UUID(), pid: pid, appName: appInfo.name, appURL: appInfo.url,
                 title: server.title ?? "다른 데스크탑의 창", minimized: false,
-                windowID: server.id, desktop: .other)))
+                windowID: server.id, appID: appInfo.id, desktop: .other)))
         }
         let serverCandidates = desktops.records.values.filter { $0.pid == pid && $0.isCandidate }.count
         if WindowPresence.applicationOnly(axComplete: axComplete, inventoryComplete: desktops.valid,
@@ -280,7 +280,7 @@ final class WindowTracker {
             applicationIDs[pid] = id
             next.append(TrackedWindow(element: nil, item: WindowItem(
                 id: id, pid: pid, appName: appInfo.name, appURL: appInfo.url,
-                title: "", minimized: false, isApplication: true,
+                title: "", minimized: false, appID: appInfo.id, isApplication: true,
                 runningApplication: NSRunningApplication(processIdentifier: pid))))
         }
         windows[pid] = next

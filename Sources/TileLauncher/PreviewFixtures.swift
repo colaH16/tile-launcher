@@ -45,7 +45,7 @@ final class PreviewFixture: ObservableObject {
     let browser = FolderBrowser()
     private let suite: String
     private let defaults: UserDefaults
-    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16, menuComparison: Bool = false, realisticSample: Bool = false) {
+    init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35, comparisonSample: Bool = false, recentCount: Int = 16, menuComparison: Bool = false, realisticSample: Bool = false, groupedRecent: Bool = false) {
         suite = "dev.cola16.TileLauncher.preview.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suite)!
         settings = SettingsStore(defaults: defaults)
@@ -157,8 +157,11 @@ final class PreviewFixture: ObservableObject {
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: compact ? 560 : 1440,
                                                                 height: compact ? 468 : 1000),
                                            cursor: CGPoint(x: 720, y: 500)).fittingContent(registeredCount: pins.count)
-        content = OverlayContent(OverlaySnapshot(context: app, contextWindowTitle: menuComparison ? "Downloads" : "미리보기 문서",
-                    apps: [app], windows: windows, layout: layout, permission: true, pins: pins,
+        let previewContext = groupedRecent ? AppItem(id: app.id, pid: windows.first?.pid ?? app.pid,
+                                                     name: app.name, url: windows.first?.appURL) : app
+        let displayed = groupedRecent ? OverlayContent.groupedWindows(windows, context: previewContext) : windows
+        content = OverlayContent(OverlaySnapshot(context: previewContext, contextWindowTitle: menuComparison ? "Downloads" : "미리보기 문서",
+                    apps: [previewContext], windows: displayed, layout: layout, permission: true, pins: pins,
                     profileID: "default", profileName: "기본", shortcuts: .registeredFirst, commands: commands,
                     frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: app.id)))
         presentation.profile = settings.activeProfile
@@ -294,7 +297,7 @@ struct DeckPreview: View {
     var recentAppearance: RecentAppearance
     var menuAppearance: MenuAppearance
     init(theme: DeckTheme, customColors: Bool = false, compact: Bool = false, registeredCount: Int = 35,
-         recentAppearance: RecentAppearance = .consecutiveSmall, comparisonSample: Bool = false, recentCount: Int = 16,
+         recentAppearance: RecentAppearance = .grouped, comparisonSample: Bool = false, recentCount: Int = 16,
          menuAppearance: MenuAppearance = .selected, realisticSample: Bool = false) {
         self.recentAppearance = recentAppearance
         self.menuAppearance = menuAppearance
@@ -302,7 +305,7 @@ struct DeckPreview: View {
                                                           compact: compact, registeredCount: registeredCount,
                                                           comparisonSample: comparisonSample, recentCount: recentCount,
                                                           menuComparison: comparisonSample || realisticSample,
-                                                          realisticSample: realisticSample))
+                                                          realisticSample: realisticSample, groupedRecent: recentAppearance == .grouped))
     }
     var body: some View {
         DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
@@ -434,6 +437,7 @@ enum PreviewExport {
                                    settings: verification.settings)
         try delegate.verifyClickExecutionForPreview()
         try verifySettingsNavigation()
+        try verifyGroupedWindowContent()
         try verifyWebAppIcon()
         try verifyQuickOptionReopen()
         try verifyMenuCatalogChoices()
@@ -515,9 +519,44 @@ enum PreviewExport {
                         .environment(\.colorScheme, .dark),
                      to: directory.appendingPathComponent("monitor-\(name).png"))
         }
+        for terminal in [false, true] {
+            try save(MonitorGroupingPreview(grouped: true, terminalSelected: terminal, production: true)
+                        .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("grouped-production-\(terminal ? "terminal" : "chatgpt").png"))
+        }
         // Native ColorPicker/radio controls don't export reliably from an unordered
         // window. Use the "모양 설정" Xcode canvas preview for those controls.
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
+    }
+
+    @MainActor private static func verifyGroupedWindowContent() throws {
+        let fixture = PreviewFixture(theme: .classic)
+        let terminal = AppItem(id: "test.terminal", pid: 1, name: "Terminal", url: nil)
+        let safari = AppItem(id: "test.safari", pid: 2, name: "Safari", url: nil)
+        let groups = [1, 2, 3, 1, 4, 2, 1, 1]
+        let raw = groups.enumerated().map { index, group in
+            WindowItem(id: UUID(), pid: pid_t(group), appName: "App", appURL: nil,
+                       title: "Window \(index)", minimized: false, appID: "test.\(group == 1 ? "terminal" : group == 2 ? "safari" : String(group))",
+                       desktop: index == 3 ? .other : .current)
+        }
+        let content = OverlayContent(OverlaySnapshot(context: terminal, contextWindowTitle: nil, apps: [], windows: [],
+            layout: fixture.content.snapshot.layout, permission: true, pins: [], profileID: "default",
+            profileName: "Preview", shortcuts: .registeredFirst, commands: []))
+        content.refresh(context: terminal, apps: [terminal, safari], windows: raw,
+                        trusted: true, commands: [], manualCount: 6)
+        let frozen = content.snapshot
+        guard frozen.windows.map(\.id) == [0, 3, 6, 7, 1, 5].map({ raw[$0].id }),
+              frozen.windows[1].id == raw[3].id else {
+            throw NSError(domain: "TileLauncher.Preview", code: 80)
+        }
+        content.refresh(context: safari, apps: [terminal, safari], windows: raw,
+                        trusted: true, commands: [], manualCount: nil)
+        guard content.snapshot.windows.map(\.id) == [1, 5, 0, 3, 6, 7, 2, 4].map({ raw[$0].id }),
+              frozen.windows[1].id == raw[3].id,
+              content.snapshot.windows[1].id == raw[5].id else {
+            throw NSError(domain: "TileLauncher.Preview", code: 81)
+        }
+        print("Grouped windows: shared numbered snapshot, grouping before manual limit, stable per-app MRU and active-app switch passed.")
     }
 
     @MainActor private static func verifySettingsWindowLayout(contentSize: CGSize) throws {

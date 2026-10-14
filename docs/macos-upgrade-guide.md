@@ -1,5 +1,11 @@
 # macOS 업그레이드 및 Apple 디자인 지침 대응
 
+## R147 · 앱별 MRU·대표 창·번호 대상
+
+- 그룹 키는 실제 앱 ID를 우선하고 없는 경우 정규화한 앱 경로/PID를 쓴다. 표시 이름이 같은 서로 다른 앱을 합치지 않으며 같은 앱의 떨어진 창 사용 순서는 유지한다. 앱 활성화 시 해당 그룹을 앞에 놓고 모든 창 ID/선택 대상을 보존한다.
+- 활성 앱의 현재 데스크탑 대표 하나만4×2, 다른 current 창2×2, other/unknown 창과 앱 전용은1×1이다. current는 기존 모든 display의 Current Space 합집합이며 새 모니터 내부 API를 추가하지 않는다. 색은 기존 실시간 상태, 크기는 표시·숫자 대상과 같은 snapshot 상태를 사용한다.
+- Option 유지 중 숫자 대상/순서/크기가 바뀌지 않고 핀 갱신은 해제·대기 선택 없음 조건을 유지하는지 검사한다. 앱 전환 후 그룹·대표 변경/동일 앱 서로 다른 Space/최소화/숨김/앱 전용/수동 제한·작은 화면·1000개 및 끝 스크롤을 점검한다. 색/프로필/메뉴·실행 경로·정상 종료를 보존한다.
+
 ## R136 · 창 목록 잔존과 ordered-in 판정
 
 - CGWindowList의 .optionAll에는 닫힌 NSWindow의 표면도 남을 수 있다. alpha=1·큰 bounds·Space 배정만으로 실제 창이라 하지 않는다. SLSWindowIsOrderedIn/CGSWindowIsOrderedIn은 기존 SkyLight 핸들에서 runtime lookup하고 UInt8 출력/CGError=0/0 또는 1을 확인한다. 실패/미지원은 nil로 보수적 대체하며 OS의 공개 지원 계약으로 설명하지 않는다.

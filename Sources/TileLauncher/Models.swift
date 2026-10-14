@@ -9,8 +9,8 @@ struct AppItem: Identifiable, Equatable {
     let url: URL?
 }
 enum RecentAppearance {
-    case original, squares, mixedNeutral, consecutiveSmall
-    var uniform: Bool { self == .squares || self == .consecutiveSmall }
+    case original, squares, mixedNeutral, consecutiveSmall, grouped
+    var uniform: Bool { self == .squares || self == .consecutiveSmall || self == .grouped }
     var neutralApplications: Bool { self != .original }
 }
 /// R135 selects gray 2×2 recent menus; earlier variants remain for comparison previews.
@@ -26,9 +26,13 @@ struct WindowItem: Identifiable, Equatable {
     let title: String
     let minimized: Bool
     var windowID: CGWindowID? = nil
+    var appID: String? = nil
     var desktop: WindowDesktop = .unknown
     var isApplication = false
     var runningApplication: NSRunningApplication? = nil
+    var appKey: String {
+        appID.map { "app:\($0)" } ?? appURL.map { "file:\($0.standardizedFileURL.path)" } ?? "pid:\(pid)"
+    }
 }
 extension PinnedItem {
     var url: URL {
@@ -58,14 +62,26 @@ struct OverlaySnapshot: Equatable {
 final class OverlayContent: ObservableObject {
     @Published var snapshot: OverlaySnapshot
     init(_ snapshot: OverlaySnapshot) { self.snapshot = snapshot }
+    static func activeAppKey(_ context: AppItem?, in windows: [WindowItem]) -> String? {
+        guard let context else { return nil }
+        return windows.first {
+            $0.appID == context.id || $0.pid == context.pid
+                || (context.url != nil && $0.appURL?.standardizedFileURL == context.url?.standardizedFileURL)
+        }?.appKey
+    }
+    static func groupedWindows(_ windows: [WindowItem], context: AppItem?) -> [WindowItem] {
+        GroupedRecentWindows.order(apps: windows.map(\.appKey), activeApp: activeAppKey(context, in: windows))
+            .map { windows[$0] }
+    }
     func refresh(context: AppItem?, apps: [AppItem], windows: [WindowItem],
                  trusted: Bool, commands: [MenuCommand], manualCount: Int?,
                  menuHistory: MenuHistoryPreferences = .init(), now: Date = Date()) {
         let old = snapshot
         let count = old.layout.windowLimit(manual: manualCount, actual: windows.count)
+        let grouped = Self.groupedWindows(windows, context: context)
         let next = OverlaySnapshot(context: context,
                                    contextWindowTitle: windows.first { $0.pid == context?.pid && !$0.isApplication }?.title,
-                                   apps: Array(apps.prefix(3)), windows: Array(windows.prefix(count)),
+                                   apps: Array(apps.prefix(3)), windows: Array(grouped.prefix(count)),
                                    layout: old.layout, permission: trusted, pins: old.pins,
                                    profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
                                    commands: MenuCommand.ordered(commands, appID: context?.id ?? "", history: menuHistory, at: now),

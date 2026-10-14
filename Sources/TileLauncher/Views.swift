@@ -132,7 +132,7 @@ struct DeckView: View {
     let pinOverlay: () -> Void
     var resizeForProfile: (Int) -> Void = { _ in }
     var quitApplication: (WindowItem) -> Void = { _ in }
-    var recentAppearance: RecentAppearance = .consecutiveSmall
+    var recentAppearance: RecentAppearance = .grouped
     var menuAppearance: MenuAppearance = .selected
     // Synthetic comparison inputs only; production callers keep all defaults.
     var previewWindowSizes: [RecentTileSize]? = nil
@@ -452,7 +452,7 @@ struct DeckView: View {
                 sectionTitle("최근 창", symbol: "rectangle.on.rectangle")
                 Text("\(snapshot.windows.count)개").font(.caption2).foregroundStyle(.tertiary)
                 Circle().fill(settings.tileColors.seed(for: .windows, theme: settings.theme).swiftUIColor).frame(width: 5, height: 5)
-                Text(previewRecentLegend ?? "현재 데스크탑").font(.caption2).foregroundStyle(.secondary)
+                Text(previewRecentLegend ?? "현재 보이는 데스크탑").font(.caption2).foregroundStyle(.secondary)
                 Spacer(minLength: 4)
                 Text("\(snapshot.shortcuts.windowPrefix)1–0").font(.caption).foregroundStyle(.secondary)
             }.frame(height: 20)
@@ -466,8 +466,14 @@ struct DeckView: View {
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let identities = snapshot.windows.map { $0.appURL?.path ?? String($0.pid) }
-                let sizes = previewWindowSizes ?? (recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
+                let identities = snapshot.windows.map(\.appKey)
+                // Snapshot desktops keep geometry and numbered targets stable
+                // while Option is held; live desktop colors remain independent.
+                let sizes = previewWindowSizes ?? (recentAppearance == .grouped
+                    ? GroupedRecentWindows.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
+                                                 desktops: snapshot.windows.map(\.desktop),
+                                                 activeApp: OverlayContent.activeAppKey(snapshot.context, in: snapshot.windows))
+                    : recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
                     : RecentTileArrangement.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
                                                  consecutiveSmall: recentAppearance == .consecutiveSmall))
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)

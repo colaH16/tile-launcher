@@ -1,5 +1,14 @@
 # 네이티브 빌드 검증
 
+## R147 · 1.2.0 앱별 창 묶기·활성 앱 대표 창
+
+- 사용자 적용 요청을 직전 추천 두 번째 안으로 해석해 먼저 안내하고 기본 RecentAppearance를 grouped로 바꿨다. 실제 appID를 AX/CG-only/앱 전용 항목에 전달하며 ID/경로/PID 기반으로 동일 앱을 묶는다. 활성 그룹을 앞에 두고 그룹 및 내부 MRU를 보존한다. 개별 창 ID는 유지한다.
+- 새 DeckCore 정책은 활성 앱의 첫 보이는 실제 창 하나만 wide, 나머지 current 창은 square, other/unknown·앱 전용은 small이다. 색은 기존 실시간 windowDesktops를 사용하며 크기는 숫자 대상과 같은 고정 snapshot.desktop을 사용한다. Option 유지 중 순서/번호/크기를 바꾸지 않고 핀 갱신에서 그룹/대표를 갱신한다. 수동 제한은 그룹화 후 적용한다.
+- native XCTest 124개/Python 배포 정책 23개 통과. /tmp/tile-120-tests.log, tile-120-python-tests.log. 새 7개 테스트는 떨어진 창 그룹화/앱 전환·nil/동일 이름 별도 ID·활성 대표 하나/보이는 후속 square·숨겨진 대표 skip/앱 전용·unknown 및 1000개 창 인덱스 보존이다. native 도구 중단 예정 경고는 앱 실패와 구별한다.
+- 실제 OverlayContent.refresh 격리 검사에서 그룹화 뒤 수동6 적용으로 첫 그룹의 떨어진 창들을 보존하고 번호2가 해당 그룹의 두 번째 창 ID인 것을 확인했다. 앱 전환 뒤 새 snapshot 번호와 기존 캡처 snapshot의 번호/ID도 대조했다. 기존 HoldMonitor/핀 갱신 정책·메뉴·아이콘·설정 크기·표면 마스크·스크롤 검사도 통과했다.
+- debug 빌드 및 production override 없는 공유 DeckView 렌더 통과. /tmp/tile-120-debug-build.log, tile-120-previews.log, tile-120-production-build.log, tile-120-production-previews.log. grouped-production-chatgpt/terminal.png의 23개 합성 목록에서 대표 wide 하나/모든 보이는 square·다른 small/색 독립성·앱 회색과 번호를 확인했다. 두 테마/명암·작은 화면/프로필별 높이·최근100개 끝 스크롤도 통과했다. 사용자 화면을 조작하거나 실제 앱 전환 수신을 검증한 것으로 기록하지 않는다.
+- 기능 minor1.2.0(21), 누적 노트 v1.1.5→v1.2.0 범위를 검사했다. 메인 Source의 번호 선택은 그룹화된 visibleSnapshot.windows를 사용함을 대조했다. Aside 조사 보류는 유지했고 AX/CG 후보 판정·focus 경로는 변경하지 않았다. 서명·공증·설치 결과는 이어 기록한다. 새 GitHub 공개는 별도다.
+
 ## R146 · Aside 일시 누락의 읽기 진단·현재 정상
 
 - 설치 1.1.5(20)의 --diagnose-window-inventory at.studio.AsideBrowser는 GUI/인스턴스 잠금/전역 입력 없이 실행했고 Aside 실제 창 1개를 other로 반환했다(/tmp/tile-aside-inventory.json). 실행 소유자 버전/빌드도 1.1.5(20)이며 설정의 automaticWindowCount=true를 필요한 항목만 읽었다.

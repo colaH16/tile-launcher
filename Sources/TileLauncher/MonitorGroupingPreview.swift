@@ -12,9 +12,12 @@ struct MonitorGroupingPreview: View {
     private let sizes: [RecentTileSize]?
     private let emphasized: Set<UUID>?
     private let grouped: Bool
+    private let production: Bool
 
-    init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers) {
+    init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
+         production: Bool = false) {
         self.grouped = grouped
+        self.production = production
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
         fixture.settings.tileColors.windows = TileColor(0x2FA3E7)
@@ -119,8 +122,10 @@ struct MonitorGroupingPreview: View {
                  selectMenu: { _, _, _ in }, changeProfile: { _ in }, cycleProfile: { _ in },
                  selectWindow: { _ in }, openURL: { _ in }, openInFinder: { _ in }, openTrash: {},
                  showSettings: { _ in }, requestPermission: {}, pinOverlay: {},
-                 previewWindowSizes: sizes, previewEmphasizedWindows: emphasized,
-                 previewRecentLegend: grouped ? "현재 보이는 데스크탑" : nil, dismiss: {})
+                 recentAppearance: production ? .grouped : .consecutiveSmall,
+                 previewWindowSizes: production ? nil : sizes,
+                 previewEmphasizedWindows: production ? nil : emphasized,
+                 previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil, dismiss: {})
             .frame(width: fixture.content.snapshot.layout.frame.width, height: fixture.content.snapshot.layout.frame.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(DeckSurfaceView.shape)

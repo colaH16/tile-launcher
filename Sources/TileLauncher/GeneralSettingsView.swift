@@ -58,7 +58,7 @@ struct GeneralSettingsContent: View {
                             Button("적용", action: saveCount)
                         }.disabled(settings.automatic)
                         if invalidCount { Text("6 이상의 정수를 입력해 주세요.").font(.caption).foregroundStyle(.red) }
-                        Text("앱이 바뀌는 곳은 큰 정사각형, 같은 앱이 연속되면 창 이름을 넣은 작은 타일입니다. 작은 타일은 두 개씩 세로로 쌓고 왼쪽에서 오른쪽으로 배치합니다. 창 없는 앱은 회색이며 현재 데스크탑 창은 배경색으로 강조합니다. 최대 3.3줄과 다음 줄 일부를 표시하고 아래로 스크롤할 수 있습니다.")
+                        Text("같은 앱의 창을 모으고 활성 앱 묶음을 맨 앞에 둡니다. 활성 앱의 보이는 대표 창 하나는 가로형, 모든 모니터에서 보이는 나머지 창은 정사각형, 다른 데스크탑 창은 작은 타일입니다. 보이는 창은 크기와 관계없이 진한색, 창 없는 앱은 회색입니다. 작은 타일은 두 개씩 세로로 쌓으며 최대 3.3줄과 다음 줄 일부를 표시하고 아래로 스크롤할 수 있습니다.")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }

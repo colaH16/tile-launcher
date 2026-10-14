@@ -297,10 +297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
         let menuNow = Date()
+        let grouped = OverlayContent.groupedWindows(windows, context: lastContext)
         let snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid && !$0.isApplication }?.title,
                                        apps: Array(apps.prefix(3)),
-                                       windows: Array(windows.prefix(count)), layout: layout, permission: trusted,
+                                       windows: Array(grouped.prefix(count)), layout: layout, permission: trusted,
                                        pins: settings.pins, profileID: settings.activeProfile.id,
                                        profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
                                        commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
