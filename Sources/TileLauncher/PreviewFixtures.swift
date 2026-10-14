@@ -322,7 +322,10 @@ struct AppearancePreview: View {
     init(theme: DeckTheme = .classic) {
         _fixture = StateObject(wrappedValue: PreviewFixture(theme: theme))
     }
-    var body: some View { AppearanceView(settings: fixture.settings).frame(width: 580, height: 760) }
+    var body: some View {
+        AppearanceView(settings: fixture.settings).frame(width: 580, height: 760)
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
 }
 
 struct MenuAdditionPreview: View {

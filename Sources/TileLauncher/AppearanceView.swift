@@ -55,8 +55,8 @@ struct AppearanceView: View {
             sample("자주 사용", section: section, emphasized: false, width: 56)
             sample("고정 메뉴", section: section, emphasized: true, width: 120)
         case .windows:
-            sample("현재 데스크탑", section: section, emphasized: true, width: 56)
-            sample("다른 데스크탑", section: section, emphasized: false, width: 56)
+            sample("진한색", section: section, emphasized: true, width: 56).help("현재 데스크탑 창")
+            sample("연한색", section: section, emphasized: false, width: 56).help("다른 데스크탑 창")
             smallWindowSample()
         case .registered:
             sample("기본", section: section, emphasized: false, width: 56)
@@ -66,8 +66,8 @@ struct AppearanceView: View {
     private func smallWindowSample() -> some View {
         VStack(alignment: .leading, spacing: 4) {
             sample("", section: .windows, emphasized: false, width: 24, height: 24, gray: true)
-            Text("창 없는 앱\n1×1").font(.caption2).foregroundStyle(.secondary)
-        }.frame(width: 64, alignment: .leading)
+            Text("회색\n1×1").font(.caption2).foregroundStyle(.secondary)
+        }.frame(width: 64, alignment: .leading).help("창 없는 앱")
     }
     private func sample(_ title: String, section: TileSection, emphasized: Bool, width: CGFloat,
                         height: CGFloat = 56, gray: Bool = false) -> some View {
