@@ -1,5 +1,12 @@
 # 네이티브 빌드 검증
 
+## R146 · Aside 일시 누락의 읽기 진단·현재 정상
+
+- 설치 1.1.5(20)의 --diagnose-window-inventory at.studio.AsideBrowser는 GUI/인스턴스 잠금/전역 입력 없이 실행했고 Aside 실제 창 1개를 other로 반환했다(/tmp/tile-aside-inventory.json). 실행 소유자 버전/빌드도 1.1.5(20)이며 설정의 automaticWindowCount=true를 필요한 항목만 읽었다.
+- /tmp/tile-aside-metadata.swift의 메타데이터 읽기에서 Aside regular/hidden=false, AXWindows success·0개, ordered-in=1/alpha=1/1779×851 서버 창 1개를 확인했다. 다른 큰 보조 표면들은 ordered-out이며 제외되는 것이 맞다. /tmp/tile-aside-metadata.log. 개인 창 제목/웹 내용/계정은 출력하지 않았다.
+- WindowTracker의 CG-only 대체 수집은 other만 허용하고, 창 없는 앱 판정은 후보 서버 창이 있으면 막힌다. 이는 current에서 AX 목록이 비는 앱의 누락 후보 조건이나 이번 실제 누락 시점의 재현 증거는 아니다. 실제 UI 입력/Aside 활성화/권한 변경 없이 현재 상태만 확인했다.
+- 사용자는 이후 지금은 잘 나온다며 바빠서 재현을 나중으로 미루겠다고 했다. 추가 진단/코드 수정·테스트·빌드·설치/버전 변경을 하지 않는다. 버그 원인이나 해결을 선언하지 않으며 설치/공개 1.1.5는 유지한다.
+
 ## R145 · 보이는 창 2×2·활성 앱 대표 하나 4×2 비교
 
 - MonitorPreviewSizing에 비교 전용 visibleWindows/activeAppOnly를 추가했다. 기본 smallFollowers 및 production 입력 nil은 유지한다. 첫 안은 보이는 창 2×2/안 보이는 창 1×1이며 활성 모니터의 그룹 첫 창만 4×2, 두 번째는 활성 앱 첫 창 하나만 4×2다. 동일 창의 색·순서는 R144를 유지한다.
