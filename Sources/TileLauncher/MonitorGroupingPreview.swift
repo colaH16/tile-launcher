@@ -16,14 +16,17 @@ struct MonitorGroupingPreview: View {
     private let columns: DesktopColumnsPreviewData?
     private let detail: Bool
     private let largeIcons: Bool
+    private let relaxedSpacing: Bool
 
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
          production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
-         threeColumns: Bool = false, squareColumnHeads: Bool = false, largeIcons: Bool = false) {
+         threeColumns: Bool = false, squareColumnHeads: Bool = false, largeIcons: Bool = false,
+         relaxedSpacing: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
         self.largeIcons = largeIcons
+        self.relaxedSpacing = relaxedSpacing
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18, realisticSample: true)
         fixture.settings.tileColors.menus = TileColor(0x4CBB00)
         fixture.settings.tileColors.windows = TileColor(0x2FA3E7)
@@ -147,7 +150,9 @@ struct MonitorGroupingPreview: View {
                     groups: lane.groups.map { $0.map { remap[$0]! } }, applications: lane.applications.map { remap[$0]! })
             }
             if threeColumns {
-                columns = DesktopColumnsPreviewData(columns: mapped, referenceModules: 12)
+                var data = DesktopColumnsPreviewData(columns: mapped, referenceModules: 12)
+                data.relaxedSpacing = relaxedSpacing
+                columns = data
             } else {
                 columns = DesktopColumnsPreviewData(visible: mapped[0].groups, other: mapped[1].groups,
                                                      applications: mapped[1].applications)
@@ -183,7 +188,8 @@ struct MonitorGroupingPreview: View {
                  previewWindowSizes: production ? nil : sizes,
                  previewEmphasizedWindows: production ? nil : emphasized,
                  previewRecentLegend: production ? nil : grouped ? "현재 보이는 데스크탑" : nil,
-                 previewDesktopColumns: columns, previewLargeWindowIcons: largeIcons, dismiss: {})
+                 previewDesktopColumns: columns, previewLargeWindowIcons: largeIcons,
+                 previewBalancedWindowLabels: relaxedSpacing, dismiss: {})
     }
 
     var body: some View {

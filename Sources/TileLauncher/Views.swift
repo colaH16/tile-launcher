@@ -140,6 +140,7 @@ struct DeckView: View {
     var previewRecentLegend: String? = nil
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     var previewLargeWindowIcons = false
+    var previewBalancedWindowLabels = false
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -533,6 +534,13 @@ struct DeckView: View {
                         Text(window.isApplication ? window.appName : window.title)
                             .font(.system(size: 8.5, weight: .medium)).lineLimit(1)
                     }.padding(3).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if previewBalancedWindowLabels {
+                    VStack(spacing: 6) {
+                        Icon(url: window.appURL, size: 42).frame(maxWidth: .infinity)
+                        Text(window.title).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 28, alignment: .topLeading)
+                    }.padding(8).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 0) {
                         Icon(url: window.appURL, size: 42).frame(maxWidth: .infinity)

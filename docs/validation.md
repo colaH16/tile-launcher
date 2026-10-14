@@ -1,5 +1,12 @@
 # 네이티브 빌드 검증
 
+## R152 · 내부 간격·제목 시작선 정리
+
+- 비교 입력relaxedSpacing/previewBalancedWindowLabels만 켜고 기본값false를 유지한다.4·4·3칸/630.4pt·타일/아이콘/열 간격·번호·색·샘플23개는 이전과 같다. 대표의 가변 Spacer를6pt 간격과28pt 제목2줄 자리로 대체해 제목 시작선을 맞췄다. 앱 그룹 사이20pt, 열 제목 아래16pt다.
+- native 개발 빌드3.35초 및 전체 비표시 렌더 통과. /tmp/tile-spaced-icons-build.log, /tmp/tile-spaced-icons-previews.log. 상세 이미지에서 긴 Notes/한 줄 제목의 시작선과42pt 아이콘, 작은 타일/회색 앱·번호, 그룹 간격을 확인했다. 기존 모든 비교 렌더도 유지하며 XCTest/Python 반복은 하지 않았다.
+- PNG 헤더를 읽어 이전679×641px/새679×677px를 확인했다. 현재 export는1× 스케일이므로 너비 유지/높이36pt 증가와 같다. 이것은 전체 펼친 상세 길이이며 production 오버레이 프레임이나 시작 크기는 바꾸지 않았다. 결과는 dist/previews/20261014/desktop-spaced-icons-full.png다.
+- 실제 사용자 화면/앱 상태를 읽거나 조작하지 않았다. 다섯 앱은 이전 Mission Control에 근거한 샘플이며 현재 실제 목록의 확정 결과가 아니다. 설치1.2.0/공개1.1.5·버전·릴리스 노트는 유지한다.
+
 ## R151 · 큰 앱 아이콘 시안
 
 - DeckView의 previewLargeWindowIcons는 기본false이며 MonitorGroupingPreview의 명시적largeIcons 입력에서만 켠다. 기존 production·이전 시안의 타일 라벨과 아이콘 크기는 유지한다. 원래 앱 실행/선택/툴팁/접근성/정상 종료 경로를 공유한다.
