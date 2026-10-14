@@ -7,7 +7,9 @@
 - 격리 `/tmp/tile-141-validation`에서 XCTest149개/Python23개 통과(`/tmp/tile-141-tests.log`).39개/다양한 화면·음수 원점/프로필 축소 후 복구/분수 높이 잔여 공간과 실제 고정 여백·격자 폭 보존을 검사했다.
 - 네이티브 등록39개 렌더에서2560×1440 및1920×1080은 패널1456×999pt, viewport279/document278pt다.1440×900은 패널1392×851.36pt, viewport266/document265pt다. 세 경우 모두 처음부터39개 세 줄이 보이고 footer 위 미사용 공간은0–4.6pt다. 최초 꾸밈 샘플의 중복 path ID를 발견해39개 모두 고유 ID로 바꾸고 검사를 추가했다. 화면/사용자 앱/설정을 조작하지 않았다.
 - 상단 버튼의 실제 드래그 제외 영역,149개 정책 검사, 전체 기존 오버레이/설정/큰 이력 렌더를 확인했다. 근거는 `/tmp/tile-141-previews.log` 및 registered-39-1440/1920/2560.png다. 실제 사용자 Mac의 합성/터치·키 입력 검증과 구별한다.
-- 서명·미공증 ZIP 제작/복사 결과는 이어 기록한다. 공증/개발 Mac 설치/바이너리 공개는 하지 않는다.
+- 소스0be3ad9bca93150d0f76d2930246cf6c42a6f292의 독립 release 빌드·Developer ID Application Team VV2W9U5XT3 서명·실제 서명 실행 파일의 전체 비표시 검사/렌더·이후 번들 검증을 통과했다. `/tmp/tile-141-prepare.log`, `tile-141-sign.log`, `tile-141-verify.log`, `tile-141-signed-previews.log`에 기록했다. Glass 호스트의 비표시 동적 글자색과 사용자 화면 합성 색은 구별하며 목록 검증은 실제 document/viewport/위치와 고유39개 ID를 기준으로 한다.
+- 원본 `/Users/cola/Library/Developer/TileLauncher/releases/v1.4.1`의 번들 SHA256은611506c5db4d2f7df63c0e5ed80e73662278fc01c891d8c827d7d522ec530e50다. ZIP2,313,630바이트, SHA2565f51feaedfc1810b8fed339089f36537eb1bc05c8051fe71d2ef88740dec176c를 저장소 상위 `Tile-Launcher-1.4.1-arm64-unnotarized.zip`에 복사·해시 확인했다. 이전 ZIP은 보존했다.
+- 공증 제출·개발 Mac 앱 교체/재실행·GitHub 바이너리 공개는 하지 않았다. 설치본 Info.plist1.2.0을 읽기로 확인했다. 소스/전달 기록만 main에 푸시하며 iCloud 서버 업로드·다른 Mac 수신은 확인하지 않았다.
 
 ## R164–R169 · 1.4.0 실행 대기·설정 맞춤·Space 경로
 
