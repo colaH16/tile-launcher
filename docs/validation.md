@@ -1,5 +1,12 @@
 # 네이티브 빌드 검증
 
+## R150 · 4·4·3칸·대표 창2×2 비교
+
+- MonitorGroupingPreview의 새 비교 입력squareColumnHeads만 첫 두 열을4·4칸으로 만들고 모든 앱 대표를square로 정한다. 기본값false로 R149와 기존 production 경로를 유지하며 실제 데스크탑 판정·앱 버전은 변경하지 않는다.
+- native 개발 빌드2.35초와 전체 격리 렌더 통과. /tmp/tile-square-columns-build.log, /tmp/tile-square-columns-previews.log. 전체23개 인덱스 보존, 열별5/3/3그룹·6/4/5창과 회색8앱을 확인했다. 단위 테스트를 새로 작성하거나 XCTest/Python을 반복 실행하지 않았다.
+- desktop-square-columns-overlay/full.png를 확인했다. 대표11개가98.4pt 정사각이고 후속4개·회색8개는45.2pt이며 wide는 없다. 열204.8/204.8/151.6pt와 간격34.6pt로 전체630.4pt를 유지한다. 첫 열 폭만 줄고 대표 높이는 같아서 이전 시안과 세로 표시량은 같다. 작은 진한색·파스텔 후속과 회색 앱, 제목/번호가 정상 표시된다.
+- 출력은 desktop-square-columns-overlay-20261014.png와 desktop-square-columns-full-20261014.png로 별도 보존했다. 이전5·3·3/6·6렌더도 같은 실행에서 통과했으며 사용자 화면/설정/설치 앱은 건드리지 않았다. 실제 창 전환·권한·Aside 증상을 검사한 결과로 설명하지 않는다.
+
 ## R149 · 5·3·3칸의 세 열 비교
 
 - DesktopColumnsPreviewData를 열 제목/칸 수/앱 그룹/회색 앱 목록으로 일반화해 이전6·6안도 보존했다. 새 안만 원래12칸의 작은 단위를 기준으로 삼고 남는 폭을 두 열 간격에 균등하게 배분한다.630.4pt에서 작은 타일45.2pt, 열258/151.6/151.6pt, 열 간격34.6pt로 합계가 일치한다.2×2는98.4pt/4×2는204.8pt이며 기존 오버레이 타일과 같은 크기다.

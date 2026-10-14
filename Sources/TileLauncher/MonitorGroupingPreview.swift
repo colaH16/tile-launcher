@@ -18,7 +18,7 @@ struct MonitorGroupingPreview: View {
 
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
          production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
-         threeColumns: Bool = false) {
+         threeColumns: Bool = false, squareColumnHeads: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
@@ -116,9 +116,9 @@ struct MonitorGroupingPreview: View {
             let lanes: [DesktopColumnsPreviewData.Column]
             if threeColumns {
                 lanes = [
-                    .init(title: "현재 데스크탑", modules: 5,
+                    .init(title: "현재 데스크탑", modules: squareColumnHeads ? 4 : 5,
                           groups: groups { $0.desktop == .current && monitor[$0.id] == activeMonitor }),
-                    .init(title: "다른 모니터 · 보임", modules: 3,
+                    .init(title: "다른 모니터 · 보임", modules: squareColumnHeads ? 4 : 3,
                           groups: groups { $0.desktop == .current && monitor[$0.id] != activeMonitor }),
                     .init(title: "보이지 않는 데스크탑", modules: 3, groups: other, applications: applications)
                 ]
@@ -130,7 +130,7 @@ struct MonitorGroupingPreview: View {
             for lane in lanes {
                 for group in lane.groups {
                     if let first = group.first {
-                        columnSizes[first] = monitor[windows[first].id] == activeMonitor ? .wide : .square
+                        columnSizes[first] = !squareColumnHeads && monitor[windows[first].id] == activeMonitor ? .wide : .square
                     }
                 }
             }
