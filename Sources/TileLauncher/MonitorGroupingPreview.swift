@@ -17,7 +17,8 @@ struct MonitorGroupingPreview: View {
     private let detail: Bool
 
     init(grouped: Bool, terminalSelected: Bool = false, sizing: MonitorPreviewSizing = .smallFollowers,
-         production: Bool = false, desktopColumns: Bool = false, detail: Bool = false) {
+         production: Bool = false, desktopColumns: Bool = false, detail: Bool = false,
+         threeColumns: Bool = false) {
         self.grouped = grouped
         self.production = production
         self.detail = detail
@@ -103,29 +104,53 @@ struct MonitorGroupingPreview: View {
                 return firstWindow && window.appName == contextName ? .wide : .square
             }
         } : nil
-        if desktopColumns {
-            func groups(visible: Bool) -> [[Int]] {
+        if desktopColumns || threeColumns {
+            func groups(matching predicate: (WindowItem) -> Bool) -> [[Int]] {
                 var keys: [String] = []
-                let indices = windows.indices.filter { !windows[$0].isApplication && (windows[$0].desktop == .current) == visible }
+                let indices = windows.indices.filter { !windows[$0].isApplication && predicate(windows[$0]) }
                 for index in indices where !keys.contains(windows[index].appKey) { keys.append(windows[index].appKey) }
                 return keys.map { key in indices.filter { windows[$0].appKey == key } }
             }
-            let visible = groups(visible: true), other = groups(visible: false)
+            let visible = groups { $0.desktop == .current }, other = groups { $0.desktop != .current }
             let applications = windows.indices.filter { windows[$0].isApplication }
-            var columnSizes = Array(repeating: RecentTileSize.application, count: windows.count)
-            for group in visible {
-                if let first = group.first { columnSizes[first] = monitor[windows[first].id] == activeMonitor ? .wide : .square }
+            let lanes: [DesktopColumnsPreviewData.Column]
+            if threeColumns {
+                lanes = [
+                    .init(title: "현재 데스크탑", modules: 5,
+                          groups: groups { $0.desktop == .current && monitor[$0.id] == activeMonitor }),
+                    .init(title: "다른 모니터 · 보임", modules: 3,
+                          groups: groups { $0.desktop == .current && monitor[$0.id] != activeMonitor }),
+                    .init(title: "보이지 않는 데스크탑", modules: 3, groups: other, applications: applications)
+                ]
+            } else {
+                lanes = [.init(title: "보이는 데스크탑", modules: 6, groups: visible),
+                         .init(title: "다른 데스크탑", modules: 6, groups: other, applications: applications)]
             }
-            for group in other { if let first = group.first { columnSizes[first] = .square } }
-            let all = visible.flatMap { $0 } + other.flatMap { $0 } + applications
+            var columnSizes = Array(repeating: RecentTileSize.application, count: windows.count)
+            for lane in lanes {
+                for group in lane.groups {
+                    if let first = group.first {
+                        columnSizes[first] = monitor[windows[first].id] == activeMonitor ? .wide : .square
+                    }
+                }
+            }
+            let all = lanes.flatMap { $0.groups.flatMap { $0 } + $0.applications }
             precondition(Set(all) == Set(windows.indices) && all.count == windows.count)
-            // The comparison's number badges follow the left column top-to-bottom,
-            // then the right column, with the gray app-only section last.
+            // Each column top-to-bottom, then the next column to the right.
+            let remap = Dictionary(uniqueKeysWithValues: all.enumerated().map { ($0.element, $0.offset) })
             windows = all.map { windows[$0] }
             sizes = all.map { columnSizes[$0] }
-            columns = DesktopColumnsPreviewData(visible: groups(visible: true), other: groups(visible: false),
-                                                applications: windows.indices.filter { windows[$0].isApplication })
-            print("Desktop columns: visible=\(visible.count) groups/\(visible.flatMap { $0 }.count) windows, other=\(other.count) groups/\(other.flatMap { $0 }.count) windows, applications=\(applications.count); all indices preserved")
+            let mapped = lanes.map { lane in
+                DesktopColumnsPreviewData.Column(title: lane.title, modules: lane.modules,
+                    groups: lane.groups.map { $0.map { remap[$0]! } }, applications: lane.applications.map { remap[$0]! })
+            }
+            if threeColumns {
+                columns = DesktopColumnsPreviewData(columns: mapped, referenceModules: 12)
+            } else {
+                columns = DesktopColumnsPreviewData(visible: mapped[0].groups, other: mapped[1].groups,
+                                                     applications: mapped[1].applications)
+            }
+            print("Desktop columns \(lanes.map(\.modules)): \(lanes.map { $0.groups.count }) groups, \(lanes.map { $0.groups.flatMap { $0 }.count }) windows, applications=\(applications.count); all \(all.count) indices preserved")
         } else {
             columns = nil
             sizes = conventionalSizes
