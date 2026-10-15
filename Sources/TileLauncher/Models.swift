@@ -173,12 +173,16 @@ final class SettingsStore: ObservableObject {
     @Published var commands: [MenuCommand] { didSet { save() } }
     @Published var menuHistory: MenuHistoryPreferences { didSet { save() } }
     @Published var menuCapture: MenuCapturePreferences { didSet { save() } }
+    @Published var showAppSettingsTile: Bool {
+        didSet { save(); onAppSettingsVisibilityChanged?(showAppSettingsTile) }
+    }
     @Published var menuCaptureStatus: [String: String] = [:]
     @Published var refreshingMenuIcons: Set<String> = []
     @Published var menuIconStatus: [String: String] = [:]
     // Wired only by the production delegate; previews/tests never inspect apps.
     var onMenuAdded: ((MenuCommand) -> Void)?
     var onRefreshMenuIcons: ((String) -> Void)?
+    var onAppSettingsVisibilityChanged: ((Bool) -> Void)?
     var activeProfile: LauncherProfile {
         if followFocus, let focused = profiles.first(where: { $0.id == focusProfileID }) { return focused }
         // A filter can still reference a profile the user deleted or no longer has. Fall back to the user's manual choice first.
@@ -280,6 +284,7 @@ final class SettingsStore: ObservableObject {
         commands = defaults.data(forKey: "menuCommands").flatMap { try? JSONDecoder().decode([MenuCommand].self, from: $0) } ?? []
         menuHistory = MenuHistoryPreferences.restore(defaults.data(forKey: "menuHistoryPreferences"))
         menuCapture = MenuCapturePreferences.restore(defaults.data(forKey: "menuCapturePreferences"))
+        showAppSettingsTile = defaults.object(forKey: "showAppSettingsTile") as? Bool ?? true
         automatic = defaults.object(forKey: "automaticWindowCount") as? Bool ?? true
         optionTriggerEnabled = defaults.object(forKey: "optionTriggerEnabled") as? Bool ?? true
         optionReopen = OptionReopenPreferences.restore(defaults.data(forKey: "optionReopenPreferences"))
@@ -297,6 +302,7 @@ final class SettingsStore: ObservableObject {
         if let data = try? JSONEncoder().encode(commands) { defaults.set(data, forKey: "menuCommands") }
         if let data = try? JSONEncoder().encode(menuHistory) { defaults.set(data, forKey: "menuHistoryPreferences") }
         if let data = try? JSONEncoder().encode(menuCapture) { defaults.set(data, forKey: "menuCapturePreferences") }
+        defaults.set(showAppSettingsTile, forKey: "showAppSettingsTile")
         defaults.set(manualProfileID, forKey: "manualProfileID")
         defaults.set(followFocus, forKey: "followFocus")
         defaults.set(numberShortcuts.rawValue, forKey: "numberShortcuts")

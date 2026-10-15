@@ -219,6 +219,23 @@ final class PreviewFixture: ObservableObject {
         print("OverlayContent: stable snapshot equality and date-based frequency refresh passed.")
         let originalProfiles = settings.profiles
         let originalCommands = settings.commands
+        let originalCapture = settings.menuCapture
+        guard settings.showAppSettingsTile else {
+            throw NSError(domain: "TileLauncher.Preview", code: 109,
+                          userInfo: [NSLocalizedDescriptionKey: "Common settings must stay visible by default"])
+        }
+        settings.showAppSettingsTile = false
+        let hiddenSettings = SettingsStore(defaults: defaults)
+        guard !hiddenSettings.showAppSettingsTile, hiddenSettings.commands == originalCommands,
+              hiddenSettings.profiles == originalProfiles, hiddenSettings.menuCapture == originalCapture else {
+            throw NSError(domain: "TileLauncher.Preview", code: 110)
+        }
+        hiddenSettings.showAppSettingsTile = true
+        guard SettingsStore(defaults: defaults).showAppSettingsTile else {
+            throw NSError(domain: "TileLauncher.Preview", code: 111)
+        }
+        settings.showAppSettingsTile = true
+        print("SettingsStore: common settings visibility defaults on, persists off/on, preserves menus/profiles/capture.")
         guard settings.optionReopen == OptionReopenPreferences() else {
             throw NSError(domain: "TileLauncher.Preview", code: 45)
         }
@@ -487,6 +504,15 @@ enum PreviewExport {
         let loginItem = LoginItemManager()
         let fittedSize = SettingsWindowLayout.fittedContentSize(settings: verification.settings, loginItem: loginItem)
         try verifySettingsWindowLayout(contentSize: fittedSize, settings: verification.settings, loginItem: loginItem, directory: directory)
+        // Render the actual menu pane without the compositor-only Liquid Glass
+        // tab selector, whose selected label may be absent in offscreen captures.
+        try save(MenuSettingsView(settings: verification.settings, preferredApp: verification.content.snapshot.context,
+                                  additionRequest: nil, additionSize: MenuAdditionLayout.size(for: fittedSize),
+                                  applicationProvider: { [verification.content.snapshot.context].compactMap { $0 } })
+                    .padding(SettingsWindowLayout.outerPadding)
+                    .frame(width: fittedSize.width, height: fittedSize.height)
+                    .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("settings-menu-visibility.png"))
         try save(RecentWindowExplanation().padding(20).frame(width: 548)
                     .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("recent-window-explanation.png"))

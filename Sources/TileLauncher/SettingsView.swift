@@ -199,6 +199,13 @@ struct MenuSettingsView: View {
     }
     private var configuration: some View {
         VStack(alignment: .leading, spacing: 12) {
+            GroupBox("공통 메뉴") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("앱 설정 타일 표시", isOn: $settings.showAppSettingsTile)
+                    Text("자동 수집과 별개로, 설정 메뉴를 지원하는 앱에 타일을 표시합니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
             GroupBox("자동 메뉴 수집 · 실험 기능") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("모든 앱의 메뉴 막대에서 선택한 메뉴 수집", isOn: $settings.menuCapture.enabled)
