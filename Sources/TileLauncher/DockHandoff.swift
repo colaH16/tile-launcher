@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import DeckCore
 
 /// A Handoff (Continuity) activity offered by another device, as the Dock shows it.
 struct HandoffItem: Equatable {
@@ -35,20 +36,29 @@ struct HandoffItem: Equatable {
 final class DockHandoff {
     static let subrole = "AXHandoffDockItem"
     private let queue = DispatchQueue(label: "TileLauncher.dock-handoff", qos: .userInitiated)
+    private lazy var polling: CompletionPoller<HandoffItem?> = {
+        let queue = self.queue
+        let polling = CompletionPoller<HandoffItem?>(interval: 0.4) { complete in
+            queue.async {
+                let item = Self.find().map { Self.item(title: $0.title, device: $0.device) }
+                DispatchQueue.main.async { complete(item) }
+            }
+        }
+        polling.onValue = { [weak self] item in
+            guard let self, self.current != item else { return }
+            self.current = item
+            self.onChange?(item)
+        }
+        return polling
+    }()
     private(set) var current: HandoffItem?
     var onChange: ((HandoffItem?) -> Void)?
 
-    /// Re-read the Dock; `onChange` fires on the main thread only when the item changes.
-    func refresh() {
-        queue.async { [weak self] in
-            let item = Self.find().map { Self.item(title: $0.title, device: $0.device) }
-            DispatchQueue.main.async {
-                guard let self, self.current != item else { return }
-                self.current = item
-                self.onChange?(item)
-            }
-        }
-    }
+    /// One preparation read; duplicate requests are skipped while a read is pending.
+    func refresh() { polling.refresh() }
+    /// Visible overlays read again 0.4 s after the previous read finishes.
+    func startMonitoring() { polling.start() }
+    func stopMonitoring() { polling.stop() }
     /// Press the Dock item for `item`, as a click on it would. The item is
     /// looked up again so a stale reference is never pressed.
     func press(_ item: HandoffItem, completion: @escaping (String?) -> Void) {
@@ -68,13 +78,15 @@ final class DockHandoff {
         guard AXIsProcessTrusted(),
               let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return nil }
         let app = AXUIElementCreateApplication(dock.processIdentifier)
-        AXUIElementSetMessagingTimeout(app, 0.3)
-        for list in children(app) {
-            // The Handoff item sits after the apps; search from the end.
-            for element in children(list).reversed() where string(element, kAXSubroleAttribute) == subrole {
-                return (element, string(element, kAXTitleAttribute), string(element, "AXStatusLabel"))
+        do {
+            for list in try children(app) {
+                // The Handoff item sits after the apps; search from the end.
+                for element in try children(list).reversed() {
+                    guard try string(element, kAXSubroleAttribute) == subrole else { continue }
+                    return try (element, string(element, kAXTitleAttribute), string(element, "AXStatusLabel"))
+                }
             }
-        }
+        } catch { /* Stop this scan on a messaging failure; the next poll can retry. */ }
         return nil
     }
     private static func item(title: String, device: String) -> HandoffItem {
@@ -93,14 +105,21 @@ final class DockHandoff {
         }
         return nil
     }
-    private static func children(_ element: AXUIElement) -> [AXUIElement] {
+    private enum ReadError: Error { case cannotComplete }
+    private static func attribute(_ element: AXUIElement, _ key: String) throws -> CFTypeRef? {
+        // AX timeouts belong to each object, not its descendants. Bound list and
+        // icon reads too, and restore the default before returning an AXPress target.
+        AXUIElementSetMessagingTimeout(element, 0.3)
+        defer { AXUIElementSetMessagingTimeout(element, 0) }
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success else { return [] }
-        return value as? [AXUIElement] ?? []
+        let result = AXUIElementCopyAttributeValue(element, key as CFString, &value)
+        if result == .cannotComplete { throw ReadError.cannotComplete }
+        return result == .success ? value : nil
     }
-    private static func string(_ element: AXUIElement, _ key: String) -> String {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, key as CFString, &value) == .success else { return "" }
-        return value as? String ?? ""
+    private static func children(_ element: AXUIElement) throws -> [AXUIElement] {
+        try attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+    }
+    private static func string(_ element: AXUIElement, _ key: String) throws -> String {
+        try attribute(element, key) as? String ?? ""
     }
 }

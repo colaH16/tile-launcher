@@ -33,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launches = ApplicationLaunchMonitor()
     let menuCatalog = MenuCatalog()
     private let dockHandoff = DockHandoff()
-    private var handoffPoll: Timer?
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var menuIcons: MenuIconService?
     private var visibleContent: OverlayContent?
@@ -85,8 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hold.onShow = { [weak self] in self?.show(held: true) }
         hold.onPrepare = { [weak self] in
-            // The Dock read finishes well within the 0.25 s wait; `show` refreshes
-            // the prepared content with the result.
+            // Begin a background Dock read during the hold wait. Slow reads are
+            // shared with visible monitoring instead of queued again at show.
             self?.dockHandoff.refresh()
             self?.prepareOverlay()
         }
@@ -94,7 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.panel?.isVisible == true else { return }
             self.scheduleOverlayRefresh()
         }
-        hold.onAbandon = { [weak self] in self?.discardPreparedOverlay() }
+        hold.onAbandon = { [weak self] in
+            guard let self else { return }
+            self.discardPreparedOverlay()
+            if self.panel?.isVisible != true { self.dockHandoff.stopMonitoring() }
+        }
         hold.onQuickReopen = { [weak self] time in
             guard let self, let layout = self.optionReopen.take(at: time, enabled: self.settings.optionReopen.enabled) else { return false }
             self.show(held: true, restoring: layout)
@@ -271,7 +274,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles")!)
     }
     @objc func openFromMenu() {
-        dockHandoff.refresh()
         show(held: false)
     }
     @objc private func reopenNotification(_ notification: Notification) {
@@ -459,11 +461,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = window
         heldPresentation = held
         hold.isShowing = true
-        // While the overlay is visible (held or pinned), notice Handoff offers
-        // that appear, change or end: one short Dock read (~50 AX items) every 0.5 s.
-        handoffPoll?.invalidate()
-        handoffPoll = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.dockHandoff.refresh() }
-        handoffPoll?.tolerance = 0.1
+        // Both held and pinned overlays wait 0.4 s after each completed Dock
+        // read. Slow reads cannot accumulate behind the click action.
+        dockHandoff.startMonitoring()
         // Receive local shortcuts without activating the launcher or changing the
         // captured app context. Global monitors cannot consume another app's keys.
         window.makeKeyAndOrderFront(nil)
@@ -531,8 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             actionPending: pendingAction != nil, preferences: settings.optionReopen)
         overlayRefresh?.cancel()
         overlayRefresh = nil
-        handoffPoll?.invalidate()
-        handoffPoll = nil
+        dockHandoff.stopMonitoring()
         discardPreparedOverlay()
         panel?.orderOut(nil)
         panel?.contentView = nil
@@ -886,6 +885,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationWillTerminate(_ notification: Notification) {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        dockHandoff.stopMonitoring()
         hold.stop()
         menuUsage.stop()
         permissionTimer?.invalidate()
