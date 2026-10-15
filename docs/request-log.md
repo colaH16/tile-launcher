@@ -1318,7 +1318,8 @@
 
 - 사용자: R183 시안에서 붙였던 New Tab, New Folder, Get Info, Go to Folder, Connect to Server, Hide Sidebar의 SF Symbol이 1.5.0에서 빠진 것을 확인하고 다시 넣으라고 요청했다. Finder 메뉴는 아니지만 New Window도 기본 아이콘으로 미리 저장하라고 했다.
 - 에이전트 판단: R185에서 내장 표를 뺀 것은 R184의 “앱 용량만 커지는 것 아니냐”는 질문을 제거 요청으로 해석한 결과였다. 이번 요청으로 정확한 이름 일치 7종(+Show Sidebar, 한국어 이름)만 기본값으로 둔다. 직접 선택이 우선하며, 기본값/아이콘 없음을 구분한다. 버전은 UI patch 1.5.1(29)이다.
-- 검증: XCTest 163개·Python 23개 통과, 오프스크린 menu-glyphs-light 렌더에서 기본 아이콘 6종·직접 선택·아이콘 없음(⌘K) 확인. 서명 빌드·전달·push는 아직 하지 않았다.
+- 검증: XCTest 163개·Python 23개 통과, 오프스크린 menu-glyphs-light 렌더에서 기본 아이콘 6종·직접 선택·아이콘 없음(⌘K) 확인. 사용자가 이어서 서명 ZIP 빌드와 push를 요청했다.
+- 전달 완료: 소스e8d255874520의1.5.1(29)을 XCTest163개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더(개발 렌더와 PNG 해시 일치) 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.5.1-arm64-unnotarized.zip에 복사했다.2,388,871바이트, SHA256 70ce09cd9984c9f871ff06ec56e30e29b2bf1b4b36c66da8f0f4cb76e57180c7이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았고 iCloud 업로드/다른 Mac 수신은 미확인이다.
 
 ## 다음 요청 기록 양식
 

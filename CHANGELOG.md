@@ -1,11 +1,12 @@
 # Tile Launcher 버전 이력
 
-기준일: 2026-10-15 (Asia/Seoul). 정식 공개본은1.4.3(27)이다. 1.5.0(28)은 메뉴 타일 아이콘 지정과 성능·멈춤 개선의 기능 minor로 Developer ID 서명·미공증 ZIP을 전달했다. 1.5.1(29)은 자주 쓰는 메뉴의 기본 아이콘을 더한 UI patch이며 아직 빌드·전달하지 않았다. 개발 Mac 설치본1.2.0은 유지한다.
+기준일: 2026-10-15 (Asia/Seoul). 정식 공개본은1.4.3(27)이다. 1.5.0(28)은 메뉴 타일 아이콘 지정과 성능·멈춤 개선의 기능 minor로 Developer ID 서명·미공증 ZIP을 전달했다. 1.5.1(29)은 자주 쓰는 메뉴의 기본 아이콘을 더한 UI patch로 같은 방식의 서명·미공증 ZIP을 전달했다. 개발 Mac 설치본1.2.0은 유지한다.
 
 ## 1.5.1 · 자주 쓰는 메뉴 기본 아이콘
 
 - R186: 사용자가 R183 시안의 Finder 메뉴 아이콘(New Tab/New Folder/Get Info/Go to Folder/Connect to Server/Hide Sidebar)을 다시 넣고 New Window도 미리 저장하라고 요청했다. 영어·한국어 메뉴 이름이 정확히 같을 때만 기본 SF Symbol을 쓴다(Show Sidebar 포함). New Finder Window처럼 이름이 다르면 적용하지 않는다.
 - 표시 순서는 직접 고른 아이콘 → 기본 아이콘 → 단축키 → 메뉴 이름 큰 글자다. 선택 화면에 기본값(직접 선택 해제)과 아이콘 없음(기본 아이콘도 끔)을 나눴다. 저장값 nil=기본, 빈 문자열=아이콘 없음이며 1.5.0 데이터와 호환된다.
+- 전달 완료: 소스e8d255874520의1.5.1(29)을 XCTest163개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더(개발 렌더와 PNG 해시 일치) 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.5.1-arm64-unnotarized.zip에 복사했다.2,388,871바이트, SHA256 70ce09cd9984c9f871ff06ec56e30e29b2bf1b4b36c66da8f0f4cb76e57180c7이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았고 iCloud 업로드/다른 Mac 수신은 미확인이다.
 
 ## 1.5.0 · 메뉴 아이콘 지정·단축키/글자 타일·성능 개선
 

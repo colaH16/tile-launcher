@@ -1,6 +1,6 @@
 # 이 프로젝트의 작업 지침
 
-## 현재 단계: R186 · 1.5.1 기본 메뉴 아이콘 (미전달)
+## 현재 단계: R186 · 1.5.1 기본 메뉴 아이콘 서명 ZIP 전달
 
 - 2026-10-12 사용자가 첫 빌드 준비에 동의하고 “너가 하는동안 xcode는 설치 해둘께”라고 네이티브 개발 재개를 요청했습니다. R21–R23을 기준으로 개인용 최소 버전을 구현합니다.
 - 네이티브 앱 구현·로컬 빌드·검증을 진행합니다. R92에서 사용자가 GitHub 공개 릴리스와 Developer ID 서명을 준비하려는 의사를 밝혔습니다. R93–R95에서 정식 GitHub 릴리스 준비를 요청했고, 당시 유료 등록을 보류해 R102에서 개발용 ad-hoc 0.16.3을 공개했습니다. R123에서는 가입·Developer ID 서명·공증을 완료하고 1.0.0을 공개했습니다. Sites 게시·App Store·Homebrew 배포는 별도 요청 전까지 중단 상태입니다.
@@ -15,7 +15,8 @@
 
 ## 사용자 요청을 파일에 남기기
 
-- R186: 사용자가 New Tab/New Folder/Get Info/Go to Folder/Connect to Server/Hide Sidebar 기본 아이콘을 되살리고 New Window도 추가하라고 했다. 정확한 이름 일치 기본값만 두고 직접 선택이 우선한다. UI patch1.5.1(29), 빌드·전달·push는 사용자 확인 후 진행한다.
+- R186: 사용자가 New Tab/New Folder/Get Info/Go to Folder/Connect to Server/Hide Sidebar 기본 아이콘을 되살리고 New Window도 추가하라고 했다. 정확한 이름 일치 기본값만 두고 직접 선택이 우선한다. UI patch1.5.1(29)이며 사용자 요청으로 서명 ZIP 전달·push를 진행했다.
+- R186 전달 완료: 소스e8d255874520의1.5.1(29)을 XCTest163개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더(개발 렌더와 PNG 해시 일치) 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.5.1-arm64-unnotarized.zip에 복사했다.2,388,871바이트, SHA256 70ce09cd9984c9f871ff06ec56e30e29b2bf1b4b36c66da8f0f4cb76e57180c7이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았고 iCloud 업로드/다른 Mac 수신은 미확인이다.
 
 - R185 전달 완료: 소스5468306108334342219915759f49063e6dcd44a4의 1.5.0(28)을 XCTest162개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더(시안과 PNG 해시 일치) 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.5.0-arm64-unnotarized.zip에 복사했다.2,384,576바이트, SHA256 e7250876ca3def467f68799dc134a974e2ed3a8c3b999bb4ca7cf3b0836e6891이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았고 iCloud 업로드/다른 Mac 수신은 미확인이다.
 
