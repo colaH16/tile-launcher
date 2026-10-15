@@ -79,6 +79,38 @@ enum OverlayChromeValidation {
         }
         try PreviewExport.save(view, to: directory.appendingPathComponent("handoff-tile.png"))
         fixture.content.snapshot = before
+        // Common settings is a presentation-only last wide tile; it must not
+        // change the user's saved app menus or the shared packing algorithm.
+        let savedCommands = fixture.settings.commands
+        fixture.content.snapshot.hasAppSettings = true
+        let entries = fixture.content.snapshot.menuEntries()
+        guard entries.count == before.commands.count + 1, case .appSettings = entries.last,
+              fixture.settings.commands == savedCommands,
+              fixture.content.snapshot.menuEntries(commands: []).count == 1 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 105)
+        }
+        let places = TileArrangement.place(spans: entries.map { $0.isPinned ? 2 : 1 }, columns: 4)
+        guard places.last?.span == 2, places.last?.row == places.map(\.row).max(),
+              NSImage(systemSymbolName: "gear", accessibilityDescription: nil) != nil else {
+            throw NSError(domain: "TileLauncher.Preview", code: 106)
+        }
+        guard fixture.content.snapshot.workRows() == 3.3 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 108,
+                          userInfo: [NSLocalizedDescriptionKey: "Common tile missing from four-row viewport calculation"])
+        }
+        // The full sample needs scrolling to its fourth row. Use fewer app
+        // commands for the icon screenshot so the final common tile is visible.
+        fixture.content.snapshot = OverlaySnapshot(context: before.context, contextWindowTitle: before.contextWindowTitle,
+            apps: before.apps, windows: before.windows, layout: before.layout, permission: true,
+            pins: before.pins, profileID: before.profileID, profileName: before.profileName,
+            shortcuts: before.shortcuts, commands: Array(before.commands.prefix(5)),
+            frequentMenuIDs: before.frequentMenuIDs, hasAppSettings: true)
+        try PreviewExport.save(view, to: directory.appendingPathComponent("common-app-settings.png"))
+        fixture.content.snapshot = before
+        guard fixture.content.snapshot.menuEntries().count == before.commands.count else {
+            throw NSError(domain: "TileLauncher.Preview", code: 107)
+        }
+        print("Common settings: last 4×2 gear tile, hidden when unavailable, no saved-menu mutation.")
         let titles = VStack(spacing: 16) {
             OverlayTitleView(iconURL: snapshot.windows.first?.appURL, appName: "Finder", windowName: "Downloads")
             OverlayTitleView(iconURL: snapshot.windows.first?.appURL,

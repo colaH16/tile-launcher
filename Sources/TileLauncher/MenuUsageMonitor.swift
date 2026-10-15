@@ -83,11 +83,12 @@ final class MenuUsageMonitor {
         frontmost = nil
         queue.async { [weak self] in self?.tearDown() }
     }
-    func suppressLauncherAction(_ menu: MenuCommand) {
+    func suppressLauncherAction(_ menu: MenuCommand, completion: (() -> Void)? = nil) {
         queue.async { [weak self] in
             self?.suppressedUntil = ProcessInfo.processInfo.systemUptime + 2
             self?.suppressedMenus = Set(MenuPathMatch.paths(menu).map { MenuIdentity(appID: menu.appID, path: $0) })
             self?.resetInteraction()
+            if let completion { DispatchQueue.main.async(execute: completion) }
         }
     }
     private func receiveInput(_ event: NSEvent) {

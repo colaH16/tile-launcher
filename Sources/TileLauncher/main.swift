@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launches = ApplicationLaunchMonitor()
     let menuCatalog = MenuCatalog()
     private let dockHandoff = DockHandoff()
+    private let appSettingsMenu = ApplicationSettingsMenu()
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var menuIcons: MenuIconService?
     private var visibleContent: OverlayContent?
@@ -93,10 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.panel?.isVisible == true else { return }
             self.scheduleOverlayRefresh()
         }
+        appSettingsMenu.onChange = { [weak self] in self?.scheduleOverlayRefresh() }
         hold.onAbandon = { [weak self] in
             guard let self else { return }
             self.discardPreparedOverlay()
-            if self.panel?.isVisible != true { self.dockHandoff.stopMonitoring() }
+            if self.panel?.isVisible != true {
+                self.dockHandoff.stopMonitoring()
+                self.appSettingsMenu.cancel()
+            }
         }
         hold.onQuickReopen = { [weak self] time in
             guard let self, let layout = self.optionReopen.take(at: time, enabled: self.settings.optionReopen.enabled) else { return false }
@@ -170,6 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateApps()
             self.checkPermission()
             self.tracker.activate(item)
+            if self.panel?.isVisible == true { self.appSettingsMenu.refresh(app: item) }
             self.scheduleOverlayRefresh()
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
@@ -323,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // No permission check here: a trust change restarts the hold monitor.
         // `show` checks it and rejects this overlay if trust changed meanwhile.
         updateApps()
+        appSettingsMenu.refresh(app: lastContext)
         prepared = buildOverlay(restoring: nil, reportErrors: false)
     }
     private func discardPreparedOverlay() {
@@ -334,6 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         optionReopen.cancel()
         checkPermission()
         updateApps()
+        appSettingsMenu.refresh(app: lastContext)
         let ready = previousLayout == nil ? takePreparedOverlay() : nil
         discardPreparedOverlay()
         let overlay: PreparedOverlay
@@ -355,7 +363,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // instead of discarding the preload; only the size is recomputed.
         ready.content.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                               commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
-                              menuHistory: settings.menuHistory, handoff: dockHandoff.current)
+                              menuHistory: settings.menuHistory, handoff: dockHandoff.current,
+                              hasAppSettings: appSettingsMenu.hasSettings(in: lastContext))
         let old = ready.content.snapshot.layout
         let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
             .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
@@ -397,7 +406,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        pins: settings.pins, profileID: settings.activeProfile.id,
                                        profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
                                        commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
-                                       frequentMenuIDs: MenuCommand.frequentIDs(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow))
+                                       frequentMenuIDs: MenuCommand.frequentIDs(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
+                                       hasAppSettings: appSettingsMenu.hasSettings(in: lastContext))
         layout = restored
             ? layout.refittingContent(registeredCount: settings.activeProfile.items.count, visibleFrame: layoutScreen.visibleFrame,
                                       workRows: snapshot.workRows())
@@ -410,6 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },
                             selectMenu: { [weak self] command, context, window in self?.select(menu: command, context: context, window: window) },
+                            selectAppSettings: { [weak self] context, window in self?.selectAppSettings(context: context, window: window) },
                             changeProfile: { [weak self] id in self?.changeProfile(id) },
                             cycleProfile: { [weak self] step in self?.cycleProfile(step) },
                             selectWindow: { [weak self] in self?.select(window: $0) },
@@ -516,7 +527,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                                 commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
-                                menuHistory: settings.menuHistory, handoff: dockHandoff.current)
+                                menuHistory: settings.menuHistory, handoff: dockHandoff.current,
+                                hasAppSettings: appSettingsMenu.hasSettings(in: lastContext))
         resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
@@ -532,6 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayRefresh?.cancel()
         overlayRefresh = nil
         dockHandoff.stopMonitoring()
+        appSettingsMenu.cancel()
         discardPreparedOverlay()
         panel?.orderOut(nil)
         panel?.contentView = nil
@@ -716,22 +729,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func select(menu: MenuCommand, context: AppItem?, window: WindowItem?) {
         guard let context, context.id == menu.appID else { return }
+        performMenu(in: context, window: window) { [weak self] in
+            self?.menuUsage.suppressLauncherAction(menu)
+            self?.menuCatalog.execute(menu, in: context, shortcut: { [weak self] in
+                self?.settings.updateShortcut($0, for: menu.id)
+            }) { [weak self] message in
+                if let message { self?.error(message) } else {
+                    self?.settings.recordUse(menu.id)
+                    self?.scheduleOverlayRefresh()
+                }
+            }
+        }
+    }
+    private func selectAppSettings(context: AppItem?, window: WindowItem?) {
+        guard let context else { return }
+        performMenu(in: context, window: window) { [weak self] in
+            self?.appSettingsMenu.execute(in: context, prepare: { [weak self] command, press in
+                self?.menuUsage.suppressLauncherAction(command, completion: press)
+            }) { [weak self] message in
+                if let message { self?.error(message) }
+            }
+        }
+    }
+    private func performMenu(in context: AppItem, window: WindowItem?, run: @escaping () -> Void) {
         performImmediately { [weak self] in
             guard let self else { return }
             guard let running = NSRunningApplication(processIdentifier: context.pid), !running.isTerminated else {
                 self.error("메뉴를 사용할 앱이 종료되었습니다.")
                 return
-            }
-            let run = { [weak self] in
-                self?.menuUsage.suppressLauncherAction(menu)
-                self?.menuCatalog.execute(menu, in: context, shortcut: { [weak self] in
-                    self?.settings.updateShortcut($0, for: menu.id)
-                }) { [weak self] message in
-                    if let message { self?.error(message) } else {
-                        self?.settings.recordUse(menu.id)
-                        self?.scheduleOverlayRefresh()
-                    }
-                }
             }
             if let window {
                 self.tracker.focus(id: window.id) { [weak self] message in

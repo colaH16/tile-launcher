@@ -59,6 +59,15 @@ extension MenuCommand {
         "누적 \(totalUseCount)회 · 메뉴 막대 \(observedCount)회 · Tile Launcher \(useCount)회"
     }
 }
+enum OverlayMenuEntry {
+    case command(MenuCommand), appSettings
+    var isPinned: Bool {
+        switch self { case .command(let command): command.isPinned; case .appSettings: true }
+    }
+    func isFrequent(_ ids: Set<UUID>) -> Bool {
+        switch self { case .command(let command): ids.contains(command.id); case .appSettings: false }
+    }
+}
 struct OverlaySnapshot: Equatable {
     let context: AppItem?
     let contextWindowTitle: String?
@@ -74,9 +83,14 @@ struct OverlaySnapshot: Equatable {
     var frequentMenuIDs: Set<UUID> = []
     /// Action context survives display-only Handoff replacement and list limits.
     var menuContextWindow: WindowItem? = nil
+    var hasAppSettings = false
+    func menuEntries(commands override: [MenuCommand]? = nil) -> [OverlayMenuEntry] {
+        (override ?? commands).map(OverlayMenuEntry.command)
+            + (context != nil && permission && hasAppSettings ? [.appSettings] : [])
+    }
     func workRows(commands override: [MenuCommand]? = nil) -> CGFloat {
         let geometry = DeckGeometry(width: layout.contentSize.width, compact: layout.compact, scale: layout.scale)
-        return WorkAreaRows.visible(menuSpans: (override ?? commands).map { $0.isPinned ? 2 : 1 },
+        return WorkAreaRows.visible(menuSpans: menuEntries(commands: override).map { $0.isPinned ? 2 : 1 },
             windowSizes: windows.map { $0.isApplication ? .application : $0.location.size },
             windowColumns: geometry.windowColumns, compact: layout.compact)
     }
@@ -131,7 +145,8 @@ final class OverlayContent: ObservableObject {
     }
     func refresh(context: AppItem?, apps: [AppItem], windows: [WindowItem],
                  trusted: Bool, commands: [MenuCommand], manualCount: Int?,
-                 menuHistory: MenuHistoryPreferences = .init(), handoff: HandoffItem? = nil, now: Date = Date()) {
+                 menuHistory: MenuHistoryPreferences = .init(), handoff: HandoffItem? = nil,
+                 hasAppSettings: Bool = false, now: Date = Date()) {
         let old = snapshot
         let recent = Self.recentWindows(windows, context: context, handoff: handoff)
         let count = old.layout.windowLimit(manual: manualCount, actual: recent.count)
@@ -142,7 +157,8 @@ final class OverlayContent: ObservableObject {
                                    profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
                                    commands: MenuCommand.ordered(commands, appID: context?.id ?? "", history: menuHistory, at: now),
                                    frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: context?.id ?? "", history: menuHistory, at: now),
-                                   menuContextWindow: windows.first { $0.pid == context?.pid && !$0.isApplication && $0.handoff == nil })
+                                   menuContextWindow: windows.first { $0.pid == context?.pid && !$0.isApplication && $0.handoff == nil },
+                                   hasAppSettings: hasAppSettings)
         if next != old { snapshot = next }
     }
 }

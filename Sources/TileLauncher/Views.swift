@@ -131,6 +131,7 @@ struct DeckView: View {
     let selectApp: (AppItem) -> Void
     let selectPin: (PinnedItem) -> Void
     let selectMenu: (MenuCommand, AppItem?, WindowItem?) -> Void
+    var selectAppSettings: (AppItem?, WindowItem?) -> Void = { _, _ in }
     let changeProfile: (String?) -> Void
     let cycleProfile: (Int) -> Void
     @State private var editedMenus: [MenuCommand]?
@@ -301,6 +302,7 @@ struct DeckView: View {
 
     private var geometry: DeckGeometry { DeckGeometry(width: snapshot.layout.contentSize.width, compact: compact, scale: snapshot.layout.scale) }
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
+    private var menuEntries: [OverlayMenuEntry] { snapshot.menuEntries(commands: menuItems) }
     private var workRows: CGFloat {
         recentAppearance == .locationColor && previewDesktopColumns == nil && previewWindowSizes == nil
             ? snapshot.workRows(commands: menuItems) : 3.3
@@ -325,7 +327,7 @@ struct DeckView: View {
                 Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).help("설정에서 앱별 메뉴 추가")
             }.frame(height: 20)
-            if menuItems.isEmpty {
+            if menuEntries.isEmpty {
                 Button { showSettings(.addMenu) } label: {
                     VStack(alignment: .leading, spacing: u(9)) {
                         Image(systemName: "command").font(font(.title2))
@@ -335,8 +337,8 @@ struct DeckView: View {
                     }.padding(u(14)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 }.buttonStyle(TileStyle())
             } else if menuAppearance == .recentPastel {
-                let sizes = menuItems.map { command in
-                    command.isPinned ? RecentTileSize.wide : snapshot.frequentMenuIDs.contains(command.id) ? .square : .application
+                let sizes = menuEntries.map { entry in
+                    entry.isPinned ? RecentTileSize.wide : entry.isFrequent(snapshot.frequentMenuIDs) ? .square : .application
                 }
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: 8)
                 let micro = (geometry.unit - geometry.gap) / 2
@@ -344,7 +346,7 @@ struct DeckView: View {
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         ForEach(packed, id: \.index) { place in
-                            menuTile(menuItems[place.index], small: place.height == 1)
+                            menuEntryTile(menuEntries[place.index], small: place.height == 1)
                                 .frame(width: micro * CGFloat(place.width) + geometry.gap * CGFloat(place.width - 1),
                                        height: micro * CGFloat(place.height) + geometry.gap * CGFloat(place.height - 1))
                                 .offset(x: CGFloat(place.column) * (micro + geometry.gap),
@@ -355,15 +357,15 @@ struct DeckView: View {
                             alignment: .topLeading)
                 }.scrollIndicators(.visible)
             } else {
-                let packed = rows(menuItems.map {
-                    ($0.isPinned || (menuAppearance == .original && snapshot.frequentMenuIDs.contains($0.id))) ? 2 : 1
+                let packed = rows(menuEntries.map {
+                    ($0.isPinned || (menuAppearance == .original && $0.isFrequent(snapshot.frequentMenuIDs))) ? 2 : 1
                 }, columns: 4)
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: geometry.gap) {
                         ForEach(packed.indices, id: \.self) { row in
                             HStack(spacing: geometry.gap) {
                                 ForEach(packed[row], id: \.index) { place in
-                                    menuTile(menuItems[place.index]).frame(width: tileWidth(place.span), height: geometry.unit)
+                                    menuEntryTile(menuEntries[place.index]).frame(width: tileWidth(place.span), height: geometry.unit)
                                 }
                                 Spacer(minLength: u(0))
                             }
@@ -372,6 +374,24 @@ struct DeckView: View {
                 }.scrollIndicators(.visible)
             }
         }.frame(height: height)
+    }
+    @ViewBuilder private func menuEntryTile(_ entry: OverlayMenuEntry, small: Bool = false) -> some View {
+        switch entry {
+        case .command(let command): menuTile(command, small: small)
+        case .appSettings:
+            Button { selectAppSettings(snapshot.context, snapshot.menuContextWindow) } label: {
+                ZStack(alignment: .bottomLeading) {
+                    Image(systemName: "gear").font(.system(size: u(44), weight: .light))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(22))
+                    Text("앱 설정").font(.system(size: u(12), weight: .medium)).padding(u(8))
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "pin.fill").font(.system(size: u(9))).padding(u(8))
+                    }
+            }.buttonStyle(TileStyle(section: .menus, emphasized: true))
+                .help("\(snapshot.context?.name ?? "현재 앱") 설정 열기 · 모든 앱에 공통으로 제공하는 메뉴")
+                .accessibilityLabel("\(snapshot.context?.name ?? "현재 앱") 설정 열기")
+        }
     }
     private func menuTile(_ command: MenuCommand, small: Bool = false) -> some View {
         var colors = settings.tileColors
