@@ -15,6 +15,7 @@
 
 ## 사용자 요청을 파일에 남기기
 
+- R191 전달 완료: 소스399dcf4565024fbd2b7ce6e2acea5654723b0917의1.6.0(30)을 XCTest173개/Python23개·네이티브 오프스크린 검사, 서명 실행 파일의 렌더(개발 렌더와 PNG 해시 일치)와 `--check-menu-icons` 통과 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.6.0-arm64-unnotarized.zip에 복사했다.2,522,933바이트, SHA256 099f56ce12849fb8fd35c7d435d9e0fb70336bde2f5595d906fb58aeb15e8dbd이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.
 - R191–R192: 언어별 메뉴/아이콘 저장·앱별 파일·nib 폴더 번역·R187 세 지적 수정과 미리 만들기 유지 이유 기록을 1.6.0(30)에 포함한다. Dock Handoff는 AX 진단 후 판단한다. 자세한 내용은 request-log R191–R192.
 
 - R189–R190: 자동/수동 메뉴 추가 때 정적 앱 리소스의 아이콘을 저장하고 같은 이름의 다른 앱 아이콘도 일치시킨다. 앱 업데이트에 자동 갱신하지 않으며 설정에 선택 앱 새로고침을 둔다. 직접 지정/아이콘 없음이 우선한다. SF Symbol 코드와 PDF 벡터를 유지하고 비트맵만 원래 해상도로 저장한다. NIBArchive 메뉴-이미지 연결/현지화 범위이며 동적/모호/비공개 항목은 fallback한다. 기능 minor1.6.0(30) 소스이며 배포/설치/공증은 별도다. 검증은 docs/reviews/menu-resource-icons.md. R187의 성능 리뷰 지적은 R191에서 수정했다.
