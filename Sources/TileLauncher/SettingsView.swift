@@ -269,6 +269,7 @@ struct MenuSettingsView: View {
             List {
                 ForEach(commands) { command in
                     HStack {
+                        MenuGlyphButton(command: command) { settings.setSymbol($0, for: command.id) }
                         MenuCommandDetails(command: command)
                         Spacer()
                         Button { settings.togglePin(command.id) } label: {

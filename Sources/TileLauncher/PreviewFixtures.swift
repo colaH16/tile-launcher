@@ -105,6 +105,11 @@ final class PreviewFixture: ObservableObject {
             commands = paths.enumerated().map { index, path in
                 var command = MenuCommand(appID: app.id, appName: app.name, path: path, isPinned: index < 3)
                 for _ in 0..<([3, 2, 1, 3, 4, 2, 1, 1, 1][index]) { command.recordUse(at: Date()) }
+                // Finder's real equivalents; Open in New Tab has none.
+                command.shortcut = [("t", 0), ("n", 1), ("n", 0), nil, ("i", 0), ("g", 1), ("k", 0), ("j", 0), ("s", 4)][index]
+                    .flatMap { MenuShortcut(key: $0.0, modifiers: $0.1) }
+                // User-chosen icons on a few; the rest fall back to shortcut or text.
+                command.symbol = ["plus.square.on.square", "folder.badge.plus", nil, nil, "info.circle", nil, nil, nil, "sidebar.left"][index]
                 return command
             }
         }

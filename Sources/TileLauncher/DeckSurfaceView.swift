@@ -4,30 +4,38 @@ import SwiftUI
 /// One outer silhouette for the glass, SwiftUI fill and any descendant effects.
 /// NSGlassEffectView.cornerRadius shapes the glass, but does not clip its content.
 final class DeckSurfaceView: NSView {
+    /// Comparison only (R183): `current` is the shipped surface. `unmasked`
+    /// lets the glass draw its own rim without the overscan/mask, and `clear`
+    /// additionally uses the more transparent glass style.
+    enum GlassVariant: String, CaseIterable { case current, unmasked, clear }
     static let cornerRadius: CGFloat = 28
     static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
     private let silhouette = CAShapeLayer()
     private let glass: NSGlassEffectView
 
-    init(content: NSView, frame: CGRect) {
-        glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: frame.size).insetBy(dx: -1, dy: -1))
+    private let variant: GlassVariant
+
+    init(content: NSView, frame: CGRect, variant: GlassVariant = .current) {
+        self.variant = variant
+        let overscan: CGFloat = variant == .current ? 1 : 0
+        glass = NSGlassEffectView(frame: CGRect(origin: .zero, size: frame.size).insetBy(dx: -overscan, dy: -overscan))
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.mask = silhouette
         // Keep the glass's own narrow dark edge outside the final silhouette.
         // The content stays at the original bounds; only the effect overscans.
-        glass.style = .regular
-        glass.cornerRadius = Self.cornerRadius + 1
+        if variant == .current { layer?.mask = silhouette }
+        glass.style = variant == .clear ? .clear : .regular
+        glass.cornerRadius = Self.cornerRadius + overscan
         glass.translatesAutoresizingMaskIntoConstraints = false
         glass.contentView = content
         addSubview(glass)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            glass.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -1),
-            glass.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 1),
-            glass.topAnchor.constraint(equalTo: topAnchor, constant: -1),
-            glass.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 1),
+            glass.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -overscan),
+            glass.trailingAnchor.constraint(equalTo: trailingAnchor, constant: overscan),
+            glass.topAnchor.constraint(equalTo: topAnchor, constant: -overscan),
+            glass.bottomAnchor.constraint(equalTo: bottomAnchor, constant: overscan),
             content.leadingAnchor.constraint(equalTo: leadingAnchor),
             content.trailingAnchor.constraint(equalTo: trailingAnchor),
             content.topAnchor.constraint(equalTo: topAnchor),
@@ -52,7 +60,7 @@ final class DeckSurfaceView: NSView {
     private func updateSilhouette() {
         // Only geometry changes affect the mask. Moving the panel must not animate
         // or regenerate a different shadow contour for every content refresh.
-        guard silhouette.path == nil || silhouette.frame != bounds else { return }
+        guard variant == .current, silhouette.path == nil || silhouette.frame != bounds else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         silhouette.frame = bounds

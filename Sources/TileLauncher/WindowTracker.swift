@@ -47,7 +47,7 @@ final class WindowTracker {
                 self.publish()
                 return
             }
-            self.desktops.refresh()
+            self.refreshDesktops()
             let ordered = list.sorted { ($0.pid == active) && ($1.pid != active) }
             for app in ordered {
                 self.observe(app.pid)
@@ -61,7 +61,7 @@ final class WindowTracker {
             self.activePID = app.pid
             self.apps[app.pid] = app
             guard self.enabled else { return }
-            self.desktops.refresh()
+            self.refreshDesktops()
             self.observe(app.pid)
             self.refresh(app.pid, focusEvent: true)
             self.publish()
@@ -78,7 +78,7 @@ final class WindowTracker {
                 DispatchQueue.main.async { complete("창에 접근할 수 없습니다. 접근성 권한과 창 상태를 확인해 주세요.") }
                 return
             }
-            self.desktops.refresh()
+            self.refreshDesktops()
             if target.item.isApplication {
                 DispatchQueue.main.async {
                     guard request.active else { return }
@@ -111,7 +111,7 @@ final class WindowTracker {
             guard self.enabled, AXIsProcessTrusted() else {
                 DispatchQueue.main.async { completion("접근성 권한이 해제되었습니다.") }; return
             }
-            self.desktops.refresh()
+            self.refreshDesktops()
             if let number = target.item.windowID, self.desktops.valid,
                self.desktops.records[number]?.pid != target.item.pid {
                 DispatchQueue.main.async { completion("이 창이 닫혔습니다.") }; return
@@ -174,7 +174,7 @@ final class WindowTracker {
     private func verifyFocus(_ element: AXUIElement, item: WindowItem, request: WindowFocusRequest, attempt: Int,
                              completion: @escaping (String?) -> Void) {
         guard request.active else { return }
-        desktops.refresh()
+        refreshDesktops()
         let app = AXUIElementCreateApplication(item.pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
         let focused = value(app, kAXFocusedWindowAttribute)
@@ -194,6 +194,29 @@ final class WindowTracker {
             queue.asyncAfter(deadline: .now() + 0.15) {
                 self.verifyFocus(element, item: item, request: request, attempt: attempt + 1, completion: completion)
             }
+        }
+    }
+    private func refreshDesktops() {
+        desktops.trackedPIDs = Set(apps.keys)
+        desktops.knownWindowIDs = Set(windows.values.joined().compactMap(\.item.windowID))
+        desktops.refresh()
+    }
+    private static let windowKeys = [kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute,
+                                     kAXMinimizedAttribute, kAXPositionAttribute, kAXSizeAttribute]
+    /// One AX round trip for all window attributes. A missing attribute is nil.
+    /// `.cannotComplete` means the app did not answer; other failures fall back
+    /// to individual reads for apps that do not implement the batched call.
+    private func windowAttributes(_ element: AXUIElement) -> [CFTypeRef?]? {
+        var raw: CFArray?
+        let result = AXUIElementCopyMultipleAttributeValues(element, Self.windowKeys as CFArray,
+                                                            AXCopyMultipleAttributeOptions(rawValue: 0), &raw)
+        if result == .cannotComplete { return nil }
+        guard result == .success, let array = raw as? [AnyObject], array.count == Self.windowKeys.count else {
+            return Self.windowKeys.map { value(element, $0) }
+        }
+        return array.map { item in
+            if CFGetTypeID(item) == AXValueGetTypeID(), AXValueGetType(item as! AXValue) == .axError { return nil }
+            return item
         }
     }
     private func value(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
@@ -242,7 +265,7 @@ final class WindowTracker {
             // Do not coalesce focus events with title/minimize notifications:
             // each focus change contributes to the user's global MRU order.
             if focused {
-                self.desktops.refresh()
+                self.refreshDesktops()
                 self.refresh(pid, focusEvent: pid == self.activePID)
                 self.publish()
                 return
@@ -251,7 +274,7 @@ final class WindowTracker {
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.pending[pid] = nil
-                self.desktops.refresh()
+                self.refreshDesktops()
                 self.refresh(pid, focusEvent: false)
                 self.publish()
             }
@@ -267,6 +290,10 @@ final class WindowTracker {
         let readResult = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &rawWindows)
         let elements = rawWindows as? [AXUIElement] ?? []
         let axComplete = (readResult == .success && rawWindows is [AXUIElement]) || readResult == .noValue
+        // A busy/hung app already used its timeout on the list. Do not spend a
+        // further timeout per known window; keep them until the app answers.
+        let unresponsive = readResult == .cannotComplete
+        let applicationHidden = NSRunningApplication(processIdentifier: pid)?.isHidden == true
         let old = windows[pid] ?? []
         var next: [TrackedWindow] = []
         if desktops.valid {
@@ -274,24 +301,26 @@ final class WindowTracker {
         }
         for element in elements {
             AXUIElementSetMessagingTimeout(element, 0.15)
-            let role = value(element, kAXRoleAttribute) as? String
-            let subrole = value(element, kAXSubroleAttribute) as? String
+            guard let attributes = windowAttributes(element) else { continue }
+            let role = attributes[0] as? String
+            let subrole = attributes[1] as? String
             guard role == kAXWindowRole,
                   subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole else { continue }
-            let number = desktops.id(for: element, pid: pid)
+            let frame = Self.bounds(position: attributes[4], size: attributes[5])
+            let number = desktops.id(for: element, pid: pid, bounds: frame)
             let prior = old.first { entry in
                 (number != nil && entry.item.windowID == number) || (entry.element.map { CFEqual($0, element) } ?? false)
             }
             let id = prior?.item.id ?? UUID()
             if next.contains(where: { $0.item.id == id }) { continue }
             if let number { destroyed[pid]?.remove(number) }
-            let title = (value(element, kAXTitleAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "제목 없는 창"
+            let title = (attributes[2] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "제목 없는 창"
             let item = WindowItem(id: id, pid: pid, appName: appInfo.name, appURL: appInfo.url,
-                                  title: title, minimized: value(element, kAXMinimizedAttribute) as? Bool ?? false,
+                                  title: title, minimized: attributes[3] as? Bool ?? false,
                                   windowID: number ?? prior?.item.windowID, appID: appInfo.id,
                                   desktop: desktops.desktop(for: number ?? prior?.item.windowID),
                                   bounds: (number ?? prior?.item.windowID).flatMap { desktops.records[$0]?.bounds }
-                                      ?? Self.bounds(of: element) ?? prior?.item.bounds)
+                                      ?? frame ?? prior?.item.bounds)
             next.append(TrackedWindow(element: element, item: item))
             if prior?.element == nil, let observer = observers[pid] {
                 for key in windowEvents {
@@ -304,16 +333,16 @@ final class WindowTracker {
         for var missing in old where !missing.item.isApplication && !next.contains(where: { $0.item.id == missing.item.id }) {
             let number = missing.item.windowID
             let record = number.flatMap { desktops.records[$0] }
-            let minimized = missing.element.flatMap { value($0, kAXMinimizedAttribute) as? Bool } ?? missing.item.minimized
+            let minimized = unresponsive ? missing.item.minimized
+                : missing.element.flatMap { value($0, kAXMinimizedAttribute) as? Bool } ?? missing.item.minimized
             let retainedAX = missing.element != nil && WindowPresence.retainMissingAX(
                 orderedIn: record?.orderedIn, axComplete: axComplete,
-                minimized: minimized,
-                applicationHidden: NSRunningApplication(processIdentifier: pid)?.isHidden == true)
+                minimized: minimized, applicationHidden: applicationHidden)
             let exists = desktops.valid ? number.map {
                 desktops.records[$0]?.pid == pid && (retainedAX || desktops.records[$0]?.isCandidate == true)
             } : nil
             guard WindowRetention.keepMissing(serverStillContains: exists,
-                                               axInvalid: missing.element.map(isInvalid) ?? false,
+                                               axInvalid: unresponsive ? false : missing.element.map(isInvalid) ?? false,
                                                destroyed: number.map { destroyed[pid, default: []].contains($0) } ?? false) else {
                 if let element = missing.element, let observer = observers[pid] {
                     for key in windowEvents { _ = AXObserverRemoveNotification(observer, element, key as CFString) }
@@ -347,7 +376,7 @@ final class WindowTracker {
                 runningApplication: NSRunningApplication(processIdentifier: pid))))
         }
         windows[pid] = next
-        if focusEvent, let focused = value(app, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(),
+        if focusEvent, !unresponsive, let focused = value(app, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(),
            let match = next.first(where: { $0.element.map { CFEqual($0, focused) } ?? false }) {
             recency.touch(match.item.id)
         } else if focusEvent, let application = next.first(where: { $0.item.isApplication }) {
@@ -363,11 +392,8 @@ final class WindowTracker {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         }
     }
-    private static func bounds(of element: AXUIElement) -> CGRect? {
-        var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &rawPosition) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &rawSize) == .success,
-              let rawPosition, let rawSize, CFGetTypeID(rawPosition) == AXValueGetTypeID(),
+    private static func bounds(position rawPosition: CFTypeRef?, size rawSize: CFTypeRef?) -> CGRect? {
+        guard let rawPosition, let rawSize, CFGetTypeID(rawPosition) == AXValueGetTypeID(),
               CFGetTypeID(rawSize) == AXValueGetTypeID() else { return nil }
         let position = unsafeBitCast(rawPosition, to: AXValue.self)
         let size = unsafeBitCast(rawSize, to: AXValue.self)

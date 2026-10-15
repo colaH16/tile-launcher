@@ -134,7 +134,6 @@ struct DeckView: View {
     let changeProfile: (String?) -> Void
     let cycleProfile: (Int) -> Void
     @State private var editedMenus: [MenuCommand]?
-    @State private var recentOffset: CGFloat = 0
     let selectWindow: (WindowItem) -> Void
     let openURL: (URL) -> Void
     let openInFinder: (URL) -> Void
@@ -147,6 +146,8 @@ struct DeckView: View {
     var recentAppearance: RecentAppearance = .locationColor
     var menuAppearance: MenuAppearance = .selected
     var startTileLabels = true
+    /// R183 comparison: the 0.28 window-color layer above the native glass.
+    var backdropTint = true
     // Synthetic comparison inputs only; production callers keep all defaults.
     var previewWindowSizes: [RecentTileSize]? = nil
     var previewEmphasizedWindows: Set<UUID>? = nil
@@ -231,10 +232,9 @@ struct DeckView: View {
         .environment(\.tileColors, settings.tileColors)
         .background {
             // The AppKit surface clips this fill and the native glass together.
-            Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : 0.28)
+            Color(nsColor: .windowBackgroundColor).opacity(reduceTransparency ? 1 : backdropTint ? 0.28 : 0)
         }
         .onChange(of: snapshot.commands) { _, _ in editedMenus = nil }
-        .onChange(of: snapshot.windows.map(\.id)) { _, _ in recentOffset = 0 }
         .onChange(of: registeredItems.count) { _, count in resizeForContent(count, workRows) }
         .onChange(of: workRows) { _, rows in resizeForContent(registeredItems.count, rows) }
         .onChange(of: browser.current) { _, current in
@@ -379,10 +379,28 @@ struct DeckView: View {
         }
         return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
             if startTileLabels {
+                let glyph = command.glyph
                 ZStack(alignment: .bottomLeading) {
-                    Image(systemName: "command").font(.system(size: u(small ? 26 : 52), weight: .light))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
-                    Text(command.title).font(.system(size: u(small ? 8 : 12), weight: .medium)).lineLimit(1)
+                    switch glyph {
+                    case .symbol(let symbol):
+                        Image(systemName: symbol).font(.system(size: u(small ? 26 : 44), weight: .light))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                    case .shortcut(let keys):
+                        Text(keys).font(.system(size: u(small ? 18 : 34), weight: .medium, design: .rounded))
+                            .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, u(small ? 4 : 12))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                    case .text:
+                        // Windows 8 text-only tile: the name itself is the large
+                        // content, with its parent menu as the small bottom label.
+                        Text(command.title).font(.system(size: u(small ? 11 : 19), weight: .semibold))
+                            .lineLimit(3).minimumScaleFactor(0.7).multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(.horizontal, u(small ? 3 : 8)).padding(.top, u(small ? 3 : 8))
+                            .padding(.trailing, u(small ? 10 : 28)).padding(.bottom, u(small ? 12 : 22))
+                    }
+                    Text(glyph == .text ? command.path.dropLast().joined(separator: " › ") : command.title)
+                        .font(.system(size: u(small ? 8 : 12), weight: .medium)).lineLimit(1)
+                        .foregroundStyle(glyph == .text ? HierarchicalShapeStyle.secondary : .primary)
                         .padding(u(small ? 3 : 8))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .topTrailing) {
@@ -559,26 +577,17 @@ struct DeckView: View {
                     : RecentTileArrangement.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
                                                  consecutiveSmall: recentAppearance == .consecutiveSmall))
                 let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
-                let micro = (geometry.unit - geometry.gap) / 2
-                let bottom = packed.map { $0.row + $0.height }.max() ?? 0
-                let visible = RecentTileArrangement.visible(packed, module: micro, gap: geometry.gap,
-                                                            offset: recentOffset, viewport: max(0, height - DeckSpacing.workHeader(scale: snapshot.layout.scale)))
-                ScrollView(.vertical) {
-                    ZStack(alignment: .topLeading) {
-                        ForEach(visible, id: \.index) { place in
-                            windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4, small: place.height == 1)
-                                .frame(width: micro * CGFloat(place.width) + geometry.gap * CGFloat(place.width - 1),
-                                       height: micro * CGFloat(place.height) + geometry.gap * CGFloat(place.height - 1))
-                                .offset(x: CGFloat(place.column) * (micro + geometry.gap),
-                                        y: CGFloat(place.row) * (micro + geometry.gap))
-                        }
-                    }.frame(width: geometry.windowWidth,
-                            height: CGFloat(bottom) * micro + CGFloat(max(0, bottom - 1)) * geometry.gap,
-                            alignment: .topLeading)
+                let firstIDs = firstWindowIDs
+                // The scroll offset lives in its own view: scrolling re-evaluates only
+                // the visible recent tiles, not the menus and registered grid.
+                RecentTileScroll(placements: packed, module: (geometry.unit - geometry.gap) / 2, gap: geometry.gap,
+                                 width: geometry.windowWidth,
+                                 viewport: max(0, height - DeckSpacing.workHeader(scale: snapshot.layout.scale))) { place in
+                    windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4,
+                               small: place.height == 1, firstIDs: firstIDs)
                 }
-                .onScrollGeometryChange(for: CGFloat.self) { value in max(0, value.visibleRect.minY) }
-                action: { _, offset in recentOffset = offset }
-                .scrollIndicators(.visible).id(snapshot.windows.map(\.id))
+                // A new window list starts at the top with a fresh offset.
+                .id(snapshot.windows.map(\.id))
             }
         }.frame(height: height)
     }
@@ -592,7 +601,8 @@ struct DeckView: View {
             .environment(\.tileColors, settings.tileColors)
         }
     }
-    private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false) -> some View {
+    private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false,
+                            firstIDs: Set<UUID>? = nil) -> some View {
         let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
         let locationDescription: String = recentAppearance == .locationColor ? {
             switch window.location {
@@ -604,7 +614,7 @@ struct DeckView: View {
             }
         }() : desktop == .current ? "현재 데스크탑" : desktop == .other ? "다른 데스크탑" : "데스크탑 확인 안 됨"
         let emphasized = previewEmphasizedWindows?.contains(window.id)
-            ?? (recentAppearance == .locationColor ? firstWindowIDs.contains(window.id) : desktop == .current)
+            ?? (recentAppearance == .locationColor ? (firstIDs ?? firstWindowIDs).contains(window.id) : desktop == .current)
         var colors = settings.tileColors
         if window.isApplication && recentAppearance.neutralApplications { colors.windows = TileColor(0x777777) }
         let palette = DeckPalette(section: .windows, emphasized: emphasized,
@@ -732,5 +742,34 @@ struct DeckView: View {
             if let symbol { Image(systemName: symbol).font(.caption) }
             Text(title).font(.system(size: 12, weight: .semibold))
         }.foregroundStyle(.secondary)
+    }
+}
+
+/// Virtualized recent-window area. Owns the scroll offset so a scroll frame
+/// only re-runs this body; `tile` builds just the placements in view.
+private struct RecentTileScroll<Tile: View>: View {
+    let placements: [RecentTilePlacement]
+    let module: CGFloat
+    let gap: CGFloat
+    let width: CGFloat
+    let viewport: CGFloat
+    @ViewBuilder let tile: (RecentTilePlacement) -> Tile
+    @State private var offset: CGFloat = 0
+    var body: some View {
+        let bottom = placements.map { $0.row + $0.height }.max() ?? 0
+        let visible = RecentTileArrangement.visible(placements, module: module, gap: gap, offset: offset, viewport: viewport)
+        ScrollView(.vertical) {
+            ZStack(alignment: .topLeading) {
+                ForEach(visible, id: \.index) { place in
+                    tile(place)
+                        .frame(width: module * CGFloat(place.width) + gap * CGFloat(place.width - 1),
+                               height: module * CGFloat(place.height) + gap * CGFloat(place.height - 1))
+                        .offset(x: CGFloat(place.column) * (module + gap), y: CGFloat(place.row) * (module + gap))
+                }
+            }.frame(width: width, height: CGFloat(bottom) * module + CGFloat(max(0, bottom - 1)) * gap, alignment: .topLeading)
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { value in max(0, value.visibleRect.minY) }
+        action: { _, value in offset = value }
+        .scrollIndicators(.visible)
     }
 }

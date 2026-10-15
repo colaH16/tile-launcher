@@ -41,6 +41,16 @@ enum OverlayChromeValidation {
             .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius, style: .continuous))
             .environment(\.colorScheme, .dark)
         try PreviewExport.save(view, to: directory.appendingPathComponent("adopted-143.png"))
+        // Light/dark rendering of the same sample: chosen symbol → shortcut → text menu tiles.
+        let glyphs = DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
+            presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
+            changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
+            openInFinder: { _ in }, openTrash: {}, showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
+            .frame(width: layout.frame.width, height: layout.frame.height)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius, style: .continuous))
+        try PreviewExport.save(glyphs.environment(\.colorScheme, .light), dark: false,
+                               to: directory.appendingPathComponent("menu-glyphs-light.png"))
         let titles = VStack(spacing: 16) {
             OverlayTitleView(iconURL: snapshot.windows.first?.appURL, appName: "Finder", windowName: "Downloads")
             OverlayTitleView(iconURL: snapshot.windows.first?.appURL,

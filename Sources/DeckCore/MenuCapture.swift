@@ -26,11 +26,14 @@ public struct CapturedMenu: Equatable {
     public let appName: String
     public let shortcut: String
     public let commandModifier: Bool
+    /// Raw AXMenuItemCmdModifiers; 0 is plain ⌘.
+    public let modifiers: Int
     public let fromHelpSearch: Bool
     public init(appID: String, appName: String, path: [String], shortcut: String = "",
-                commandModifier: Bool = false, fromHelpSearch: Bool = false) {
+                commandModifier: Bool = false, modifiers: Int = 0, fromHelpSearch: Bool = false) {
         identity = MenuIdentity(appID: appID, path: path); self.appName = appName
-        self.shortcut = shortcut; self.commandModifier = commandModifier; self.fromHelpSearch = fromHelpSearch
+        self.shortcut = shortcut; self.commandModifier = commandModifier; self.modifiers = modifiers
+        self.fromHelpSearch = fromHelpSearch
     }
 }
 
@@ -62,7 +65,8 @@ public enum MenuCapturePolicy {
         let unique = Dictionary(grouping: matches, by: \.identity)
         guard unique.count == 1, let match = unique.values.first?.first else { return nil }
         return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
-                            shortcut: match.shortcut, commandModifier: match.commandModifier, fromHelpSearch: true)
+                            shortcut: match.shortcut, commandModifier: match.commandModifier,
+                            modifiers: match.modifiers, fromHelpSearch: true)
     }
 }
 
@@ -96,15 +100,36 @@ public enum MenuCaptureHistory {
     public static func record(_ menu: CapturedMenu, in commands: [MenuCommand], at date: Date) -> [MenuCommand] {
         guard !MenuCapturePolicy.isAppleMenuPath(menu.identity.path) else { return commands }
         var result = commands
+        let shortcut = MenuShortcut(key: menu.shortcut, modifiers: menu.modifiers)
         if let i = result.firstIndex(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) {
             result[i].recordUse(at: date, observed: true)
+            if let shortcut { result[i].shortcut = shortcut }
         } else {
             var command = MenuCommand(appID: menu.identity.appID, appName: menu.appName, path: menu.identity.path, isPinned: false)
             command.isAutomatic = true; command.recordUse(at: date, observed: true)
+            command.shortcut = shortcut
             result.append(command)
         }
         // Visibility uses the user-selected lookback OR the app-local recent five.
         // Keep compact metadata so changing the lookback can restore older items.
         return result
+    }
+}
+
+/// Where a click can start a menu-bar selection, in CG (top-left origin) global
+/// coordinates. Clicks elsewhere skip the AX hit test unless a menu is open.
+public enum MenuBarRegion {
+    /// `screens` are AppKit frames (bottom-left origin) with each screen's menu bar
+    /// height; the first frame is the primary screen. A generous minimum covers
+    /// notched and auto-hidden menu bars.
+    public static func bands(screens: [(frame: CGRect, menuBar: CGFloat)], minimum: CGFloat = 50) -> [CGRect] {
+        guard let primary = screens.first?.frame else { return [] }
+        return screens.map { screen in
+            CGRect(x: screen.frame.minX, y: primary.maxY - screen.frame.maxY,
+                   width: screen.frame.width, height: max(minimum, screen.menuBar))
+        }
+    }
+    public static func contains(_ point: CGPoint, bands: [CGRect]) -> Bool {
+        bands.contains { $0.contains(point) }
     }
 }

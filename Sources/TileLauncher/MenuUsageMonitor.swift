@@ -97,6 +97,7 @@ final class MenuUsageMonitor {
         let modified = !event.modifierFlags.intersection([.command, .control, .option]).isEmpty
         let repeatKey = type == .keyDown && event.isARepeat
         let point = event.cgEvent?.location
+        let inMenuBar = type != .keyDown && point.map { MenuBarRegion.contains($0, bands: Self.menuBarBands()) } == true
         queue.async { [weak self] in
             guard let self, self.app?.pid == target.pid, self.bar != nil,
                   ProcessInfo.processInfo.systemUptime - time < 1 else { return }
@@ -123,6 +124,12 @@ final class MenuUsageMonitor {
                 return
             }
             guard let point else { return }
+            // Most clicks are not on a menu. Skip the AX hit test (which the
+            // clicked app must answer) unless a menu can be involved.
+            guard inMenuBar || self.menuSession || self.down != nil || !self.openedMenus.isEmpty else {
+                self.resetInteraction()
+                return
+            }
             let reader = MenuAXReader(app: target, budget: 0.18)
             let element = reader.element(at: point)
             let role = element.flatMap { reader.value($0, kAXRoleAttribute) as? String }
@@ -153,6 +160,9 @@ final class MenuUsageMonitor {
                 if candidate != nil { self.menuSession = false; self.highlighted = nil }
             }
         }
+    }
+    private static func menuBarBands() -> [CGRect] {
+        MenuBarRegion.bands(screens: NSScreen.screens.map { ($0.frame, $0.frame.maxY - $0.visibleFrame.maxY) })
     }
     private func configure(_ target: AppItem?, process: ProcessIdentity?, preferences: MenuCapturePreferences) {
         self.preferences = preferences
@@ -395,7 +405,7 @@ private final class MenuAXReader {
             }
         }
         return MenuHit(menu: CapturedMenu(appID: app.id, appName: app.name, path: path, shortcut: shortcut,
-                                         commandModifier: modifiers & (1 << 3) == 0),
+                                         commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers),
                        frame: frame, isHelpResult: path.first.map(Self.isHelp) == true)
     }
     func focusedMenuItem() -> AXUIElement? {
@@ -426,7 +436,9 @@ private final class MenuAXReader {
             guard let descendants = children(node) else { complete = false; return }
             if role == kAXMenuItemRole, descendants.isEmpty, next.count >= 2 {
                 let shortcut = value(node, kAXMenuItemCmdCharAttribute) as? String ?? ""
-                result.append(CapturedMenu(appID: app.id, appName: app.name, path: next, shortcut: shortcut))
+                let modifiers = shortcut.isEmpty ? 0 : value(node, kAXMenuItemCmdModifiersAttribute) as? Int ?? 0
+                result.append(CapturedMenu(appID: app.id, appName: app.name, path: next, shortcut: shortcut,
+                                           commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers))
             } else { descendants.forEach { visit($0, path: next, depth: depth + 1) } }
         }
         guard let roots = children(bar) else { return nil }

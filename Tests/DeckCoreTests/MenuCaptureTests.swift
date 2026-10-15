@@ -165,3 +165,18 @@ final class MenuCaptureTests: XCTestCase {
         XCTAssertTrue(history.contains { $0.id == pinned.id })
     }
 }
+
+final class MenuBarRegionTests: XCTestCase {
+    func testBandsUseTopLeftCoordinatesForEveryScreen() {
+        // Primary 2560×1080 at origin; secondary 1920×1080 to the right, 200pt lower.
+        let bands = MenuBarRegion.bands(screens: [
+            (CGRect(x: 0, y: 0, width: 2560, height: 1080), 24),
+            (CGRect(x: 2560, y: -200, width: 1920, height: 1080), 37)
+        ])
+        XCTAssertTrue(MenuBarRegion.contains(CGPoint(x: 100, y: 10), bands: bands))
+        XCTAssertTrue(MenuBarRegion.contains(CGPoint(x: 2600, y: 210), bands: bands))
+        XCTAssertFalse(MenuBarRegion.contains(CGPoint(x: 100, y: 400), bands: bands))
+        XCTAssertFalse(MenuBarRegion.contains(CGPoint(x: 2600, y: 10), bands: bands))
+        XCTAssertEqual(MenuBarRegion.bands(screens: [(CGRect(x: 0, y: 0, width: 100, height: 100), 70)]).first?.height, 70)
+    }
+}

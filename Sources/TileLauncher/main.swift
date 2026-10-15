@@ -80,6 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.schedulePinnedRefresh()
         }
         hold.onShow = { [weak self] in self?.show(held: true) }
+        hold.onPrepare = { [weak self] in self?.prepareOverlay() }
+        hold.onAbandon = { [weak self] in self?.discardPreparedOverlay() }
         hold.onQuickReopen = { [weak self] time in
             guard let self, let layout = self.optionReopen.take(at: time, enabled: self.settings.optionReopen.enabled) else { return false }
             self.show(held: true, restoring: layout)
@@ -281,14 +283,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences.makeKeyAndOrderFront(nil)
         } else { show(held: false) }
     }
+    /// An overlay built ahead of time but not on screen yet.
+    private struct PreparedOverlay {
+        let panel: DeckPanel
+        let content: OverlayContent
+        let browser: FolderBrowser
+        let hosting: NSView
+        let screenFrame: CGRect
+        let profileID: String
+        let trusted: Bool
+    }
+    private var prepared: PreparedOverlay?
+
+    /// Option went down: build the panel during the 0.25 s hold wait so the
+    /// overlay only has to be ordered in when the wait ends. Nothing is shown,
+    /// and shared presentation state is not touched until `show`.
+    private func prepareOverlay() {
+        guard panel?.isVisible != true, prepared == nil else { return }
+        // No permission check here: a trust change restarts the hold monitor.
+        // `show` checks it and rejects this overlay if trust changed meanwhile.
+        updateApps()
+        prepared = buildOverlay(restoring: nil, reportErrors: false)
+    }
+    private func discardPreparedOverlay() {
+        prepared?.panel.contentView = nil
+        prepared = nil
+    }
     private func show(held: Bool, restoring previousLayout: PanelLayout? = nil) {
         guard panel?.isVisible != true else { return }
         optionReopen.cancel()
         checkPermission()
-        updateApps()
+        let ready = previousLayout == nil ? takePreparedOverlay() : nil
+        discardPreparedOverlay()
+        let overlay: PreparedOverlay
+        if let ready { overlay = ready } else {
+            updateApps()
+            guard let built = buildOverlay(restoring: previousLayout) else { return }
+            overlay = built
+        }
+        present(overlay, held: held)
+    }
+    /// The prepared overlay if it still matches the cursor's screen, profile,
+    /// permission and size; it is moved to the current cursor position.
+    private func takePreparedOverlay() -> PreparedOverlay? {
+        guard let ready = prepared, trusted == ready.trusted, settings.activeProfile.id == ready.profileID else { return nil }
+        let point = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main,
+              screen.visibleFrame == ready.screenFrame else { return nil }
+        let old = ready.content.snapshot.layout
+        let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
+            .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
+        guard moved.frame.size == old.frame.size, moved.compact == old.compact, moved.scale == old.scale else { return nil }
+        if moved != old {
+            ready.content.snapshot.layout = moved
+            ready.panel.setFrame(moved.frame, display: false)
+        }
+        prepared = nil
+        return ready
+    }
+    private func buildOverlay(restoring previousLayout: PanelLayout?, reportErrors: Bool = true) -> PreparedOverlay? {
         let point = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
-            ?? NSScreen.main else { return }
+            ?? NSScreen.main else { return nil }
         var layout: PanelLayout
         var layoutScreen = screen
         var restored = false
@@ -302,8 +358,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .fittingContent(registeredCount: settings.activeProfile.items.count)
         }
         guard layout.supported else {
-            error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.")
-            return
+            if reportErrors { error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.") }
+            return nil
         }
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
         let menuNow = Date()
@@ -322,13 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
         snapshot.layout = layout
         let content = OverlayContent(snapshot)
-        visibleContent = content
         let folderBrowser = FolderBrowser()
-        browser = folderBrowser
-        presentation.reset()
-        presentation.profile = settings.activeProfile
-        profileScroll.reset()
-        presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
         let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation, launches: launches,
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },
@@ -368,6 +418,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = surface
         window.setFrame(layout.frame, display: false)
         surface.layoutSubtreeIfNeeded()
+        return PreparedOverlay(panel: window, content: content, browser: folderBrowser, hosting: hosting,
+                               screenFrame: layoutScreen.visibleFrame, profileID: settings.activeProfile.id, trusted: trusted)
+    }
+    private func present(_ overlay: PreparedOverlay, held: Bool) {
+        let window = overlay.panel
+        visibleContent = overlay.content
+        browser = overlay.browser
+        presentation.reset()
+        presentation.profile = settings.activeProfile
+        profileScroll.reset()
+        presentation.windowDesktops = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
+        window.contentView?.layoutSubtreeIfNeeded()
         window.invalidateShadow()
         panel = window
         heldPresentation = held
@@ -378,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let index = CommandLine.arguments.firstIndex(of: "--render-check"),
            CommandLine.arguments.indices.contains(index + 1) {
             let path = CommandLine.arguments[index + 1]
+            let hosting = overlay.hosting
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 hosting.layoutSubtreeIfNeeded()
                 if let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
@@ -434,6 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             actionPending: pendingAction != nil, preferences: settings.optionReopen)
         pinnedRefresh?.cancel()
         pinnedRefresh = nil
+        discardPreparedOverlay()
         panel?.orderOut(nil)
         panel?.contentView = nil
         panel = nil
@@ -625,7 +689,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let run = { [weak self] in
                 self?.menuUsage.suppressLauncherAction(menu)
-                self?.menuCatalog.execute(menu, in: context) { [weak self] message in
+                self?.menuCatalog.execute(menu, in: context, shortcut: { [weak self] in
+                    self?.settings.updateShortcut($0, for: menu.id)
+                }) { [weak self] message in
                     if let message { self?.error(message) } else {
                         self?.settings.recordUse(menu.id)
                         self?.schedulePinnedRefresh()
@@ -806,6 +872,15 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
         fputs("Preview export failed: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
+}
+// R183 glass comparison: synthetic panels only, bypasses the production instance.
+if let index = CommandLine.arguments.firstIndex(of: "--glass-compare") {
+    application.setActivationPolicy(.accessory)
+    let seconds = CommandLine.arguments.indices.contains(index + 1)
+        ? TimeInterval(CommandLine.arguments[index + 1]) ?? 120 : 120
+    MainActor.assumeIsolated { GlassComparison.show(seconds: seconds) }
+    application.run()
+    exit(0)
 }
 // Targeted read-only inventory diagnostics bypass the production instance and all UI.
 if let index = CommandLine.arguments.firstIndex(of: "--diagnose-window-inventory") {

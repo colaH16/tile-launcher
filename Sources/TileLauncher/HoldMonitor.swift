@@ -9,6 +9,9 @@ final class HoldMonitor {
     var onCancel: (() -> Void)?
     var onRelease: (() -> Void)?
     var onShortcut: ((OverlayShortcut) -> Void)?
+    /// Start building the overlay while the hold timer runs; abandon it if no overlay follows.
+    var onPrepare: (() -> Void)?
+    var onAbandon: (() -> Void)?
     var ownsKeyboard: (() -> Bool)?
     var canTriggerHold: (() -> Bool)?
     var hasPressedMouseButtons: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
@@ -36,6 +39,7 @@ final class HoldMonitor {
         local = nil
         timer?.cancel()
         timer = nil
+        onAbandon?()
         triggered = false
         optionDown = false
         gesture = HoldGesture()
@@ -97,21 +101,26 @@ final class HoldMonitor {
             }
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.optionDown, self.canTriggerHold?() != false,
-                      !self.hasPressedMouseButtons() else { return }
+                      !self.hasPressedMouseButtons() else { self?.onAbandon?(); return }
                 self.triggered = true
                 self.onShow?()
             }
             timer = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+            // After this event is handled, so the monitor callback stays short.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.timer === work, !work.isCancelled, !self.isShowing else { return }
+                self.onPrepare?()
+            }
         case .cancel:
             onCancel?()
             timer?.cancel()
             timer = nil
-            if triggered { onHide?(.interruption, time) }
+            if triggered { onHide?(.interruption, time) } else { onAbandon?() }
         case .release:
             timer?.cancel()
             timer = nil
-            if triggered { onHide?(.release, time) }
+            if triggered { onHide?(.release, time) } else { onAbandon?() }
             triggered = false
             onRelease?()
         }

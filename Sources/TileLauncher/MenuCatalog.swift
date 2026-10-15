@@ -4,6 +4,7 @@ import DeckCore
 
 struct AvailableMenu: Identifiable {
     let path: [String]
+    var shortcut: MenuShortcut? = nil
     var id: String { path.joined(separator: "\u{1f}") }
     var title: String { path.joined(separator: " › ") }
 }
@@ -55,7 +56,9 @@ final class MenuCatalog: ObservableObject {
                 guard !MenuCapturePolicy.isAppleMenuPath(next) else { return }
                 let children = Self.children(element)
                 if role == kAXMenuItemRole, !title.isEmpty, children.isEmpty, next.count >= 2 {
-                    if Self.actions(element).contains(kAXPressAction) { found.append(AvailableMenu(path: next)) }
+                    if Self.actions(element).contains(kAXPressAction) {
+                        found.append(AvailableMenu(path: next, shortcut: Self.shortcut(element)))
+                    }
                 } else {
                     for child in children { walk(child, path: next, depth: depth + 1) }
                 }
@@ -75,7 +78,9 @@ final class MenuCatalog: ObservableObject {
         }
     }
 
-    func execute(_ command: MenuCommand, in app: AppItem, completion: @escaping (String?) -> Void) {
+    /// `shortcut` reports the item's current keyboard equivalent (nil = none) before it is pressed.
+    func execute(_ command: MenuCommand, in app: AppItem, shortcut: ((MenuShortcut?) -> Void)? = nil,
+                 completion: @escaping (String?) -> Void) {
         queue.async {
             func finish(_ error: String?) { DispatchQueue.main.async { completion(error) } }
             guard AXIsProcessTrusted(), command.appID == app.id else {
@@ -100,10 +105,18 @@ final class MenuCatalog: ObservableObject {
                 finish("지금은 ‘\(command.title)’ 메뉴를 사용할 수 없습니다. 문서나 선택 상태를 확인해 주세요."); return
             }
             guard Self.actions(current).contains(kAXPressAction) else { finish("이 메뉴는 실행 동작을 제공하지 않습니다."); return }
+            if let shortcut {
+                let equivalent = Self.shortcut(current)
+                DispatchQueue.main.async { shortcut(equivalent) }
+            }
             let result = AXUIElementPerformAction(current, kAXPressAction as CFString)
             // No automatic retry: a timeout can mean the target already acted.
             finish(result == .success ? nil : "메뉴 실행 결과를 확인하지 못했습니다. 대상 앱을 확인해 주세요.")
         }
+    }
+    private static func shortcut(_ element: AXUIElement) -> MenuShortcut? {
+        guard let key = value(element, kAXMenuItemCmdCharAttribute) as? String, !key.isEmpty else { return nil }
+        return MenuShortcut(key: key, modifiers: value(element, kAXMenuItemCmdModifiersAttribute) as? Int ?? 0)
     }
     private static func value(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
         var result: CFTypeRef?

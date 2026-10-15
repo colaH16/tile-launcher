@@ -54,7 +54,11 @@ struct MenuAdditionSheet: View {
                         Spacer()
                         let added = settings.commands.contains { $0.appID == selectedID && $0.path == menu.path }
                         Button(added ? "등록됨" : "추가") {
-                            if let app = selectedApp { settings.addCommand(MenuCommand(appID: app.id, appName: app.name, path: menu.path)) }
+                            if let app = selectedApp {
+                                var command = MenuCommand(appID: app.id, appName: app.name, path: menu.path)
+                                command.shortcut = menu.shortcut
+                                settings.addCommand(command)
+                            }
                         }.disabled(added)
                     }
                 }

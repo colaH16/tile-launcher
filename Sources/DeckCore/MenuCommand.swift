@@ -13,6 +13,10 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     // Three timestamps are sufficient for the fixed >=3 frequency threshold,
     // even when the user changes the lookback period. No unbounded event log.
     public private(set) var recentUses: [Date]
+    /// Last keyboard equivalent seen in the app's menu bar, if any.
+    public var shortcut: MenuShortcut?
+    /// User-chosen SF Symbol name for the overlay tile.
+    public var symbol: String?
     public var title: String { path.last ?? "" }
     public var totalUseCount: Int {
         let (total, overflow) = useCount.addingReportingOverflow(observedCount)
@@ -39,7 +43,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = false; observedCount = 0; recentUses = []
     }
     private enum CodingKeys: String, CodingKey {
-        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses
+        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -52,6 +56,8 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
         isAutomatic = try c.decodeIfPresent(Bool.self, forKey: .isAutomatic) ?? false
         observedCount = max(0, try c.decodeIfPresent(Int.self, forKey: .observedCount) ?? 0)
+        shortcut = try? c.decodeIfPresent(MenuShortcut.self, forKey: .shortcut)
+        symbol = MenuSymbolName.normalized(try? c.decodeIfPresent(String.self, forKey: .symbol))
         if let dates = try c.decodeIfPresent([Date].self, forKey: .recentUses) {
             recentUses = Array(dates.sorted(by: >).prefix(3))
         } else {

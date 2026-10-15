@@ -33,6 +33,10 @@ final class DesktopWindows {
     private(set) var records: [CGWindowID: ServerWindow] = [:]
     private(set) var valid = false
     private var activeSpaces: Set<UInt64> = []
+    /// Only these owners' windows can become tiles. nil checks every window.
+    var trackedPIDs: Set<pid_t>?
+    /// Window IDs already known from AX; their ordering decides closed-window retention.
+    var knownWindowIDs: Set<CGWindowID> = []
     private var memberships: [CGWindowID: Set<UInt64>] = [:]
 
     init() {
@@ -72,10 +76,14 @@ final class DesktopWindows {
                   let dictionary = row[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary), !bounds.isEmpty else { continue }
             let title = (row[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let alpha = (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            // One WindowServer call per window is the costliest part of a refresh.
+            // Ask only where the answer is used: a possible tile or a known AX window.
+            let relevant = (trackedPIDs.map { $0.contains(pid) } ?? true)
+                && (WindowPresence.serverCandidate(alpha: alpha, bounds: bounds) || knownWindowIDs.contains(id))
             records[id] = ServerWindow(id: id, pid: pid, title: title, bounds: bounds,
                                        onScreen: row[kCGWindowIsOnscreen as String] as? Bool ?? false,
-                                       alpha: (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1,
-                                       orderedIn: ordering(for: id))
+                                       alpha: alpha, orderedIn: relevant ? ordering(for: id) : nil)
         }
     }
     private func ordering(for id: CGWindowID) -> Bool? {
@@ -84,17 +92,13 @@ final class DesktopWindows {
         guard orderedIn(connection, id, &result) == 0, result <= 1 else { return nil }
         return result == 1
     }
-    func id(for element: AXUIElement, pid: pid_t) -> CGWindowID? {
+    /// `bounds` is the AX frame already read by the caller, if any.
+    func id(for element: AXUIElement, pid: pid_t, bounds: CGRect?) -> CGWindowID? {
         var id: CGWindowID = 0
         if windowNumber?(element, &id) == AXError.success.rawValue, id != 0,
            records[id]?.pid == pid { return id }
         // Exact, unambiguous geometry only; never guess among overlapping windows.
-        guard let position: AXValue = Self.attribute(element, kAXPositionAttribute),
-              let size: AXValue = Self.attribute(element, kAXSizeAttribute),
-              AXValueGetType(position) == .cgPoint, AXValueGetType(size) == .cgSize else { return nil }
-        var point = CGPoint.zero, dimensions = CGSize.zero
-        guard AXValueGetValue(position, .cgPoint, &point), AXValueGetValue(size, .cgSize, &dimensions) else { return nil }
-        let rect = CGRect(origin: point, size: dimensions)
+        guard let rect = bounds else { return nil }
         let matches = records.values.filter { $0.pid == pid && $0.bounds == rect }
         return matches.count == 1 ? matches[0].id : nil
     }
@@ -113,10 +117,5 @@ final class DesktopWindows {
     }
     private static func spaceID(_ dictionary: [String: Any]) -> UInt64? {
         ((dictionary["ManagedSpaceID"] ?? dictionary["id64"]) as? NSNumber)?.uint64Value
-    }
-    private static func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
-        return value as? T
     }
 }
