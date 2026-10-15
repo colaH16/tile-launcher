@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import DeckCore
+import ApplicationServices
 
 /// Explicit diagnostic, no foreground UI, production defaults, AX or app launch.
 enum MenuIconValidation {
@@ -24,29 +25,32 @@ enum MenuIconValidation {
                         ("Show in iTunes Store", "bag"), ("Show in Playlist", "music.note.list")]
         var commands: [MenuCommand] = []
         for (title, symbol) in expected {
-            var command = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["View", title])
+            var command = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["Song", title])
             command.resourceIcon = repository.resolve(command)
             try check(command.resourceIcon?.kind == .symbol && command.resourceIcon?.resourceName == symbol, "Music symbol: \(title)")
+            try check(command.resourceIcon?.sourceIdentity == repository.binding(for: command)?.identity
+                      && command.resourceIcon?.sourcePath == command.path, "Icon source identity/path detached from menu")
             try check(command.resourceIcon.flatMap(SavedMenuImages.image) != nil, "Symbol unavailable: \(symbol)")
             commands.append(command)
         }
-        let korean = MenuCommand(appID: "com.apple.Music", appName: "음악", path: ["보기", "보관함에서 아티스트 보기"])
+        let korean = MenuCommand(appID: "com.apple.Music", appName: "음악", path: ["노래", "보관함에서 아티스트 보기"])
         try check(repository.resolve(korean)?.resourceName == "microphone.dynamic.on.stand", "Korean menu localization")
         // Only preferred + US English + development languages are stored, one file per app.
         let stored = Set(repository.localizations(appID: "com.apple.Music") ?? [])
         try check(stored.contains("ko") && stored.contains("ja") && stored.contains("en") && !stored.contains("de"),
                   "Stored languages: \(stored.sorted())")
-        let appFiles = (try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("apps").path)) ?? []
+        let appFiles = (try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("apps-v3").path)) ?? []
         try check(appFiles.count == 1, "One catalog file per app")
         // A Korean name maps back to the English menu and vice versa.
-        let english = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["View", "Show Artist in Library"])
-        let aliases = repository.aliases(for: english)
-        try check(aliases?[0].contains("보기") == true && aliases?[1].contains("보관함에서 아티스트 보기") == true,
-                  "Language aliases: \(String(describing: aliases))")
-        var aliased = english; aliased.pathAliases = aliases
-        try check(MenuPathMatch.matches(["보기", "보관함에서 아티스트 보기"], aliased), "Korean path matches English menu")
-        try check(!(repository.aliases(for: english)?.joined().contains("Künstler in der Mediathek anzeigen") ?? false),
-                  "Unselected language stored")
+        let english = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["Song", "Show Artist in Library"])
+        let binding = repository.binding(for: english)
+        try check(binding?.paths.contains(["노래", "보관함에서 아티스트 보기"]) == true, "Item-scoped Korean path")
+        var aliased = english; aliased.resourceBinding = binding
+        try check(MenuPathMatch.matches(["노래", "보관함에서 아티스트 보기"], aliased), "Korean path matches same resource item")
+        try check(!MenuPathMatch.matches(["보기", "보관함에서 아티스트 보기"], aliased), "Wrong parent must not match")
+        let wrongParent = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["View", english.title])
+        try check(repository.resolve(wrongParent) == nil, "Icon matched a leaf under the wrong parent")
+        try check(!(binding?.paths.joined().contains("Künstler in der Mediathek anzeigen") ?? false), "Unselected language stored")
         // Compiled nib folders: newest runtime archive, named after the folder.
         let folder = URL(fileURLWithPath: "/X/Base.lproj/MainMenu.nib")
         let grouped = MenuIconRepository.nibs([folder.appendingPathComponent("keyedobjects-101300.nib"),
@@ -55,13 +59,13 @@ enum MenuIconValidation {
                                                 URL(fileURLWithPath: "/X/Base.lproj/Other.nib")])
         try check(grouped.map(\.name).sorted() == ["MainMenu", "Other"]
                   && grouped.first { $0.name == "MainMenu" }?.url.lastPathComponent == "keyedobjects-110000.nib", "Nib folder grouping")
-        let unavailable = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["View", "Show in Apple Music"])
+        let unavailable = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["Song", "Show in Apple Music"])
         try check(repository.resolve(unavailable) == nil, "Unavailable private symbol should not be guessed")
         let restarted = MenuIconRepository(root: root, preferredLanguages: languages)
         // A nil/changed source has no effect without explicit refresh.
         try restarted.prepare(appID: "com.apple.Music", name: "Music", url: nil, refresh: false)
         try check(restarted.resolve(commands[0]) == commands[0].resourceIcon, "Frozen catalog restart")
-        let borrowed = MenuCommand(appID: "synthetic.other", appName: "Other", path: ["View", expected[0].0])
+        let borrowed = MenuCommand(appID: "synthetic.other", appName: "Other", path: ["Song", expected[0].0])
         try check(restarted.resolve(borrowed)?.sourceAppID == "com.apple.Music", "Cross-app donor provenance")
         do {
             try restarted.prepare(appID: "com.apple.Music", name: "Music", url: nil, refresh: true)
@@ -108,6 +112,43 @@ enum MenuIconValidation {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         try check(!settings.refreshingMenuIcons.contains("com.apple.Music") && settings.commands[0].glyph == .symbol("star"), "Refresh overwrote manual choice")
+        let saved = settings.commands[0]
+        let savedID = saved.id
+        try check(saved.resourceBinding != nil && saved.id == manual.id && saved.isPinned, "Binding changed saved identity/pin")
+        settings.removeCommand(saved)
+        let beforeCapture = settings.commands.count
+        settings.recordCapturedMenu(CapturedMenu(appID: "com.apple.Music", appName: "Music", path: korean.path))
+        try check(settings.commands.count == beforeCapture, "Excluded Korean translation was collected")
+        var readded = saved; readded.resourceBinding = nil; readded.resourceIdentityVersion = nil
+        settings.addCommand(readded)
+        let restoredDeadline = Date().addingTimeInterval(10)
+        while settings.commands.first(where: { $0.id == savedID })?.resourceIdentityVersion != 1 && Date() < restoredDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(!settings.menuCapture.excludedMenus.contains(MenuIdentity(appID: "com.apple.Music", path: korean.path)), "Manual re-add did not restore translated paths")
+        let pending = MenuCommand(appID: "com.apple.Music", appName: "Music", path: commands[2].path)
+        settings.addCommand(pending); settings.removeCommand(pending)
+        settings.onRefreshMenuIcons?("com.apple.Music")
+        while settings.refreshingMenuIcons.contains("com.apple.Music") && Date() < restoredDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(!settings.commands.contains(where: { $0.id == pending.id }), "Deleted pending menu resurrected")
+        try check(settings.menuCapture.excludedMenus.contains(MenuIdentity(appID: "com.apple.Music", path: ["노래", "보관함에서 영화 보기"])), "Pending deletion lost translated exclusion")
+        // Production reader with mocked IPC boundaries; never queries/presses a real window.
+        let element = AXUIElementCreateApplication(getpid())
+        var reads = 0
+        let timedOut = WindowAttributeReader.read(element, batch: { _, _ in (.notImplemented, nil) }, single: { _, key in
+            reads += 1
+            return key == kAXRoleAttribute ? (.success, kAXWindowRole as CFString) : (.cannotComplete, nil)
+        })
+        try check(timedOut == nil && reads == 2, "Attribute fallback continued after timeout")
+        var error = AXError.cannotComplete
+        let errorValue = AXValueCreate(.axError, &error)!
+        var values = Array<AnyObject>(repeating: NSNull(), count: 6); values[2] = errorValue
+        let batchTimeout = WindowAttributeReader.read(element, batch: { _, _ in (.success, values) }, single: { _, _ in
+            reads += 1; return (.success, nil)
+        })
+        try check(batchTimeout == nil && reads == 2, "Embedded batch timeout was ignored")
         withExtendedLifetime(service) { }
         let gallery = VStack(alignment: .leading, spacing: 14) {
             Text("Music 메뉴 리소스 · SF Symbols").font(.headline)
@@ -128,6 +169,6 @@ enum MenuIconValidation {
             additionSize: CGSize(width: 516, height: 700), applicationProvider: { [musicApp] })
             .frame(width: 548, height: 900).background(Color(nsColor: .windowBackgroundColor))
         try PreviewExport.save(settingsPane, to: directory.appendingPathComponent("music-menu-settings.png"))
-        print("Verified 6 Music symbols + Korean, stored languages \(stored.sorted()), per-app file, Korean↔English aliases, nib folders, unavailable symbol fallback, persistence, cross-app borrowing, refresh, manual/automatic addition, original PDF/512px bitmap.")
+        print("Verified item-scoped paths/6 Music symbols, stored languages \(stored.sorted()), ID/pin preservation, translated exclusion/re-add/deletion race, bounded AX fallback, original PDF/512px bitmap.")
     }
 }

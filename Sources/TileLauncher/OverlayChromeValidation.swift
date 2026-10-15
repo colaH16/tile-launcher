@@ -55,6 +55,19 @@ enum OverlayChromeValidation {
         let before = fixture.content.snapshot
         let handoff = HandoffItem(appName: "Safari", appURL: PreviewIconAssets.app("Safari", path: "/Applications/Safari.app"),
                                   device: "com.apple.iphone-15-pro-1")
+        let app = AppItem(id: "test.editor", pid: 123, name: "Editor", url: nil)
+        let current = WindowItem(id: UUID(), pid: 123, appName: "Editor", appURL: nil, title: "Document A", minimized: false, appID: app.id)
+        let previous = WindowItem(id: UUID(), pid: 123, appName: "Editor", appURL: nil, title: "Document B", minimized: false, appID: app.id)
+        let probe = OverlayContent(before)
+        probe.refresh(context: app, apps: [app], windows: [current, previous], trusted: true, commands: [], manualCount: nil, handoff: handoff)
+        guard probe.snapshot.windows.first?.handoff != nil, probe.snapshot.menuContextWindow?.id == current.id,
+              probe.snapshot.windows.first(where: { $0.pid == app.pid })?.id == previous.id else {
+            throw NSError(domain: "TileLauncher.Preview", code: 103,
+                          userInfo: [NSLocalizedDescriptionKey: "Handoff altered the menu's source document"])
+        }
+        probe.refresh(context: app, apps: [app], windows: [previous], trusted: true, commands: [], manualCount: nil, handoff: nil)
+        guard probe.snapshot.menuContextWindow?.id == previous.id else { throw NSError(domain: "TileLauncher.Preview", code: 104) }
+        print("Handoff display replacement preserves Document A as the menu action context; later window changes update it.")
         fixture.content.snapshot = OverlaySnapshot(context: before.context, contextWindowTitle: before.contextWindowTitle,
             apps: before.apps, windows: OverlayContent.applyHandoff(handoff, to: before.windows), layout: before.layout,
             permission: true, pins: before.pins, profileID: before.profileID, profileName: before.profileName,

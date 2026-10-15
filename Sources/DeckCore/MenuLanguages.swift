@@ -21,43 +21,58 @@ public enum MenuLanguageSelection {
     }
 }
 
-/// Equivalent names of the same menu item across the stored languages.
-/// Keys and values are normalized like `MenuIconMatch.key`.
-public enum MenuAliasIndex {
-    /// `items` are (base title, localization key); each table maps keys to a language's titles.
-    public static func build(items: [(title: String, key: String?)], tables: [[String: String]],
-                             limit: Int = 20_000) -> [String: [String]] {
-        var groups: [String: Set<String>] = [:]
-        for item in items {
-            var names: Set<String> = [item.title]
-            if let key = item.key { for table in tables { if let name = table[key], !name.isEmpty { names.insert(name) } } }
-            guard names.count > 1 else { continue }
-            for name in names {
-                let normalized = MenuIconMatch.key(name)
-                guard groups[normalized] != nil || groups.count < limit else { continue }
-                groups[normalized, default: []].formUnion(names)
-            }
-        }
-        return groups.mapValues { $0.sorted() }
-    }
-    /// Other-language names for each level of `path`, or nil when nothing is known.
-    public static func aliases(for path: [String], in index: [String: [String]]) -> [[String]]? {
-        let levels = path.map { title in (index[MenuIconMatch.key(title)] ?? []).filter { $0 != title } }
-        return levels.contains { !$0.isEmpty } ? levels : nil
+/// Resource identity is scoped to an app, archive and the complete ancestor-key
+/// chain. Display titles are never the identity key.
+public struct MenuResourceIdentity: Codable, Hashable, Sendable {
+    public let appID: String
+    public let archive: String
+    public let keys: [String]
+    public init(appID: String, archive: String, keys: [String]) {
+        self.appID = appID; self.archive = archive; self.keys = keys
     }
 }
 
-/// Matches a menu path against a stored command, allowing each level to be the
-/// stored title or one of its language aliases. Used for execution and capture
-/// after an app's language changes; ambiguity is handled by the callers.
+/// Whole paths in individual languages, never independent per-level synonyms.
+public struct MenuResourceBinding: Codable, Equatable, Sendable {
+    public let identity: MenuResourceIdentity
+    public let paths: [[String]]
+    public init(identity: MenuResourceIdentity, paths: [[String]]) {
+        self.identity = identity; self.paths = paths
+    }
+}
+
+public enum MenuResourceMatch {
+    public static func binding(appID: String, path: [String], entries: [MenuResourceBinding]) -> MenuResourceBinding? {
+        let own = entries.filter { $0.identity.appID == appID }
+        let matches = own.filter { $0.paths.contains { MenuPathMatch.same($0, path) } }
+        guard Set(matches.map(\.identity)).count == 1, let first = matches.first else { return nil }
+        // Even a translation of a uniquely identified item is unsafe if that
+        // translated path is also used by another item in this catalog.
+        let paths = own.filter { $0.identity == first.identity }.flatMap(\.paths).filter { translated in
+            !own.contains { $0.identity != first.identity && $0.paths.contains { MenuPathMatch.same($0, translated) } }
+        }
+        return MenuResourceBinding(identity: first.identity, paths: MenuPathMatch.unique(paths))
+    }
+}
+
 public enum MenuPathMatch {
-    public static func names(_ command: MenuCommand, level: Int) -> Set<String> {
-        guard command.path.indices.contains(level) else { return [] }
-        let aliases = command.pathAliases.flatMap { $0.indices.contains(level) ? $0[level] : nil } ?? []
-        return Set(([command.path[level]] + aliases).map(MenuIconMatch.key))
+    public static func key(_ path: [String]) -> [String] {
+        path.map(\.precomposedStringWithCanonicalMapping)
+    }
+    public static func same(_ lhs: [String], _ rhs: [String]) -> Bool { key(lhs) == key(rhs) }
+    public static func unique(_ paths: [[String]]) -> [[String]] {
+        var seen = Set<[String]>()
+        return paths.filter { seen.insert(key($0)).inserted }
+    }
+    public static func paths(_ command: MenuCommand) -> [[String]] {
+        guard let binding = command.resourceBinding, binding.identity.appID == command.appID,
+              !binding.identity.archive.isEmpty, (2...12).contains(binding.identity.keys.count),
+              binding.paths.count <= 128,
+              binding.paths.allSatisfy({ (2...12).contains($0.count) && $0.allSatisfy { !$0.isEmpty && $0.count <= 256 } }),
+              binding.paths.contains(where: { same($0, command.path) }) else { return [command.path] }
+        return unique([command.path] + binding.paths)
     }
     public static func matches(_ path: [String], _ command: MenuCommand) -> Bool {
-        path.count == command.path.count
-            && path.indices.allSatisfy { names(command, level: $0).contains(MenuIconMatch.key(path[$0])) }
+        paths(command).contains { same($0, path) }
     }
 }

@@ -14,16 +14,39 @@ final class MenuLanguageTests: XCTestCase {
                                                         development: "en", capturedIn: ["de", "xx"])
         XCTAssertEqual(withCaptured, ["en", "ko", "de"])
     }
-    func testAliasesLinkTranslatedNamesOfTheSameItem() {
-        let index = MenuAliasIndex.build(items: [("File", "f.title"), ("New Tab", "t.title"), ("Untranslated", nil)],
-                                         tables: [["f.title": "파일", "t.title": "새로운 탭"], ["t.title": "新規タブ"]])
-        XCTAssertEqual(MenuAliasIndex.aliases(for: ["File", "New Tab"], in: index)?.map { $0.sorted() }, [["파일"], ["新規タブ", "새로운 탭"].sorted()])
-        XCTAssertEqual(MenuAliasIndex.aliases(for: ["파일", "새로운 탭"], in: index)?[1].sorted(), ["New Tab", "新規タブ"])
-        XCTAssertNil(MenuAliasIndex.aliases(for: ["Untranslated"], in: index))
+    private func binding(_ key: String, _ paths: [[String]], archive: String = "MainMenu.nib") -> MenuResourceBinding {
+        .init(identity: .init(appID: "finder", archive: archive, keys: ["parent", key]), paths: paths)
+    }
+    func testSameLeafUnderDifferentParentsNeverSharesTranslations() {
+        let file = binding("file.open", [["File", "Open"], ["파일", "문서 열기"]])
+        let project = binding("project.open", [["Project", "Open"], ["프로젝트", "프로젝트 열기"]])
+        let matched = MenuResourceMatch.binding(appID: "finder", path: ["File", "Open"], entries: [file, project])
+        XCTAssertEqual(matched, file)
+        var command = MenuCommand(appID: "finder", appName: "Finder", path: ["File", "Open"])
+        command.resourceBinding = matched
+        XCTAssertTrue(MenuPathMatch.matches(["파일", "문서 열기"], command))
+        XCTAssertFalse(MenuPathMatch.matches(["파일", "프로젝트 열기"], command))
+        XCTAssertFalse(MenuPathMatch.matches(["프로젝트", "프로젝트 열기"], command))
+    }
+    func testWholePathsDoNotCombineLanguagesOrTrustLegacyAliases() {
+        var command = MenuCommand(appID: "finder", appName: "Finder", path: ["File", "Open"])
+        command.pathAliases = [["파일"], ["문서 열기", "프로젝트 열기"]]
+        XCTAssertFalse(MenuPathMatch.matches(["파일", "프로젝트 열기"], command))
+        command.resourceBinding = binding("file.open", [["File", "Open"], ["파일", "문서 열기"], ["ファイル", "開く"]])
+        XCTAssertFalse(MenuPathMatch.matches(["파일", "開く"], command))
+        XCTAssertEqual(MenuPathMatch.paths(command).count, 3)
+    }
+    func testDuplicateFullPathOrResourceArchiveDoesNotGuessIdentity() {
+        let a = binding("open", [["File", "Open"], ["파일", "열기"]])
+        let b = binding("open", [["Project", "Open"], ["파일", "열기"]], archive: "OtherMenu.nib")
+        XCTAssertNil(MenuResourceMatch.binding(appID: "finder", path: ["파일", "열기"], entries: [a,b]))
+        let english = MenuResourceMatch.binding(appID: "finder", path: ["File", "Open"], entries: [a,b])
+        XCTAssertEqual(english?.paths, [["File", "Open"]])
+        XCTAssertNil(MenuResourceMatch.binding(appID: "another.app", path: ["File", "Open"], entries: [a]))
     }
     func testCaptureInAnotherLanguageMergesIntoTheSavedMenu() {
         var english = MenuCommand(appID: "finder", appName: "Finder", path: ["File", "New Tab"])
-        english.pathAliases = [["파일"], ["새로운 탭"]]
+        english.resourceBinding = binding("new.tab", [["File", "New Tab"], ["파일", "새로운 탭"]])
         english.shortcut = MenuShortcut(key: "t", modifiers: 0)
         let korean = CapturedMenu(appID: "finder", appName: "Finder", path: ["파일", "새로운 탭"], shortcut: "t", shortcutKnown: true)
         let merged = MenuCaptureHistory.record(korean, in: [english], at: Date())

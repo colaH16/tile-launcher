@@ -30,6 +30,8 @@ final class WindowTracker {
     private var pending: [pid_t: DispatchWorkItem] = [:]
     private var applicationIDs: [pid_t: UUID] = [:]
     private var focusRequest: WindowFocusRequest?
+    private var readRetries: [pid_t: DispatchWorkItem] = [:]
+    private var retryBudgets: [pid_t: AXReadRetryBudget] = [:]
     private let windowEvents = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
                                 kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
                                 kAXMovedNotification, kAXResizedNotification]
@@ -42,6 +44,7 @@ final class WindowTracker {
             for pid in Set(self.apps.keys).subtracting(newApps.keys) { self.remove(pid) }
             self.apps = newApps
             if !trusted {
+                for pid in Array(self.readRetries.keys) { self.cancelReadRetry(pid, reset: true) }
                 for pid in Array(self.observers.keys) { self.remove(pid) }
                 self.windows.removeAll()
                 self.publish()
@@ -58,6 +61,7 @@ final class WindowTracker {
     }
     func activate(_ app: AppItem) {
         queue.async {
+            self.cancelReadRetry(app.pid, reset: true)
             self.activePID = app.pid
             self.apps[app.pid] = app
             guard self.enabled else { return }
@@ -201,31 +205,8 @@ final class WindowTracker {
         desktops.knownWindowIDs = Set(windows.values.joined().compactMap(\.item.windowID))
         desktops.refresh()
     }
-    private static let windowKeys = [kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute,
-                                     kAXMinimizedAttribute, kAXPositionAttribute, kAXSizeAttribute]
-    /// One AX round trip for all window attributes. A missing attribute is nil.
-    /// `.cannotComplete` means the app did not answer; other failures fall back
-    /// to individual reads for apps that do not implement the batched call.
     private func windowAttributes(_ element: AXUIElement) -> [CFTypeRef?]? {
-        var raw: CFArray?
-        let result = AXUIElementCopyMultipleAttributeValues(element, Self.windowKeys as CFArray,
-                                                            AXCopyMultipleAttributeOptions(rawValue: 0), &raw)
-        if result == .cannotComplete { return nil }
-        guard result == .success, let array = raw as? [AnyObject], array.count == Self.windowKeys.count else {
-            // Apps without the batched call: check the role first and stop early,
-            // so a failing or non-window element costs one request, not six.
-            var role: CFTypeRef?
-            let roleResult = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
-            if roleResult == .cannotComplete { return nil }
-            guard roleResult == .success, role as? String == kAXWindowRole else {
-                return [roleResult == .success ? role : nil] + Array(repeating: nil, count: Self.windowKeys.count - 1)
-            }
-            return [role] + Self.windowKeys.dropFirst().map { value(element, $0) }
-        }
-        return array.map { item in
-            if CFGetTypeID(item) == AXValueGetTypeID(), AXValueGetType(item as! AXValue) == .axError { return nil }
-            return item
-        }
+        WindowAttributeReader.read(element)
     }
     private func value(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
         var result: CFTypeRef?
@@ -301,6 +282,18 @@ final class WindowTracker {
         // A busy/hung app already used its timeout on the list. Do not spend a
         // further timeout per known window; keep them until the app answers.
         var unresponsive = readResult == .cannotComplete
+        defer {
+            if unresponsive { scheduleReadRetry(pid, focusEvent: focusEvent) }
+            else { cancelReadRetry(pid, reset: true) }
+        }
+        func read(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
+            guard !unresponsive else { return nil }
+            AXUIElementSetMessagingTimeout(element, 0.15)
+            var raw: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(element, key as CFString, &raw)
+            if result == .cannotComplete { unresponsive = true }
+            return result == .success ? raw : nil
+        }
         let applicationHidden = NSRunningApplication(processIdentifier: pid)?.isHidden == true
         let old = windows[pid] ?? []
         var next: [TrackedWindow] = []
@@ -344,15 +337,23 @@ final class WindowTracker {
             let number = missing.item.windowID
             let record = number.flatMap { desktops.records[$0] }
             let minimized = unresponsive ? missing.item.minimized
-                : missing.element.flatMap { value($0, kAXMinimizedAttribute) as? Bool } ?? missing.item.minimized
+                : missing.element.flatMap { read($0, kAXMinimizedAttribute) as? Bool } ?? missing.item.minimized
+            var invalid = false
+            if !unresponsive, let element = missing.element {
+                AXUIElementSetMessagingTimeout(element, 0.15)
+                var role: CFTypeRef?
+                let result = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+                invalid = result == .invalidUIElement
+                if result == .cannotComplete { unresponsive = true }
+            }
             let retainedAX = missing.element != nil && WindowPresence.retainMissingAX(
-                orderedIn: record?.orderedIn, axComplete: axComplete,
+                orderedIn: record?.orderedIn, axComplete: axComplete && !unresponsive,
                 minimized: minimized, applicationHidden: applicationHidden)
             let exists = desktops.valid ? number.map {
                 desktops.records[$0]?.pid == pid && (retainedAX || desktops.records[$0]?.isCandidate == true)
             } : nil
             guard WindowRetention.keepMissing(serverStillContains: exists,
-                                               axInvalid: unresponsive ? false : missing.element.map(isInvalid) ?? false,
+                                               axInvalid: invalid,
                                                destroyed: number.map { destroyed[pid, default: []].contains($0) } ?? false) else {
                 if let element = missing.element, let observer = observers[pid] {
                     for key in windowEvents { _ = AXObserverRemoveNotification(observer, element, key as CFString) }
@@ -376,7 +377,10 @@ final class WindowTracker {
                 windowID: server.id, appID: appInfo.id, desktop: .other, bounds: server.bounds)))
         }
         let serverCandidates = desktops.records.values.filter { $0.pid == pid && $0.isCandidate }.count
-        if WindowPresence.applicationOnly(axComplete: axComplete, inventoryComplete: desktops.valid,
+        if unresponsive, next.isEmpty, let prior = old.first(where: { $0.item.isApplication }) {
+            next.append(prior)
+        }
+        if WindowPresence.applicationOnly(axComplete: axComplete && !unresponsive, inventoryComplete: desktops.valid,
                                           accessibleWindows: next.count, serverCandidates: serverCandidates) {
             let id = applicationIDs[pid] ?? UUID()
             applicationIDs[pid] = id
@@ -386,14 +390,34 @@ final class WindowTracker {
                 runningApplication: NSRunningApplication(processIdentifier: pid))))
         }
         windows[pid] = next
-        if focusEvent, !unresponsive, let focused = value(app, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(),
+        if focusEvent, !unresponsive, let focused = read(app, kAXFocusedWindowAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID(),
            let match = next.first(where: { $0.element.map { CFEqual($0, focused) } ?? false }) {
             recency.touch(match.item.id)
         } else if focusEvent, let application = next.first(where: { $0.item.isApplication }) {
             recency.touch(application.item.id)
         }
     }
+    private func cancelReadRetry(_ pid: pid_t, reset: Bool) {
+        readRetries.removeValue(forKey: pid)?.cancel()
+        if reset { retryBudgets.removeValue(forKey: pid) }
+    }
+    private func scheduleReadRetry(_ pid: pid_t, focusEvent: Bool) {
+        guard enabled, apps[pid] != nil, readRetries[pid] == nil else { return }
+        var budget = retryBudgets[pid] ?? AXReadRetryBudget()
+        guard let delay = budget.nextDelay() else { return }
+        retryBudgets[pid] = budget
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.enabled, self.apps[pid] != nil else { return }
+            self.readRetries[pid] = nil
+            self.refreshDesktops()
+            self.refresh(pid, focusEvent: focusEvent && self.activePID == pid)
+            self.publish()
+        }
+        readRetries[pid] = work
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
     private func remove(_ pid: pid_t) {
+        cancelReadRetry(pid, reset: true)
         pending.removeValue(forKey: pid)?.cancel()
         windows[pid] = nil
         destroyed[pid] = nil

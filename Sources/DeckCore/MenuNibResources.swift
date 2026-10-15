@@ -5,6 +5,7 @@ import Foundation
 /// Layout reference: github.com/matsmattsson/nibsqueeze/blob/master/NibArchive.md
 public enum MenuNibResources {
     public struct Link: Equatable {
+        public let objectIndex: Int
         public let title: String
         public let titleKey: String?
         public let parent: String?
@@ -14,8 +15,15 @@ public enum MenuNibResources {
     }
     /// Any titled menu item with its localization key; used for language aliases.
     public struct Item: Equatable {
+        public let objectIndex: Int
         public let title: String
         public let titleKey: String?
+        public let path: [Component]?
+    }
+    public struct Component: Equatable {
+        public let title: String
+        public let titleKey: String?
+        public let identityKey: String
     }
     public static func links(in data: Data) -> [Link] {
         (try? Archive(data).links()) ?? []
@@ -129,10 +137,32 @@ public enum MenuNibResources {
             objects[i].name == "NSMenuItem" || string(i, "NSOriginalClassName") == "NSMenuItem"
         }
         func items() -> [Item] {
-            objects.indices.compactMap { i in
+            let owners = Dictionary(grouping: objects.indices.filter { isMenuItem($0) && reference($0, "NSSubmenu") != nil },
+                                    by: { reference($0, "NSSubmenu")! })
+            func path(_ start: Int) -> [Component]? {
+                var current = start, seen = Set<Int>(), result: [Component] = []
+                for _ in 0..<12 {
+                    guard seen.insert(current).inserted, let titleRef = reference(current, "NSTitle"),
+                          let title = string(titleRef), !title.isEmpty, title.count <= 240 else { return nil }
+                    let titleKey = string(titleRef, "NSKey")
+                    let identifier = string(current, "NSMenuItemIdentifier")
+                    // An untranslated ancestor can use its literal name, but a
+                    // leaf without an archive key cannot create language bindings.
+                    if current == start && identifier == nil && titleKey == nil { return nil }
+                    result.insert(Component(title: title, titleKey: titleKey,
+                        identityKey: identifier.map { "id:" + $0 } ?? titleKey.map { "key:" + $0 } ?? "literal:" + title), at: 0)
+                    guard let menu = reference(current, "NSMenu") else { return nil }
+                    let parents = owners[menu] ?? []
+                    if parents.isEmpty { return result.count >= 2 ? result : nil }
+                    guard parents.count == 1 else { return nil }
+                    current = parents[0]
+                }
+                return nil // Cycle, excessive depth or shared submenu: don't guess.
+            }
+            return objects.indices.compactMap { i in
                 guard isMenuItem(i), let titleRef = reference(i, "NSTitle"), let title = string(titleRef),
                       !title.isEmpty, title.count <= 240 else { return nil }
-                return Item(title: title, titleKey: string(titleRef, "NSKey"))
+                return Item(objectIndex: i, title: title, titleKey: string(titleRef, "NSKey"), path: path(i))
             }
         }
         func links() -> [Link] {
@@ -143,7 +173,7 @@ public enum MenuNibResources {
                       string(image, "NSClassName") == "NSImage",
                       let resource = string(image, "NSResourceName"), !resource.isEmpty, resource.count <= 240 else { return nil }
                 let parent = reference(i, "NSMenu").flatMap { reference($0, "NSTitle") }
-                return Link(title: title, titleKey: string(titleRef, "NSKey"), parent: string(parent),
+                return Link(objectIndex: i, title: title, titleKey: string(titleRef, "NSKey"), parent: string(parent),
                             parentKey: string(parent, "NSKey"), resource: resource,
                             systemSymbol: string(image, "NSCatalogName") == "system" || string(image, "IBNamespaceID") == "system")
             }

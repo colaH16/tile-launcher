@@ -6,18 +6,21 @@ final class MenuResourceIconTests: XCTestCase {
         MenuResourceIcon(kind: .symbol, digest: String(repeating: digest, count: 64), template: true,
                          sourceAppID: app, sourceAppName: app, resourceName: "film")
     }
-    func testOwnParentWinsAndBorrowingRequiresUnambiguousExactTitle() {
+    func testIconsUseFullPathsAndNeverFallBackToOwnLeafTitle() {
         let own = icon(), other = icon("other", "b")
-        let pool = [MenuIconCandidate(title: "Open", parent: "File", icon: own),
-                    MenuIconCandidate(title: "Open", parent: "Edit", icon: other)]
-        XCTAssertEqual(MenuIconMatch.resolve(appID: "music", path: ["File", "Open"], candidates: pool), own)
-        XCTAssertNil(MenuIconMatch.resolve(appID: "third", path: ["File", "Open"], candidates: pool))
-        XCTAssertEqual(MenuIconMatch.resolve(appID: "third", path: ["File", " OPEN "], candidates: [pool[0]]), own)
-        XCTAssertNil(MenuIconMatch.resolve(appID: "third", path: ["File", "Open…"], candidates: pool))
-        XCTAssertNil(MenuIconMatch.resolve(appID: "third", path: ["File", "열기"], candidates: pool))
-        let conflict = MenuIconCandidate(title: "Open", parent: "Other", icon: icon("music", "b"))
-        XCTAssertEqual(MenuIconMatch.resolve(appID: "music", path: ["File", "Open"], candidates: [pool[0], conflict]), own)
-        XCTAssertNil(MenuIconMatch.resolve(appID: "music", path: ["Unknown", "Open"], candidates: [pool[0], conflict]))
+        func candidate(_ path: [String], _ resource: MenuResourceIcon, _ key: String) -> MenuIconCandidate {
+            .init(path: path, identity: .init(appID: resource.sourceAppID, archive: "Main.nib", keys: ["root", key]), icon: resource)
+        }
+        let file = candidate(["File", "Open"], own, "file.open")
+        let project = candidate(["Project", "Open"], other, "project.open")
+        XCTAssertEqual(MenuIconMatch.resolve(appID: "music", path: file.path, candidates: [file, project]), own)
+        XCTAssertEqual(MenuIconMatch.resolve(appID: "third", path: file.path, candidates: [file, project]), own)
+        XCTAssertNil(MenuIconMatch.resolve(appID: "music", path: ["Unknown", "Open"], candidates: [file]))
+        XCTAssertNil(MenuIconMatch.resolve(appID: "music", path: ["File", "Open…"], candidates: [file]))
+        let duplicate = candidate(file.path, own, "other.item")
+        XCTAssertNil(MenuIconMatch.resolve(appID: "music", path: file.path, candidates: [file, duplicate]))
+        let conflict = candidate(file.path, other, "other.file")
+        XCTAssertNil(MenuIconMatch.resolve(appID: "third", path: file.path, candidates: [file, conflict]))
     }
     func testManualChoiceAndNoIconOverrideResourceWhileDefaultPrefersResource() {
         let resource = icon(), shortcut = MenuShortcut(key: "o", modifiers: 0)
@@ -49,7 +52,17 @@ final class MenuResourceIconTests: XCTestCase {
         XCTAssertEqual(links.first?.parent, "View")
         XCTAssertEqual(links.first?.resource, "film")
         XCTAssertEqual(links.first?.systemSymbol, true)
+        let item = MenuNibResources.contents(in: nib()).items.first { $0.title == "Show Movie in Library" }
+        XCTAssertEqual(item?.path?.map(\.title), ["View", "Show Movie in Library"])
+        XCTAssertEqual(item?.path?.map(\.identityKey), ["key:view.title", "key:movie.title"])
         XCTAssertTrue(MenuNibResources.links(in: nib(imageKey: "NSOnImage")).isEmpty)
+    }
+    func testSharedAndCyclicSubmenusDoNotInventAParentPath() {
+        for data in [nib(cyclic: true), nib(shared: true)] {
+            let leaf = MenuNibResources.contents(in: data).items.first { $0.title == "Show Movie in Library" }
+            XCTAssertNotNil(leaf)
+            XCTAssertNil(leaf?.path)
+        }
     }
     func testTruncatedUnknownAndMaliciousArchivesFailClosed() {
         let valid = nib()
@@ -69,21 +82,24 @@ final class MenuResourceIconTests: XCTestCase {
     }
     /// Independent minimal encoder for a menu → resource link. No Cocoa objects
     /// are decoded/executed by the production parser.
-    private func nib(imageKey: String = "NSImage") -> Data {
+    private func nib(imageKey: String = "NSImage", cyclic: Bool = false, shared: Bool = false) -> Data {
         func u32(_ n: Int) -> [UInt8] { (0..<4).map { UInt8(truncatingIfNeeded: n >> ($0 * 8)) } }
         func vi(_ number: Int) -> [UInt8] {
             var n = number, result: [UInt8] = []
             repeat { let part = UInt8(n & 127); n >>= 7; result.append(part | (n == 0 ? 128 : 0)) } while n != 0
             return result
         }
-        let keys = ["NSTitle", imageKey, "NSMenu", "NS.bytes", "NSKey", "NSResourceName", "NSCatalogName", "NSClassName"]
+        let keys = ["NSTitle", imageKey, "NSMenu", "NS.bytes", "NSKey", "NSResourceName", "NSCatalogName", "NSClassName", "NSSubmenu"]
         let names = ["NSMenuItem", "NSLocalizableString", "NSString", "NSMenu", "NSCustomResource"]
         func ref(_ key: Int, _ object: Int) -> [UInt8] { vi(key) + [10] + u32(object) }
         func text(_ value: String) -> [UInt8] { vi(3) + [8] + vi(value.utf8.count) + Array(value.utf8) }
-        let fields: [(Int, [[UInt8]])] = [
+        var fields: [(Int, [[UInt8]])] = [
             (0, [ref(0,1), ref(1,5), ref(2,3)]), (1, [text("Show Movie in Library"), ref(4,2)]),
             (2, [text("movie.title")]), (3, [ref(0,4)]), (2, [text("View")]),
-            (4, [ref(5,6), ref(6,7), ref(7,8)]), (2, [text("film")]), (2, [text("system")]), (2, [text("NSImage")])]
+            (4, [ref(5,6), ref(6,7), ref(7,8)]), (2, [text("film")]), (2, [text("system")]), (2, [text("NSImage")]),
+            (0, [ref(0,10), ref(2,cyclic ? 3 : 11), ref(8,3)]), (1, [text("View"), ref(4,13)]),
+            (3, [ref(0,12)]), (2, [text("AMainMenu")]), (2, [text("view.title")])]
+        if shared { fields.append((0, [ref(0,10), ref(2,11), ref(8,3)])) }
         var objects: [UInt8] = [], values: [UInt8] = [], valueCount = 0
         for (name, fields) in fields {
             objects += vi(name) + vi(valueCount) + vi(fields.count)

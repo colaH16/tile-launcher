@@ -20,8 +20,10 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     public var symbol: String?
     /// Automatically acquired image; a user's symbol/no-icon choice still wins.
     public var resourceIcon: MenuResourceIcon?
-    /// Each path level's names in the app's other stored languages (R191).
+    /// Legacy title-only aliases: decoded for compatibility, never executed.
     public var pathAliases: [[String]]?
+    public var resourceBinding: MenuResourceBinding?
+    public var resourceIdentityVersion: Int?
     public var title: String { path.last ?? "" }
     public var totalUseCount: Int {
         let (total, overflow) = useCount.addingReportingOverflow(observedCount)
@@ -48,7 +50,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = false; observedCount = 0; recentUses = []
     }
     private enum CodingKeys: String, CodingKey {
-        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol, resourceIcon, pathAliases
+        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol, resourceIcon, pathAliases, resourceBinding, resourceIdentityVersion
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -59,6 +61,8 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         // the user's menu list fail to decode.
         resourceIcon = try? c.decodeIfPresent(MenuResourceIcon.self, forKey: .resourceIcon)
         pathAliases = try? c.decodeIfPresent([[String]].self, forKey: .pathAliases)
+        resourceBinding = try? c.decodeIfPresent(MenuResourceBinding.self, forKey: .resourceBinding)
+        resourceIdentityVersion = try? c.decodeIfPresent(Int.self, forKey: .resourceIdentityVersion)
         path = try c.decode([String].self, forKey: .path)
         isPinned = try c.decode(Bool.self, forKey: .isPinned)
         useCount = max(0, try c.decode(Int.self, forKey: .useCount))

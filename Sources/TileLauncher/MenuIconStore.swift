@@ -12,39 +12,44 @@ final class MenuIconRepository {
     private struct AppCatalog: Codable {
         let appID: String
         let candidates: [MenuIconCandidate]
-        /// Normalized title → that item's names in the stored languages.
-        let aliases: [String: [String]]
+        let entries: [MenuResourceBinding]
         let localizations: [String]
     }
     private static let fileLimit = 8 * 1024 * 1024
     let root: URL
     private let preferredLanguages: [String]
     private var catalogs: [String: AppCatalog] = [:]
-    private var titles: [String: [MenuIconCandidate]] = [:]
+    private var paths: [[String]: [MenuIconCandidate]] = [:]
     init(root: URL = defaultRoot, preferredLanguages: [String] = Locale.preferredLanguages) {
         self.root = root
         self.preferredLanguages = preferredLanguages
-        let directory = root.appendingPathComponent("apps", isDirectory: true)
+        let directory = root.appendingPathComponent("apps-v3", isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         for file in files.filter({ $0.pathExtension == "json" }).prefix(1024) {
             guard let data = Self.read(file, limit: Self.fileLimit),
                   let catalog = try? JSONDecoder().decode(AppCatalog.self, from: data) else { continue }
             catalogs[catalog.appID] = catalog
         }
-        rebuildTitles()
+        rebuildPaths()
     }
-    private func rebuildTitles() {
-        titles = Dictionary(grouping: catalogs.values.flatMap(\.candidates), by: { MenuIconMatch.key($0.title) })
+    private func rebuildPaths() {
+        paths = Dictionary(grouping: catalogs.values.flatMap(\.candidates), by: { MenuPathMatch.key($0.path) })
     }
     private func file(for appID: String) -> URL {
         let name = SHA256.hash(data: Data(appID.utf8)).map { String(format: "%02x", $0) }.joined()
-        return root.appendingPathComponent("apps/\(name).json")
+        return root.appendingPathComponent("apps-v3/\(name).json")
+    }
+    func binding(for command: MenuCommand) -> MenuResourceBinding? {
+        guard let catalog = catalogs[command.appID] else { return nil }
+        return MenuResourceMatch.binding(appID: command.appID, path: command.path, entries: catalog.entries)
     }
     func resolve(_ command: MenuCommand) -> MenuResourceIcon? {
-        MenuIconMatch.resolve(appID: command.appID, path: command.path, candidates: titles[MenuIconMatch.key(command.title)] ?? [])
-    }
-    func aliases(for command: MenuCommand) -> [[String]]? {
-        catalogs[command.appID].flatMap { MenuAliasIndex.aliases(for: command.path, in: $0.aliases) }
+        let binding = binding(for: command)
+        if binding == nil, catalogs[command.appID]?.entries.contains(where: { $0.paths.contains { MenuPathMatch.same($0, command.path) } }) == true {
+            return nil // Known ambiguous own-app path; a borrowed icon must not mask it.
+        }
+        let candidates = paths[MenuPathMatch.key(command.path)] ?? []
+        return MenuIconMatch.resolve(appID: command.appID, path: command.path, candidates: candidates)
     }
     func localizations(appID: String) -> [String]? { catalogs[appID]?.localizations }
     /// `capturedTitles` are this app's saved menu names; a localization that
@@ -63,7 +68,7 @@ final class MenuIconRepository {
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         try encoded.write(to: output, options: .atomic)
         catalogs[appID] = catalog
-        rebuildTitles()
+        rebuildPaths()
     }
     private static func read(_ url: URL, limit: Int) -> Data? {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= limit,
@@ -100,7 +105,7 @@ final class MenuIconRepository {
         let rootPath = resources.resolvingSymlinksInPath().path + "/"
         guard let walker = fm.enumerator(at: resources, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
                                          options: [.skipsHiddenFiles]) else {
-            return AppCatalog(appID: appID, candidates: [], aliases: [:], localizations: [])
+            return AppCatalog(appID: appID, candidates: [], entries: [], localizations: [])
         }
         var nibFiles: [URL] = []
         // nib name → [(localization, file)]
@@ -126,7 +131,7 @@ final class MenuIconRepository {
             }
         }
         // Parse every menu archive once, and read its translations for all languages.
-        var parsed: [(links: [MenuNibResources.Link], items: [MenuNibResources.Item], strings: [String: [String: String]])] = []
+        var parsed: [(archive: String, links: [MenuNibResources.Link], items: [MenuNibResources.Item], strings: [String: [String: String]])] = []
         var totalBytes = 0, localizationBytes = 0
         for (name, file) in Self.nibs(nibFiles).prefix(256) {
             guard let data = Self.read(file, limit: 8 * 1024 * 1024) else { continue }
@@ -142,7 +147,10 @@ final class MenuIconRepository {
                     strings[language, default: [:]].merge(values) { first, _ in first }
                 }
             }
-            parsed.append((contents.links, contents.items, strings))
+            let archiveFile = file.deletingLastPathComponent().pathExtension == "nib" ? file.deletingLastPathComponent() : file
+            let archive = archiveFile.path.dropFirst(resources.path.count + 1).split(separator: "/")
+                .filter { !$0.hasSuffix(".lproj") }.joined(separator: "/")
+            parsed.append((archive, contents.links, contents.items, strings))
         }
         // Keep macOS preferred languages, US English, the development language and
         // any language the user's captured menus of this app are written in.
@@ -152,17 +160,25 @@ final class MenuIconRepository {
         let selected = MenuLanguageSelection.select(available: bundle.localizations, preferred: preferredLanguages,
                                                     development: bundle.developmentLocalization, capturedIn: captured)
         var result: [MenuIconCandidate] = []
-        var aliases: [String: Set<String>] = [:]
+        var entries: [MenuResourceBinding] = []
         var seen = Set<MenuResourceKey>()
         var pictures: [String: MenuResourceIcon] = [:]
         var imageBytes = 0
         for nib in parsed {
             let translations: [[String: String]] = [[:]] + nib.strings.filter { selected.contains($0.key) }.sorted { $0.key < $1.key }.map(\.value)
-            for (key, names) in MenuAliasIndex.build(items: nib.items.map { ($0.title, $0.titleKey) }, tables: translations)
-            where aliases[key] != nil || aliases.count < 20_000 {
-                aliases[key, default: []].formUnion(names)
+            let identified = nib.items.compactMap { item -> (MenuNibResources.Item, MenuResourceIdentity)? in
+                guard let path = item.path else { return nil }
+                return (item, MenuResourceIdentity(appID: appID, archive: nib.archive, keys: path.map(\.identityKey)))
             }
-            for link in nib.links.prefix(2048) {
+            let counts = Dictionary(grouping: identified, by: { $0.1 })
+            let links = Dictionary(grouping: nib.links, by: \.objectIndex)
+            for (item, identity) in identified where counts[identity]?.count == 1 {
+                guard let components = item.path, entries.count < 20_000 else { continue }
+                let translated = MenuPathMatch.unique(translations.map { strings in
+                    components.map { $0.titleKey.flatMap { strings[$0] } ?? $0.title }
+                })
+                entries.append(MenuResourceBinding(identity: identity, paths: translated))
+                guard let itemLinks = links[item.objectIndex], itemLinks.count == 1, let link = itemLinks.first else { continue }
                 let resourceKey = "\(link.systemSymbol):\(link.resource)"
                 let icon: MenuResourceIcon
                 if let cached = pictures[resourceKey] { icon = cached }
@@ -191,18 +207,18 @@ final class MenuIconRepository {
                                             sourceAppID: appID, sourceAppName: appName, resourceName: link.resource)
                     pictures[resourceKey] = icon
                 }
-                for strings in translations {
-                    let title = link.titleKey.flatMap { strings[$0] } ?? link.title
-                    let parent = link.parentKey.flatMap { strings[$0] } ?? link.parent
-                    let key = MenuResourceKey(title: title, parent: parent, digest: icon.digest)
+                for path in translated {
+                    let key = MenuResourceKey(identity: identity, path: path, digest: icon.digest)
                     if result.count < 24_000 && seen.insert(key).inserted {
-                        result.append(MenuIconCandidate(title: title, parent: parent, icon: icon))
+                        let sourced = MenuResourceIcon(kind: icon.kind, digest: icon.digest, template: icon.template,
+                            sourceAppID: appID, sourceAppName: appName, resourceName: icon.resourceName,
+                            sourceIdentity: identity, sourcePath: path)
+                        result.append(MenuIconCandidate(path: path, identity: identity, icon: sourced))
                     }
                 }
             }
         }
-        return AppCatalog(appID: appID, candidates: result, aliases: aliases.mapValues { $0.sorted() },
-                          localizations: selected.sorted())
+        return AppCatalog(appID: appID, candidates: result, entries: entries, localizations: selected.sorted())
     }
     /// Never rasterize a vector. Unknown representations fall back to the
     /// existing glyph; bitmaps keep their highest available native resolution.
@@ -218,7 +234,7 @@ final class MenuIconRepository {
         return (.png, bytes)
     }
 }
-private struct MenuResourceKey: Hashable { let title: String; let parent: String?; let digest: String }
+private struct MenuResourceKey: Hashable { let identity: MenuResourceIdentity; let path: [String]; let digest: String }
 
 /// Only immutable content-addressed images are shared by the renderer.
 enum SavedMenuImages {
@@ -256,17 +272,17 @@ final class MenuIconService {
          }) {
         self.root = root; self.preferredLanguages = preferredLanguages; self.applicationURL = applicationURL
         self.settings = settings
-        settings.onMenuAdded = { [weak self] command in self?.request([command], refresh: false) }
+        settings.onMenuAdded = { [weak self] command in self?.request([command], refresh: false, restoreExclusions: !command.isAutomatic) }
         settings.onRefreshMenuIcons = { [weak self, weak settings] appID in
             guard let settings else { return }
             self?.request(settings.commands.filter { $0.appID == appID }, refresh: true)
         }
         // Menus saved before language aliases existed: read each app once in the
         // background. Later launches only resolve from the saved catalog.
-        let missing = Dictionary(grouping: settings.commands.filter { $0.pathAliases == nil }, by: \.appID)
+        let missing = Dictionary(grouping: settings.commands.filter { $0.resourceIdentityVersion != 1 }, by: \.appID)
         for commands in missing.values.sorted(by: { $0[0].appID < $1[0].appID }) { request(commands, refresh: false) }
     }
-    private func request(_ commands: [MenuCommand], refresh: Bool) {
+    private func request(_ commands: [MenuCommand], refresh: Bool, restoreExclusions: Bool = false) {
         guard let first = commands.first, let settings else { return }
         let appID = first.appID
         if refresh && settings.refreshingMenuIcons.contains(appID) { return }
@@ -283,20 +299,38 @@ final class MenuIconService {
                                             capturedTitles: captured)
             } catch { failure = true }
             let failed = failure
-            let resolved: [(UUID, MenuResourceIcon?, [[String]]?)] = failed && refresh ? []
-                : commands.map { ($0.id, self.repository.resolve($0), self.repository.aliases(for: $0)) }
+            let resolved: [(UUID, MenuResourceIcon?, MenuResourceBinding?)] = failed && refresh ? []
+                : commands.map { ($0.id, self.repository.resolve($0), self.repository.binding(for: $0)) }
             let languages = self.repository.localizations(appID: appID) ?? []
             DispatchQueue.main.async { [weak self] in
                 guard let settings = self?.settings else { return }
                 SavedMenuImages.invalidate()
                 var next = settings.commands, found = 0
-                for (id, icon, aliases) in resolved {
-                    guard let index = next.firstIndex(where: { $0.id == id }) else { continue }
-                    if let icon { next[index].resourceIcon = icon; found += 1 }
-                    // An empty list records “checked”; nil means not read yet.
-                    if let aliases { next[index].pathAliases = aliases }
-                    else if !failed && next[index].pathAliases == nil { next[index].pathAliases = [] }
+                var excluded = settings.menuCapture.excludedMenus
+                for (id, icon, binding) in resolved {
+                    guard let original = commands.first(where: { $0.id == id }) else { continue }
+                    var verified = original; verified.resourceBinding = binding
+                    let identities = Set(MenuPathMatch.paths(verified).map { MenuIdentity(appID: appID, path: $0) })
+                    guard let index = next.firstIndex(where: { $0.id == id }) else {
+                        // Deletion can race the background resource scan. Keep the
+                        // whole verified exclusion even after the menu was removed.
+                        if !failed && excluded.contains(MenuIdentity(appID: appID, path: original.path)) {
+                            excluded.formUnion(identities)
+                        }
+                        continue
+                    }
+                    if restoreExclusions && !failed { excluded.subtract(identities) }
+                    if let icon {
+                        if refresh || next[index].resourceIcon == nil { next[index].resourceIcon = icon }
+                        found += 1
+                    }
+                    if !failed {
+                        next[index].resourceBinding = binding
+                        next[index].resourceIdentityVersion = 1
+                        next[index].pathAliases = nil
+                    }
                 }
+                if excluded != settings.menuCapture.excludedMenus { settings.menuCapture.excludedMenus = excluded }
                 if next != settings.commands { settings.commands = next }
                 if refresh {
                     settings.refreshingMenuIcons.remove(appID)

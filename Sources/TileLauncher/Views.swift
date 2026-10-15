@@ -378,7 +378,7 @@ struct DeckView: View {
         if menuAppearance == .recentGraySquare && !command.isPinned && !snapshot.frequentMenuIDs.contains(command.id) {
             colors.menus = TileColor(0x777777)
         }
-        return Button { selectMenu(command, snapshot.context, snapshot.windows.first { $0.pid == snapshot.context?.pid }) } label: {
+        return Button { selectMenu(command, snapshot.context, snapshot.menuContextWindow) } label: {
             if startTileLabels {
                 let glyph = command.glyph
                 ZStack(alignment: .bottomLeading) {

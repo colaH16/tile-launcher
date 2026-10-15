@@ -72,6 +72,8 @@ struct OverlaySnapshot: Equatable {
     let shortcuts: NumberShortcutAssignment
     let commands: [MenuCommand]
     var frequentMenuIDs: Set<UUID> = []
+    /// Action context survives display-only Handoff replacement and list limits.
+    var menuContextWindow: WindowItem? = nil
     func workRows(commands override: [MenuCommand]? = nil) -> CGFloat {
         let geometry = DeckGeometry(width: layout.contentSize.width, compact: layout.compact, scale: layout.scale)
         return WorkAreaRows.visible(menuSpans: (override ?? commands).map { $0.isPinned ? 2 : 1 },
@@ -139,7 +141,8 @@ final class OverlayContent: ObservableObject {
                                    layout: old.layout, permission: trusted, pins: old.pins,
                                    profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
                                    commands: MenuCommand.ordered(commands, appID: context?.id ?? "", history: menuHistory, at: now),
-                                   frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: context?.id ?? "", history: menuHistory, at: now))
+                                   frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: context?.id ?? "", history: menuHistory, at: now),
+                                   menuContextWindow: windows.first { $0.pid == context?.pid && !$0.isApplication && $0.handoff == nil })
         if next != old { snapshot = next }
     }
 }
@@ -197,7 +200,8 @@ final class SettingsStore: ObservableObject {
         profiles.swapAt(index, index + offset)
     }
     func addCommand(_ command: MenuCommand) {
-        menuCapture.excludedMenus.remove(MenuIdentity(appID: command.appID, path: command.path))
+        let restored = Set(MenuPathMatch.paths(command).map { MenuIdentity(appID: command.appID, path: $0) })
+        menuCapture.excludedMenus.subtract(restored)
         guard MenuCaptureHistory.index(of: MenuIdentity(appID: command.appID, path: command.path), in: commands) == nil else { return }
         commands.append(command)
         onMenuAdded?(command)
@@ -209,7 +213,7 @@ final class SettingsStore: ObservableObject {
         if isNew, let added = commands.first(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) { onMenuAdded?(added) }
     }
     func removeCommand(_ command: MenuCommand) {
-        menuCapture.excludedMenus.insert(MenuIdentity(appID: command.appID, path: command.path))
+        menuCapture.excludedMenus.formUnion(MenuPathMatch.paths(command).map { MenuIdentity(appID: command.appID, path: $0) })
         commands.removeAll { $0.id == command.id }
     }
     func clearCapturedMenus(appID: String) {

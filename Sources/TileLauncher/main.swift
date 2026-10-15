@@ -401,6 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       workRows: snapshot.workRows())
             : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
         snapshot.layout = layout
+        snapshot.menuContextWindow = windows.first { $0.pid == lastContext?.pid && !$0.isApplication && $0.handoff == nil }
         let content = OverlayContent(snapshot)
         let folderBrowser = FolderBrowser()
         let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation, launches: launches,

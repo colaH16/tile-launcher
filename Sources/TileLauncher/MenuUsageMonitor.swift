@@ -32,7 +32,7 @@ final class MenuUsageMonitor {
     private var action: Action?
     private var gate = MenuCaptureGate()
     private var suppressedUntil: TimeInterval = 0
-    private var suppressedMenu: MenuIdentity?
+    private var suppressedMenus: Set<MenuIdentity> = []
     private var closedAt: TimeInterval?
     private enum Action { case mouse(CGPoint, TimeInterval), keyboard(TimeInterval) }
 
@@ -86,7 +86,7 @@ final class MenuUsageMonitor {
     func suppressLauncherAction(_ menu: MenuCommand) {
         queue.async { [weak self] in
             self?.suppressedUntil = ProcessInfo.processInfo.systemUptime + 2
-            self?.suppressedMenu = MenuIdentity(appID: menu.appID, path: menu.path)
+            self?.suppressedMenus = Set(MenuPathMatch.paths(menu).map { MenuIdentity(appID: menu.appID, path: $0) })
             self?.resetInteraction()
         }
     }
@@ -268,7 +268,7 @@ final class MenuUsageMonitor {
         return hit
     }
     private func commit(_ hit: MenuHit, time: TimeInterval) {
-        if hit.menu.identity == suppressedMenu, time < suppressedUntil { return }
+        if suppressedMenus.contains(hit.menu.identity), time < suppressedUntil { return }
         let matched: Bool
         switch action {
         case .mouse(let point, let when): matched = time - when <= 0.8 && hit.frame?.contains(point) == true

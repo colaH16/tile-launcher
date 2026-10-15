@@ -88,26 +88,41 @@ final class MenuCatalog: ObservableObject {
             }
             let application = AXUIElementCreateApplication(app.pid)
             AXUIElementSetMessagingTimeout(application, 0.12)
-            guard var current = Self.element(application, kAXMenuBarAttribute) else {
+            guard let bar = Self.element(application, kAXMenuBarAttribute) else {
                 finish("이 앱의 메뉴를 읽을 수 없습니다."); return
             }
             let deadline = Date().addingTimeInterval(3)
-            for (level, title) in command.path.enumerated() {
-                guard Date() < deadline else { finish("메뉴를 확인하는 시간이 초과되었습니다. 실행하지 않았습니다."); return }
-                let children = Self.menuChildren(current).map { ($0, Self.value($0, kAXTitleAttribute) as? String ?? "") }
-                var matches = children.filter { $0.1 == title }.map(\.0)
-                // The app may now run in another stored language (R191): accept the
-                // same item's translated name, still requiring a single match.
-                if matches.isEmpty {
-                    let names = MenuPathMatch.names(command, level: level)
-                    matches = children.filter { names.contains(MenuIconMatch.key($0.1)) }.map(\.0)
-                }
-                guard matches.count == 1, let match = matches.first else {
-                    finish("메뉴 ‘\(title)’가 바뀌었거나 같은 이름이 여러 개입니다. 설정에서 다시 등록해 주세요."); return
-                }
-                current = match
-                AXUIElementSetMessagingTimeout(current, 0.12)
+            var failed = false
+            func read(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
+                guard !failed, Date() < deadline else { failed = true; return nil }
+                AXUIElementSetMessagingTimeout(element, 0.08)
+                var value: CFTypeRef?
+                let result = AXUIElementCopyAttributeValue(element, key as CFString, &value)
+                if result != .success && result != .noValue && result != .attributeUnsupported { failed = true }
+                return result == .success ? value : nil
             }
+            let resolved = MenuPathResolver.resolve(paths: MenuPathMatch.paths(command), root: bar, children: { element in
+                let raw = read(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+                var children: [AXUIElement] = []
+                for child in raw {
+                    if read(child, kAXRoleAttribute) as? String == kAXMenuRole {
+                        children += read(child, kAXChildrenAttribute) as? [AXUIElement] ?? []
+                    } else { children.append(child) }
+                    if failed { return nil }
+                }
+                return failed ? nil : children
+            }, title: { element in
+                let name = read(element, kAXTitleAttribute) as? String ?? ""
+                return failed ? nil : name
+            }, equal: { CFEqual($0, $1) })
+            let current: AXUIElement
+            switch resolved {
+            case .found(let element): current = element
+            case .unavailable: finish("메뉴 정보를 확인하지 못했습니다. 실행하지 않았습니다."); return
+            case .ambiguous: finish("같은 경로의 메뉴가 여러 개입니다. 실행하지 않았습니다."); return
+            case .missing: finish("메뉴 경로가 바뀌었거나 언어 연결을 확인하지 못했습니다. 설정에서 다시 등록해 주세요."); return
+            }
+            guard Date() < deadline else { finish("메뉴 확인 시간이 초과되었습니다. 실행하지 않았습니다."); return }
             guard Self.value(current, kAXEnabledAttribute) as? Bool == true else {
                 finish("지금은 ‘\(command.title)’ 메뉴를 사용할 수 없습니다. 문서나 선택 상태를 확인해 주세요."); return
             }
@@ -132,12 +147,6 @@ final class MenuCatalog: ObservableObject {
     }
     private static func children(_ element: AXUIElement) -> [AXUIElement] {
         value(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-    }
-    private static func menuChildren(_ element: AXUIElement) -> [AXUIElement] {
-        children(element).flatMap { child in
-            AXUIElementSetMessagingTimeout(child, 0.12)
-            return value(child, kAXRoleAttribute) as? String == kAXMenuRole ? children(child) : [child]
-        }
     }
     private static func actions(_ element: AXUIElement) -> [String] {
         var values: CFArray?

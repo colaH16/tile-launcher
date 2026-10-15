@@ -9,7 +9,10 @@ public struct MenuResourceIcon: Codable, Equatable, Sendable {
     public let sourceAppID: String
     public let sourceAppName: String
     public let resourceName: String
-    public init(kind: Kind, digest: String, template: Bool, sourceAppID: String, sourceAppName: String, resourceName: String) {
+    public let sourceIdentity: MenuResourceIdentity?
+    public let sourcePath: [String]?
+    public init(kind: Kind, digest: String, template: Bool, sourceAppID: String, sourceAppName: String, resourceName: String, sourceIdentity: MenuResourceIdentity? = nil, sourcePath: [String]? = nil) {
+        self.sourceIdentity = sourceIdentity; self.sourcePath = sourcePath
         self.kind = kind
         self.digest = digest; self.template = template
         self.sourceAppID = sourceAppID; self.sourceAppName = sourceAppName; self.resourceName = resourceName
@@ -20,11 +23,11 @@ public struct MenuResourceIcon: Codable, Equatable, Sendable {
 }
 
 public struct MenuIconCandidate: Codable, Equatable, Sendable {
-    public let title: String
-    public let parent: String?
+    public let path: [String]
+    public let identity: MenuResourceIdentity
     public let icon: MenuResourceIcon
-    public init(title: String, parent: String?, icon: MenuResourceIcon) {
-        self.title = title; self.parent = parent; self.icon = icon
+    public init(path: [String], identity: MenuResourceIdentity, icon: MenuResourceIcon) {
+        self.path = path; self.identity = identity; self.icon = icon
     }
 }
 
@@ -36,15 +39,15 @@ public enum MenuIconMatch {
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
     public static func resolve(appID: String, path: [String], candidates: [MenuIconCandidate]) -> MenuResourceIcon? {
-        guard let title = path.last, !key(title).isEmpty else { return nil }
-        let matches = candidates.filter { key($0.title) == key(title) && $0.icon.validDigest }
-        let own = matches.filter { $0.icon.sourceAppID == appID }
+        guard path.count >= 2 else { return nil }
+        let matches = candidates.filter { MenuPathMatch.same($0.path, path) && $0.icon.validDigest }
+        let own = matches.filter { $0.identity.appID == appID }
         if !own.isEmpty {
-            let parent = path.dropLast().last.map(key)
-            let exact = own.filter { parent != nil && $0.parent.map(key) == parent }
-            // Ambiguous own-app matches must not be masked by a borrowed icon.
-            return unique(exact.isEmpty ? own : exact)
+            guard Set(own.map(\.identity)).count == 1 else { return nil }
+            return unique(own)
         }
+        // Borrow only an unambiguous picture for the same whole path. This is
+        // image reuse, never a binding to the donor's executable menu identity.
         return unique(matches)
     }
     private static func unique(_ candidates: [MenuIconCandidate]) -> MenuResourceIcon? {
