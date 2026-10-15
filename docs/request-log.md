@@ -1359,6 +1359,7 @@
 
 - 사용자: iPhone/iPad에서 Safari·메모·음악 등을 열면 Dock 오른쪽에 뜨는 Handoff 아이콘을 Tile Launcher에서도 구현할 수 있는지 물었다.
 - 답변: 다른 기기/앱의 Handoff 활동을 읽는 공개 API는 없다. 대신 기존 접근성 권한으로 Dock의 AX 항목을 읽고 해당 항목에 누르기를 보내는 방식이 가능할 수 있다. 공개 헤더에는 Handoff용 Dock 항목 subrole이 없어 Handoff 아이콘이 떠 있을 때의 실제 AX 구조 진단이 먼저 필요하다. 구현은 아직 하지 않았다.
+- 진단 결과(2026-10-15 12:58 KST, `--diagnose-dock`, Developer ID 서명 진단 빌드·기존 접근성 권한, 읽기 전용): 사용자가 iPhone에서 Safari를 열자 Dock에 AXRole `AXDockItem`, AXSubrole `AXHandoffDockItem`(roleDescription “handoff dock item”), AXTitle `Safari Technology Preview`(Mac에서 열릴 앱), AXStatusLabel `com.apple.iphone-15-pro-1`(보낸 기기 모델), 동작 `AXPress`/`AXShowMenu` 항목이 나타났다. 공개 헤더에 없는 subrole이지만 런타임에 노출된다. 진단은 누르기를 보내지 않았으므로 AXPress로 실제 Handoff가 열리는지는 미확인이다.
 
 ## 다음 요청 기록 양식
 

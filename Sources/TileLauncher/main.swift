@@ -901,6 +901,15 @@ if let index = CommandLine.arguments.firstIndex(of: "--glass-compare") {
     application.run()
     exit(0)
 }
+// R192 read-only Dock probe: `--diagnose-dock <output.jsonl> [seconds]`. Bypasses the
+// production instance; never presses Dock items.
+if let index = CommandLine.arguments.firstIndex(of: "--diagnose-dock"), CommandLine.arguments.indices.contains(index + 1) {
+    application.setActivationPolicy(.prohibited)
+    let seconds = CommandLine.arguments.indices.contains(index + 2) ? TimeInterval(CommandLine.arguments[index + 2]) ?? 120 : 120
+    DockDiagnostics.run(output: URL(fileURLWithPath: CommandLine.arguments[index + 1]), seconds: seconds)
+    application.run()
+    exit(0)
+}
 // Targeted read-only inventory diagnostics bypass the production instance and all UI.
 if let index = CommandLine.arguments.firstIndex(of: "--diagnose-window-inventory") {
     application.setActivationPolicy(.prohibited)
