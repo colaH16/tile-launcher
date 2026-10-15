@@ -1,5 +1,13 @@
 # 네이티브 빌드 검증
 
+## R182 · 1.4.3 공증·공개 검증
+
+- 기존 서명 소스82eaac2b47410ce52a236985a8e6d6c2c581ebcc의1.4.3(27)을저장된tile-launcher-notary 프로필로 제출했다. 제출ID83abf503-7f40-4b88-a6bb-05919dee2da3, Apple 상태Accepted다. 같은 제출ID를 확인해 중복 제출하지 않았다.
+- 공증 티켓 부착/유효성·Gatekeeper·서명/ZIP 재추출 검사를 통과했다. 이전/이후 실행 파일 SHA가 같아 재빌드하지 않았음을 확인했다. bundle SHA2560809302c2371d334e126e9812268e7c84acfd0f703f3b6fe628b147553dc55f6, 공증 ZIP2,336,079바이트/SHA25682fcb7c7608196c3c158c08a3b30de3fa03baa7a78cc2dc729a2cf0f54870171다. 저장소 상위 Tile-Launcher-1.4.3-arm64.zip 복사본도 같은 해시다. 이전 미공증 파일은 보존했다.
+- 노트 기준을 실제 마지막 정식v1.1.5와 대조하고1.2.0/1.2.1/1.3.0/1.4.0/1.4.1/1.4.2/1.4.3의7개 섹션을CHANGELOG와 검증했다. 공개노트 revision d0dd01e, 앱 source82eaac2다. refresh-notes로 앱/ZIP을 바꾸지 않고 설명만 갱신했다.
+- GitHub tag v1.4.3은 앱소스82eaac2를 가리키며 업로드 ZIP/metadata/checksums를 재다운로드해 모두 로컬과 해시 일치했다.2026-10-15 09:44:44 KST 공개, release ID413306754, draft=false/prerelease=false/latest=v1.4.3이다. 공개 body와 저장된누적노트·첨부목록도 같았다.
+- 로그: /tmp/tile-143-notarize.log, tile-143-notarize-check.log, tile-143-refresh-notes.log, tile-143-draft.log, tile-143-publish.log. 공개 응답은 /tmp/tile-143-public-release.json, 본문은 release/history/v1.4.3.md다. 개발 Mac 앱 설치/실행 변경은 없으며 iCloud 서버 업로드/사용자 수신은 별도다.
+
 ## R181 · 1.4.3 타일 배율·채택 여백
 
 - `/tmp/tile-143-validation`에 메타데이터 없이 소스를 복사해 XCTest157개와Python 배포 검사23개를 통과했다(`/tmp/tile-143-tests.log`). 실제1.4배·작은 화면/음수 원점·프로필복원/등록39개·고정간격/폭 합계와1568×918pt 높이를 검사했다.
