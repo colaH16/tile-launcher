@@ -22,8 +22,11 @@ import DeckCore
         let width = (visible.width - gap * CGFloat(variants.count + 1)) / CGFloat(variants.count)
         for (index, (variant, tint, label)) in variants.enumerated() {
             let fixture = PreviewFixture(theme: .glass, registeredCount: 18, menuComparison: true, realisticSample: true)
-            var layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: width + 48, height: visible.height),
-                                               cursor: .zero)
+            // Three panels side by side are narrower than the normal minimum. Keep the
+            // regular two-column layout anyway so the menu column stays visible.
+            var layout = PanelLayout(frame: CGRect(x: 0, y: 0, width: min(width, 1120),
+                                                   height: min(840, visible.height - 48)),
+                                     compact: false, supported: true)
             fixture.content.snapshot.layout = layout
             layout = layout.fittingContent(registeredCount: fixture.settings.pins.count,
                                            workRows: fixture.content.snapshot.workRows())
