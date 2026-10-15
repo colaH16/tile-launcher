@@ -11,7 +11,7 @@ struct MenuGlyphButton: View {
     var body: some View {
         Button { editing = true } label: { MenuGlyphPreview(glyph: command.glyph).frame(width: 34, height: 26) }
             .buttonStyle(.bordered).controlSize(.small)
-            .help("오버레이 타일 아이콘 · SF Symbol 선택. 없으면 단축키, 둘 다 없으면 메뉴 이름을 크게 표시")
+            .help("메뉴 아이콘 선택 · 직접 지정 → 저장한 앱 리소스 → 기본 아이콘 → 단축키 → 메뉴 이름")
             .accessibilityLabel("\(command.title) 아이콘 선택")
             .popover(isPresented: $editing, arrowEdge: .leading) {
                 MenuSymbolPicker(command: command, choose: { choose($0); editing = false })
@@ -23,6 +23,9 @@ struct MenuGlyphPreview: View {
     let glyph: MenuTileGlyph
     var body: some View {
         switch glyph {
+        case .resource(let icon):
+            if icon.kind == .symbol { Image(systemName: icon.resourceName).font(.system(size: 14)) }
+            else if let image = SavedMenuImages.image(icon) { Image(nsImage: image).resizable().scaledToFit().frame(width: 18, height: 18) }
         case .symbol(let name): Image(systemName: name).font(.system(size: 14))
         case .shortcut(let keys): Text(keys).font(.system(size: 10, weight: .medium, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
         case .text: Image(systemName: "textformat").font(.system(size: 13)).foregroundStyle(.secondary)
@@ -78,11 +81,15 @@ struct MenuSymbolPicker: View {
             if let preset = command.presetSymbol {
                 Label("기본 아이콘: \(preset)", systemImage: preset).font(.caption).foregroundStyle(.secondary)
             }
+            if let icon = command.resourceIcon {
+                Text(icon.sourceAppID == command.appID ? "앱 리소스에서 저장한 아이콘" : "같은 이름의 메뉴에서 가져옴: \(icon.sourceAppName)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 Button("기본값") { choose(nil) }
-                    .help(command.presetSymbol == nil ? "직접 고른 아이콘을 지웁니다" : "직접 고른 아이콘을 지우고 기본 아이콘을 씁니다")
+                    .help("직접 고른 아이콘을 지우고 저장한 앱 아이콘이나 기본 아이콘을 씁니다")
                 Button("아이콘 없음") { choose(MenuSymbolName.hidden) }
-                    .help("기본 아이콘도 쓰지 않고 단축키나 메뉴 이름을 표시합니다")
+                    .help("저장한 앱 아이콘과 기본 아이콘을 끄고 단축키나 메뉴 이름을 표시합니다")
                 Spacer()
                 Button("적용") { choose(trimmed) }.keyboardShortcut(.defaultAction).disabled(!valid)
             }

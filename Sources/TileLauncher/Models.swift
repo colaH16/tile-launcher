@@ -49,8 +49,9 @@ extension MenuCommand {
     }
     var presetSymbol: String? { Self.installed(MenuSymbolPreset.symbol(for: title)) }
     var glyph: MenuTileGlyph {
-        MenuTileGlyph.resolve(symbol: symbol == MenuSymbolName.hidden ? symbol : Self.installed(symbol),
-                              preset: presetSymbol, shortcut: shortcut)
+        let choice = symbol == MenuSymbolName.hidden ? symbol : Self.installed(symbol)
+        let resource = choice == nil ? resourceIcon.flatMap { SavedMenuImages.image($0) == nil ? nil : $0 } : nil
+        return MenuTileGlyph.resolve(symbol: choice, preset: presetSymbol, shortcut: shortcut, resource: resource)
     }
     var usageDescription: String {
         "누적 \(totalUseCount)회 · 메뉴 막대 \(observedCount)회 · Tile Launcher \(useCount)회"
@@ -135,6 +136,11 @@ final class SettingsStore: ObservableObject {
     @Published var menuHistory: MenuHistoryPreferences { didSet { save() } }
     @Published var menuCapture: MenuCapturePreferences { didSet { save() } }
     @Published var menuCaptureStatus: [String: String] = [:]
+    @Published var refreshingMenuIcons: Set<String> = []
+    @Published var menuIconStatus: [String: String] = [:]
+    // Wired only by the production delegate; previews/tests never inspect apps.
+    var onMenuAdded: ((MenuCommand) -> Void)?
+    var onRefreshMenuIcons: ((String) -> Void)?
     var activeProfile: LauncherProfile {
         if followFocus, let focused = profiles.first(where: { $0.id == focusProfileID }) { return focused }
         // A filter can still reference a profile the user deleted or no longer has. Fall back to the user's manual choice first.
@@ -175,10 +181,13 @@ final class SettingsStore: ObservableObject {
         menuCapture.excludedMenus.remove(MenuIdentity(appID: command.appID, path: command.path))
         guard !commands.contains(where: { $0.appID == command.appID && $0.path == command.path }) else { return }
         commands.append(command)
+        onMenuAdded?(command)
     }
     func recordCapturedMenu(_ menu: CapturedMenu) {
         guard MenuCapturePolicy.allows(menu, preferences: menuCapture) else { return }
+        let isNew = !commands.contains { $0.appID == menu.identity.appID && $0.path == menu.identity.path }
         commands = MenuCaptureHistory.record(menu, in: commands, at: Date())
+        if isNew, let added = commands.first(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) { onMenuAdded?(added) }
     }
     func removeCommand(_ command: MenuCommand) {
         menuCapture.excludedMenus.insert(MenuIdentity(appID: command.appID, path: command.path))

@@ -382,6 +382,15 @@ struct DeckView: View {
                 let glyph = command.glyph
                 ZStack(alignment: .bottomLeading) {
                     switch glyph {
+                    case .resource(let icon):
+                        if icon.kind == .symbol {
+                            Image(systemName: icon.resourceName).font(.system(size: u(small ? 26 : 44), weight: .light))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                        } else if let image = SavedMenuImages.image(icon) {
+                            Image(nsImage: image).resizable().scaledToFit()
+                                .frame(width: u(small ? 26 : 44), height: u(small ? 26 : 44))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                        }
                     case .symbol(let symbol):
                         Image(systemName: symbol).font(.system(size: u(small ? 26 : 44), weight: .light))
                             .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))

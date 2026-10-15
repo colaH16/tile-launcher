@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launches = ApplicationLaunchMonitor()
     let menuCatalog = MenuCatalog()
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
+    private var menuIcons: MenuIconService?
     private var visibleContent: OverlayContent?
     private var visibleSnapshot: OverlaySnapshot? { visibleContent?.snapshot }
     private var pinnedRefresh: DispatchWorkItem?
@@ -56,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var profileChangeRevision = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        menuIcons = MenuIconService(settings: settings)
         NSApp.setActivationPolicy(.accessory)
         configureApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -874,6 +876,15 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
     }
 }
 // R183 glass comparison: synthetic panels only, bypasses the production instance.
+if let index = CommandLine.arguments.firstIndex(of: "--check-menu-icons"), CommandLine.arguments.indices.contains(index + 1) {
+    application.setActivationPolicy(.prohibited)
+    do {
+        try MainActor.assumeIsolated {
+            try MenuIconValidation.verify(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+        }
+        exit(0)
+    } catch { fputs("Menu icon check failed: \(error.localizedDescription)\n", stderr); exit(1) }
+}
 if let index = CommandLine.arguments.firstIndex(of: "--glass-compare") {
     application.setActivationPolicy(.accessory)
     let seconds = CommandLine.arguments.indices.contains(index + 1)

@@ -258,6 +258,7 @@ struct MenuSettingsView: View {
                     Text("앱이 메뉴 정보를 제공하지 않으면 일부 선택이 누락될 수 있습니다. 검색어·입력 문자는 저장하지 않습니다.")
                     Text("기간이 지나고 최근 5개에서도 벗어난 메뉴만 최근 목록에서 숨깁니다. 고정 메뉴는 유지하며, 아래 목록에서 다시 고정할 수 있습니다.")
                     Text("고정 메뉴는 맨 앞의 강조색 가로형(4×2), 자주 사용은 파스텔 정사각형(2×2), 최근 사용은 회색 정사각형(2×2)입니다. 자주 사용은 설정한 기간 안에 런처 실행과 메뉴 선택을 합쳐 3회 이상인 메뉴입니다.")
+                    Text("메뉴 추가 시 앱 리소스의 아이콘을 저장합니다. 없으면 이미 읽은 다른 앱에서 이름이 같은 메뉴를 찾습니다. 앱 업데이트 후에도 유지하며 아래 버튼으로 다시 가져옵니다. 직접 지정한 아이콘은 우선합니다. 리소스에 메뉴와 아이콘의 연결이 없는 앱은 지원하지 않습니다.")
                 }.font(.caption).foregroundStyle(.secondary).padding(.top, 6)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -265,7 +266,18 @@ struct MenuSettingsView: View {
     private var savedMenus: some View {
         let commands = MenuCommand.ordered(settings.commands, appID: selectedID, history: settings.menuHistory, includingHidden: true)
         return VStack(alignment: .leading, spacing: 6) {
-            Text("자동 수집·고정 메뉴 \(commands.count)개").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("자동 수집·고정 메뉴 \(commands.count)개").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(settings.refreshingMenuIcons.contains(selectedID) ? "아이콘 확인 중…" : "메뉴 아이콘 새로고침") {
+                    settings.onRefreshMenuIcons?(selectedID)
+                }.controlSize(.small)
+                    .disabled(commands.isEmpty || settings.refreshingMenuIcons.contains(selectedID))
+                    .help("선택한 앱의 메뉴 아이콘을 다시 가져옵니다. 직접 지정한 아이콘은 유지합니다.")
+            }
+            if let status = settings.menuIconStatus[selectedID] {
+                Text(status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             List {
                 ForEach(commands) { command in
                     HStack {

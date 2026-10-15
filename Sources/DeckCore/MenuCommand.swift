@@ -18,6 +18,8 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     /// User-chosen SF Symbol for the overlay tile: nil = built-in default,
     /// `MenuSymbolName.hidden` = no icon.
     public var symbol: String?
+    /// Automatically acquired image; a user's symbol/no-icon choice still wins.
+    public var resourceIcon: MenuResourceIcon?
     public var title: String { path.last ?? "" }
     public var totalUseCount: Int {
         let (total, overflow) = useCount.addingReportingOverflow(observedCount)
@@ -44,13 +46,16 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = false; observedCount = 0; recentUses = []
     }
     private enum CodingKeys: String, CodingKey {
-        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol
+        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol, resourceIcon
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         appID = try c.decode(String.self, forKey: .appID)
         appName = try c.decode(String.self, forKey: .appName)
+        // Cache metadata is expendable; an unknown/corrupt icon must never make
+        // the user's menu list fail to decode.
+        resourceIcon = try? c.decodeIfPresent(MenuResourceIcon.self, forKey: .resourceIcon)
         path = try c.decode([String].self, forKey: .path)
         isPinned = try c.decode(Bool.self, forKey: .isPinned)
         useCount = max(0, try c.decode(Int.self, forKey: .useCount))

@@ -23,20 +23,22 @@ public struct MenuShortcut: Codable, Equatable, Sendable {
 }
 
 /// What the large area of a menu tile shows: the user's chosen SF Symbol,
-/// otherwise a built-in default for a few common titles, otherwise the keyboard
+/// otherwise a saved resource, then a built-in default, otherwise the keyboard
 /// shortcut, otherwise the title as a Windows 8 style text tile. Public AX
-/// exposes no menu-item image, so the app's own menu icon is not available.
+/// exposes no menu-item image; resource icons are acquired separately at addition.
 public enum MenuTileGlyph: Equatable, Sendable {
+    case resource(MenuResourceIcon)
     case symbol(String)
     case shortcut(String)
     case text
 
     /// `symbol`/`preset` must already be validated by the caller (installed SF Symbols).
-    /// `symbol == MenuSymbolName.hidden` turns off the preset as well.
-    public static func resolve(symbol: String?, preset: String? = nil, shortcut: MenuShortcut?) -> Self {
-        if symbol != MenuSymbolName.hidden,
-           let chosen = MenuSymbolName.normalized(symbol) ?? MenuSymbolName.normalized(preset) {
-            return .symbol(chosen)
+    /// `symbol == MenuSymbolName.hidden` turns off resources and presets as well.
+    public static func resolve(symbol: String?, preset: String? = nil, shortcut: MenuShortcut?, resource: MenuResourceIcon? = nil) -> Self {
+        if symbol != MenuSymbolName.hidden {
+            if let chosen = MenuSymbolName.normalized(symbol) { return .symbol(chosen) }
+            if let resource { return .resource(resource) }
+            if let chosen = MenuSymbolName.normalized(preset) { return .symbol(chosen) }
         }
         if let shortcut { return .shortcut(shortcut.display) }
         return .text
