@@ -1,6 +1,8 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
-확인일: 2026-10-15, Asia/Seoul. [v1.9.0 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.9.0)를 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 공개 후 재다운로드 검증을 거쳐 2026-10-15 17:39:04 KST에 공개했다. 이전 공개 자산은 보존한다.
+확인일: 2026-10-15, Asia/Seoul. [v1.9.1](https://github.com/colaH16/tile-launcher/releases/tag/v1.9.1)을 2026-10-15 19:40:57 KST에 공개하고 개발 Mac 업데이트까지 완료했다. 공증 제출은 사용자의 다른 Mac에서 진행했으며, 이 Mac에서는 동일한 서명 앱에 Apple 티켓을 받아 검증하고 최종 ZIP을 만들었다. 공개 ZIP 재검증 기록은 [1.9.1 검증](reviews/1.9.1-app-settings-visibility.md)에 있다.
+
+이전 기록: [v1.9.0 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.9.0)를 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 공개 후 재다운로드 검증을 거쳐 2026-10-15 17:39:04 KST에 공개했다. 이전 공개 자산은 보존한다.
 
 ## R102 · 공개 완료와 버전 정책
 
