@@ -1,7 +1,7 @@
 import Foundation
 
 public enum TileSection: String, CaseIterable, Identifiable {
-    case menus, windows, registered, handoff
+    case menus, windows, handoff, registered
     public var id: String { rawValue }
     public var title: String {
         switch self {

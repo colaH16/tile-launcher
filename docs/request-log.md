@@ -1378,6 +1378,10 @@
 - 유지한 차이와 이유는 CHANGELOG 1.8.0에 적었다(닫힘·실행 후 닫힘·고정 시 키 입력 소유·재입력 보정).
 - 전달 완료: 소스0ef8111b25a830d171fcae6c9cbcae73898446cc의1.8.0(35)을 XCTest172개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.8.0-arm64-unnotarized.zip에 복사했다.2,556,487바이트, SHA256 c667432be2cd8ec34fb98e18fc66b04d43d8744ff786ba7df0a429c55cb67a66이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.
 
+### R195 · 모양 설정에서 Handoff를 최근 창 다음으로
+
+- 사용자: Handoff 색이 최근 창의 네 번째 예시 타일이 아니라 별도 섹션인 것을 보고 기본색 때문임을 이해했다. 대신 등록 항목과 Handoff의 순서를 바꾸고 push하라고 요청했다. UI patch 1.8.1(36).
+
 ## 다음 요청 기록 양식
 
 새 날짜 아래 `R번호 · 주제`를 추가하고 다음을 기록합니다.

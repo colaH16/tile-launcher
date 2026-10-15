@@ -37,7 +37,7 @@ struct AppearanceView: View {
                         }.padding(8)
                     }
                 }
-                Text("직접 고른 색은 테마를 바꿔도 유지됩니다. 기본색에서는 메뉴가 유리 테마의 노랑 / 클래식 테마의 초록, 최근 창은 파랑, 등록 항목은 보라, Handoff는 청록 계열입니다. 메뉴 막대 아이콘은 두 테마 공통입니다.")
+                Text("직접 고른 색은 테마를 바꿔도 유지됩니다. 기본색에서는 메뉴가 유리 테마의 노랑 / 클래식 테마의 초록, 최근 창은 파랑, Handoff는 청록, 등록 항목은 보라 계열입니다. 메뉴 막대 아이콘은 두 테마 공통입니다.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("모든 섹션 기본색으로") { settings.tileColors = TileColors() }
                     .disabled(settings.tileColors == TileColors())
