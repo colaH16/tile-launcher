@@ -1312,6 +1312,7 @@
 - 에이전트 판단: 새 설정 항목은 R96–R101 규칙상 기능 추가이므로 1.4.4가 아니라 minor 1.5.0(28)으로 올렸다. 제목→심볼 내장 표(R183 시안)는 제거했다. 앱 메뉴 아이콘 자동 획득은 공개 AX 상수에 없어서 구현하지 않았다(비공개 속성은 미확인).
 - 구현: MenuCommand.symbol/shortcut, MenuSymbolName/MenuTileGlyph, 설정 행의 MenuGlyphButton/MenuSymbolPicker(추천 48개+이름 입력, 설치 여부 검사), 메뉴 추가 목록·런처 실행 시 단축키 갱신. 성능 1(응답 없는 앱의 창별 대기 생략)·2′(관련 창만 SLSWindowIsOrderedIn)·3(메뉴 막대 영역/열린 메뉴 아닌 클릭은 AX 위치 조회 생략)·4(최근 창 스크롤 오프셋 분리, 첫 등장 집합 1회 계산)·6′(Option 대기 중 패널 미리 생성·검증 후 이동/표시, 아니면 폐기)·8(창 속성 일괄 AX 조회, 실패 시 개별 조회). 유리 비교 도구는 유지하고 기본 배경은 A다.
 - 검증: XCTest 162개·Python 23개 통과, 네이티브 오프스크린 검사·렌더(menu-glyphs-light, adopted-143, settings-native-menus) 확인. 실제 AX 일괄 조회·응답 없는 앱·메뉴 막대 영역 판정·미리 만들기의 실기 동작과 체감 지연은 사용자 환경에서 확인이 필요하다.
+- 전달 완료: 소스5468306108334342219915759f49063e6dcd44a4의 1.5.0(28)을 XCTest162개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더(시안과 PNG 해시 일치) 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.5.0-arm64-unnotarized.zip에 복사했다.2,384,576바이트, SHA256 e7250876ca3def467f68799dc134a974e2ed3a8c3b999bb4ca7cf3b0836e6891이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았고 iCloud 업로드/다른 Mac 수신은 미확인이다.
 
 ## 다음 요청 기록 양식
 
