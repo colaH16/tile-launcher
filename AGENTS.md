@@ -15,6 +15,7 @@
 
 ## 사용자 요청을 파일에 남기기
 
+- R193 전달 완료: 소스1337afacbdcf01e8dd3f2c9974d907dc875d816c의1.7.0(34)을 XCTest173개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.7.0-arm64-unnotarized.zip에 복사했다.2,557,378바이트, SHA256 0c0cf2ac332108d79af23da63c14f3f565f9fea3a8b85a61861d12ba2496a100이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.
 - R193: Handoff 타일(최근 창 첫 타일 대체·앱 아이콘+기기 배지+“Handoff”·모양의 Handoff 색 기본 청록)과 오버레이 표시 중 0.5초 Dock 확인, 대표 창/이전 창 이름을 1.7.0(34)로 반영·push한다. Handoff는 Dock AX(비공개 구조)에 의존하므로 OS 업데이트 때 `--diagnose-dock`으로 재검증한다. Option 유지/고정 규칙 차이 통일은 사용자 결정 전이다.
 
 - R191 전달 완료: 소스399dcf4565024fbd2b7ce6e2acea5654723b0917의1.6.0(30)을 XCTest173개/Python23개·네이티브 오프스크린 검사, 서명 실행 파일의 렌더(개발 렌더와 PNG 해시 일치)와 `--check-menu-icons` 통과 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.6.0-arm64-unnotarized.zip에 복사했다.2,522,933바이트, SHA256 099f56ce12849fb8fd35c7d435d9e0fb70336bde2f5595d906fb58aeb15e8dbd이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.
