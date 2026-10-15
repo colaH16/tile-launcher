@@ -179,13 +179,13 @@ final class SettingsStore: ObservableObject {
     }
     func addCommand(_ command: MenuCommand) {
         menuCapture.excludedMenus.remove(MenuIdentity(appID: command.appID, path: command.path))
-        guard !commands.contains(where: { $0.appID == command.appID && $0.path == command.path }) else { return }
+        guard MenuCaptureHistory.index(of: MenuIdentity(appID: command.appID, path: command.path), in: commands) == nil else { return }
         commands.append(command)
         onMenuAdded?(command)
     }
     func recordCapturedMenu(_ menu: CapturedMenu) {
         guard MenuCapturePolicy.allows(menu, preferences: menuCapture) else { return }
-        let isNew = !commands.contains { $0.appID == menu.identity.appID && $0.path == menu.identity.path }
+        let isNew = MenuCaptureHistory.index(of: menu.identity, in: commands) == nil
         commands = MenuCaptureHistory.record(menu, in: commands, at: Date())
         if isNew, let added = commands.first(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) { onMenuAdded?(added) }
     }

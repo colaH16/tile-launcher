@@ -28,6 +28,8 @@ Music 1.7.2의 `MainMenu.nib`에서 NSMenuItem의 NSImage → NSCustomResource �
 
 ## 일치·저장 정책
 
+> R191 변경: 저장 위치는 `MenuIcons/v2/apps/<sha256(appID)>.json` 앱별 파일이며 macOS 선호 언어 전체·en-US·앱 개발 언어·저장 메뉴의 언어만 보관한다. 메뉴 이름 별칭도 함께 저장해 앱 언어가 바뀌어도 같은 메뉴로 실행·수집한다. `.nib` 폴더는 폴더 이름으로 번역을 찾고 최신 archive 하나만 읽는다. 아래 v1 index.json 설명은 R189–R190 당시 기록이다.
+
 - 자기 앱의 동일 메뉴 제목·직접 부모 메뉴 일치를 우선한다. 다른 앱에서는 동일 제목만 비교하되 후보 그림이 다르면 자동 선택하지 않는다.
 - Unicode 정규화·대소문자·앞뒤 공백만 맞춘다. 번역/부분 일치/말줄임표 제거로 다른 동작을 합치지 않는다. 이 보수적인 모호성 처리 방식은 에이전트의 구현 판단이다.
 - `MenuCommand.resourceIcon`에 종류·해시·리소스 이름·출처 앱을 보관한다. 이미지 파일과 앱별 탐색 결과는 `~/Library/Application Support/TileLauncher/MenuIcons/v1`에 저장한다. 심볼은 별도 PNG 파일을 만들지 않는다.

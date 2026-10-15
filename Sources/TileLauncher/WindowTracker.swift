@@ -212,7 +212,15 @@ final class WindowTracker {
                                                             AXCopyMultipleAttributeOptions(rawValue: 0), &raw)
         if result == .cannotComplete { return nil }
         guard result == .success, let array = raw as? [AnyObject], array.count == Self.windowKeys.count else {
-            return Self.windowKeys.map { value(element, $0) }
+            // Apps without the batched call: check the role first and stop early,
+            // so a failing or non-window element costs one request, not six.
+            var role: CFTypeRef?
+            let roleResult = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+            if roleResult == .cannotComplete { return nil }
+            guard roleResult == .success, role as? String == kAXWindowRole else {
+                return [roleResult == .success ? role : nil] + Array(repeating: nil, count: Self.windowKeys.count - 1)
+            }
+            return [role] + Self.windowKeys.dropFirst().map { value(element, $0) }
         }
         return array.map { item in
             if CFGetTypeID(item) == AXValueGetTypeID(), AXValueGetType(item as! AXValue) == .axError { return nil }
@@ -292,7 +300,7 @@ final class WindowTracker {
         let axComplete = (readResult == .success && rawWindows is [AXUIElement]) || readResult == .noValue
         // A busy/hung app already used its timeout on the list. Do not spend a
         // further timeout per known window; keep them until the app answers.
-        let unresponsive = readResult == .cannotComplete
+        var unresponsive = readResult == .cannotComplete
         let applicationHidden = NSRunningApplication(processIdentifier: pid)?.isHidden == true
         let old = windows[pid] ?? []
         var next: [TrackedWindow] = []
@@ -301,7 +309,9 @@ final class WindowTracker {
         }
         for element in elements {
             AXUIElementSetMessagingTimeout(element, 0.15)
-            guard let attributes = windowAttributes(element) else { continue }
+            // One timed-out window means the app is busy: stop asking for this
+            // refresh and keep the remaining known windows as they were.
+            guard let attributes = windowAttributes(element) else { unresponsive = true; break }
             let role = attributes[0] as? String
             let subrole = attributes[1] as? String
             guard role == kAXWindowRole,

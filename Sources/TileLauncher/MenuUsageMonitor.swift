@@ -394,8 +394,11 @@ private final class MenuAXReader {
         else if allowHelp, let title = value(current, kAXTitleAttribute) as? String { path = ["Help", title] }
         else { return nil }
         guard !MenuCapturePolicy.isAppleMenuPath(path) else { return nil }
-        let shortcut = value(current, kAXMenuItemCmdCharAttribute) as? String ?? ""
-        let modifiers = value(current, kAXMenuItemCmdModifiersAttribute) as? Int ?? 0
+        guard hasTime else { return nil }
+        AXUIElementSetMessagingTimeout(current, 0.025)
+        let reading = MenuShortcutReading.read(current)
+        let shortcut = reading.shortcut?.key ?? ""
+        let modifiers = reading.shortcut?.modifiers ?? 0
         var frame: CGRect?
         if let position = value(current, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
            let size = value(current, kAXSizeAttribute), CFGetTypeID(size) == AXValueGetTypeID() {
@@ -405,7 +408,8 @@ private final class MenuAXReader {
             }
         }
         return MenuHit(menu: CapturedMenu(appID: app.id, appName: app.name, path: path, shortcut: shortcut,
-                                         commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers),
+                                         commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers,
+                                         shortcutKnown: reading.known),
                        frame: frame, isHelpResult: path.first.map(Self.isHelp) == true)
     }
     func focusedMenuItem() -> AXUIElement? {
@@ -435,10 +439,12 @@ private final class MenuAXReader {
             if next.first.map(Self.isHelp) == true || MenuCapturePolicy.isAppleMenuPath(next) { return }
             guard let descendants = children(node) else { complete = false; return }
             if role == kAXMenuItemRole, descendants.isEmpty, next.count >= 2 {
-                let shortcut = value(node, kAXMenuItemCmdCharAttribute) as? String ?? ""
-                let modifiers = shortcut.isEmpty ? 0 : value(node, kAXMenuItemCmdModifiersAttribute) as? Int ?? 0
-                result.append(CapturedMenu(appID: app.id, appName: app.name, path: next, shortcut: shortcut,
-                                           commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers))
+                AXUIElementSetMessagingTimeout(node, 0.025)
+                let reading = MenuShortcutReading.read(node)
+                let modifiers = reading.shortcut?.modifiers ?? 0
+                result.append(CapturedMenu(appID: app.id, appName: app.name, path: next, shortcut: reading.shortcut?.key ?? "",
+                                           commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers,
+                                           shortcutKnown: reading.known))
             } else { descendants.forEach { visit($0, path: next, depth: depth + 1) } }
         }
         guard let roots = children(bar) else { return nil }

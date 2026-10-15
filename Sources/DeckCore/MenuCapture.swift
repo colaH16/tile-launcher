@@ -28,11 +28,15 @@ public struct CapturedMenu: Equatable {
     public let commandModifier: Bool
     /// Raw AXMenuItemCmdModifiers; 0 is plain ⌘.
     public let modifiers: Int
+    /// False when the shortcut could not be read; an empty `shortcut` then
+    /// means “unknown”, not “removed”.
+    public let shortcutKnown: Bool
     public let fromHelpSearch: Bool
     public init(appID: String, appName: String, path: [String], shortcut: String = "",
-                commandModifier: Bool = false, modifiers: Int = 0, fromHelpSearch: Bool = false) {
+                commandModifier: Bool = false, modifiers: Int = 0, shortcutKnown: Bool? = nil, fromHelpSearch: Bool = false) {
         identity = MenuIdentity(appID: appID, path: path); self.appName = appName
         self.shortcut = shortcut; self.commandModifier = commandModifier; self.modifiers = modifiers
+        self.shortcutKnown = shortcutKnown ?? !shortcut.isEmpty
         self.fromHelpSearch = fromHelpSearch
     }
 }
@@ -66,7 +70,7 @@ public enum MenuCapturePolicy {
         guard unique.count == 1, let match = unique.values.first?.first else { return nil }
         return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
                             shortcut: match.shortcut, commandModifier: match.commandModifier,
-                            modifiers: match.modifiers, fromHelpSearch: true)
+                            modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true)
     }
 }
 
@@ -97,13 +101,21 @@ public enum MenuCaptureKeyDecision: Equatable {
 }
 
 public enum MenuCaptureHistory {
+    /// The saved command for this menu: the same path, or — after the app's
+    /// language changed — the single command whose language aliases match it.
+    public static func index(of identity: MenuIdentity, in commands: [MenuCommand]) -> Int? {
+        if let exact = commands.firstIndex(where: { $0.appID == identity.appID && $0.path == identity.path }) { return exact }
+        let aliased = commands.indices.filter { commands[$0].appID == identity.appID && MenuPathMatch.matches(identity.path, commands[$0]) }
+        return aliased.count == 1 ? aliased[0] : nil
+    }
     public static func record(_ menu: CapturedMenu, in commands: [MenuCommand], at date: Date) -> [MenuCommand] {
         guard !MenuCapturePolicy.isAppleMenuPath(menu.identity.path) else { return commands }
         var result = commands
         let shortcut = MenuShortcut(key: menu.shortcut, modifiers: menu.modifiers)
-        if let i = result.firstIndex(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) {
+        if let i = index(of: menu.identity, in: result) {
             result[i].recordUse(at: date, observed: true)
-            if let shortcut { result[i].shortcut = shortcut }
+            // Only a confirmed reading may clear a shortcut the app removed.
+            if menu.shortcutKnown { result[i].shortcut = shortcut }
         } else {
             var command = MenuCommand(appID: menu.identity.appID, appName: menu.appName, path: menu.identity.path, isPinned: false)
             command.isAutomatic = true; command.recordUse(at: date, observed: true)

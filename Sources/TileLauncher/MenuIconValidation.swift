@@ -11,7 +11,9 @@ enum MenuIconValidation {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let root = directory.appendingPathComponent("cache")
         SavedMenuImages.root = root
-        let repository = MenuIconRepository(root: root)
+        // The user's macOS list (R191); deterministic regardless of this Mac's settings.
+        let languages = ["en-GB", "ko-KR", "ja-JP"]
+        let repository = MenuIconRepository(root: root, preferredLanguages: languages)
         let music = URL(fileURLWithPath: "/System/Applications/Music.app")
         let start = Date()
         try repository.prepare(appID: "com.apple.Music", name: "Music", url: music, refresh: true)
@@ -30,9 +32,32 @@ enum MenuIconValidation {
         }
         let korean = MenuCommand(appID: "com.apple.Music", appName: "음악", path: ["보기", "보관함에서 아티스트 보기"])
         try check(repository.resolve(korean)?.resourceName == "microphone.dynamic.on.stand", "Korean menu localization")
+        // Only preferred + US English + development languages are stored, one file per app.
+        let stored = Set(repository.localizations(appID: "com.apple.Music") ?? [])
+        try check(stored.contains("ko") && stored.contains("ja") && stored.contains("en") && !stored.contains("de"),
+                  "Stored languages: \(stored.sorted())")
+        let appFiles = (try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("apps").path)) ?? []
+        try check(appFiles.count == 1, "One catalog file per app")
+        // A Korean name maps back to the English menu and vice versa.
+        let english = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["View", "Show Artist in Library"])
+        let aliases = repository.aliases(for: english)
+        try check(aliases?[0].contains("보기") == true && aliases?[1].contains("보관함에서 아티스트 보기") == true,
+                  "Language aliases: \(String(describing: aliases))")
+        var aliased = english; aliased.pathAliases = aliases
+        try check(MenuPathMatch.matches(["보기", "보관함에서 아티스트 보기"], aliased), "Korean path matches English menu")
+        try check(!(repository.aliases(for: english)?.joined().contains("Künstler in der Mediathek anzeigen") ?? false),
+                  "Unselected language stored")
+        // Compiled nib folders: newest runtime archive, named after the folder.
+        let folder = URL(fileURLWithPath: "/X/Base.lproj/MainMenu.nib")
+        let grouped = MenuIconRepository.nibs([folder.appendingPathComponent("keyedobjects-101300.nib"),
+                                                folder.appendingPathComponent("keyedobjects-110000.nib"),
+                                                folder.appendingPathComponent("designable.nib"),
+                                                URL(fileURLWithPath: "/X/Base.lproj/Other.nib")])
+        try check(grouped.map(\.name).sorted() == ["MainMenu", "Other"]
+                  && grouped.first { $0.name == "MainMenu" }?.url.lastPathComponent == "keyedobjects-110000.nib", "Nib folder grouping")
         let unavailable = MenuCommand(appID: "com.apple.Music", appName: "Music", path: ["View", "Show in Apple Music"])
         try check(repository.resolve(unavailable) == nil, "Unavailable private symbol should not be guessed")
-        let restarted = MenuIconRepository(root: root)
+        let restarted = MenuIconRepository(root: root, preferredLanguages: languages)
         // A nil/changed source has no effect without explicit refresh.
         try restarted.prepare(appID: "com.apple.Music", name: "Music", url: nil, refresh: false)
         try check(restarted.resolve(commands[0]) == commands[0].resourceIcon, "Frozen catalog restart")
@@ -66,7 +91,7 @@ enum MenuIconValidation {
         let settings = SettingsStore(defaults: defaults)
         settings.commands = []
         settings.menuCapture.enabled = true
-        let service = MenuIconService(settings: settings, root: root, applicationURL: { _ in music })
+        let service = MenuIconService(settings: settings, root: root, preferredLanguages: languages, applicationURL: { _ in music })
         var manual = commands[0]; manual.resourceIcon = nil
         settings.addCommand(manual)
         let captured = CapturedMenu(appID: "com.apple.Music", appName: "Music", path: commands[1].path)
@@ -103,6 +128,6 @@ enum MenuIconValidation {
             additionSize: CGSize(width: 516, height: 700), applicationProvider: { [musicApp] })
             .frame(width: 548, height: 900).background(Color(nsColor: .windowBackgroundColor))
         try PreviewExport.save(settingsPane, to: directory.appendingPathComponent("music-menu-settings.png"))
-        print("Verified 6 Music symbols + Korean, unavailable symbol fallback, persistence, cross-app borrowing, refresh, manual/automatic addition, original PDF/512px bitmap.")
+        print("Verified 6 Music symbols + Korean, stored languages \(stored.sorted()), per-app file, Korean↔English aliases, nib folders, unavailable symbol fallback, persistence, cross-app borrowing, refresh, manual/automatic addition, original PDF/512px bitmap.")
     }
 }

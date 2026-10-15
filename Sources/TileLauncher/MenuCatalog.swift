@@ -57,7 +57,7 @@ final class MenuCatalog: ObservableObject {
                 let children = Self.children(element)
                 if role == kAXMenuItemRole, !title.isEmpty, children.isEmpty, next.count >= 2 {
                     if Self.actions(element).contains(kAXPressAction) {
-                        found.append(AvailableMenu(path: next, shortcut: Self.shortcut(element)))
+                        found.append(AvailableMenu(path: next, shortcut: MenuShortcutReading.read(element).shortcut))
                     }
                 } else {
                     for child in children { walk(child, path: next, depth: depth + 1) }
@@ -92,9 +92,16 @@ final class MenuCatalog: ObservableObject {
                 finish("이 앱의 메뉴를 읽을 수 없습니다."); return
             }
             let deadline = Date().addingTimeInterval(3)
-            for title in command.path {
+            for (level, title) in command.path.enumerated() {
                 guard Date() < deadline else { finish("메뉴를 확인하는 시간이 초과되었습니다. 실행하지 않았습니다."); return }
-                let matches = Self.menuChildren(current).filter { Self.value($0, kAXTitleAttribute) as? String == title }
+                let children = Self.menuChildren(current).map { ($0, Self.value($0, kAXTitleAttribute) as? String ?? "") }
+                var matches = children.filter { $0.1 == title }.map(\.0)
+                // The app may now run in another stored language (R191): accept the
+                // same item's translated name, still requiring a single match.
+                if matches.isEmpty {
+                    let names = MenuPathMatch.names(command, level: level)
+                    matches = children.filter { names.contains(MenuIconMatch.key($0.1)) }.map(\.0)
+                }
                 guard matches.count == 1, let match = matches.first else {
                     finish("메뉴 ‘\(title)’가 바뀌었거나 같은 이름이 여러 개입니다. 설정에서 다시 등록해 주세요."); return
                 }
@@ -105,18 +112,14 @@ final class MenuCatalog: ObservableObject {
                 finish("지금은 ‘\(command.title)’ 메뉴를 사용할 수 없습니다. 문서나 선택 상태를 확인해 주세요."); return
             }
             guard Self.actions(current).contains(kAXPressAction) else { finish("이 메뉴는 실행 동작을 제공하지 않습니다."); return }
-            if let shortcut {
-                let equivalent = Self.shortcut(current)
-                DispatchQueue.main.async { shortcut(equivalent) }
+            // Report only a confirmed reading: a timeout must not erase a saved shortcut.
+            if let shortcut, case let reading = MenuShortcutReading.read(current), reading.known {
+                DispatchQueue.main.async { shortcut(reading.shortcut) }
             }
             let result = AXUIElementPerformAction(current, kAXPressAction as CFString)
             // No automatic retry: a timeout can mean the target already acted.
             finish(result == .success ? nil : "메뉴 실행 결과를 확인하지 못했습니다. 대상 앱을 확인해 주세요.")
         }
-    }
-    private static func shortcut(_ element: AXUIElement) -> MenuShortcut? {
-        guard let key = value(element, kAXMenuItemCmdCharAttribute) as? String, !key.isEmpty else { return nil }
-        return MenuShortcut(key: key, modifiers: value(element, kAXMenuItemCmdModifiersAttribute) as? Int ?? 0)
     }
     private static func value(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
         var result: CFTypeRef?
@@ -140,5 +143,32 @@ final class MenuCatalog: ObservableObject {
         var values: CFArray?
         guard AXUIElementCopyActionNames(element, &values) == .success else { return [] }
         return values as? [String] ?? []
+    }
+}
+
+/// A menu item's keyboard equivalent, distinguishing “none” from “could not read”.
+enum MenuShortcutReading {
+    static func read(_ element: AXUIElement) -> (shortcut: MenuShortcut?, known: Bool) {
+        var raw: CFTypeRef?
+        switch AXUIElementCopyAttributeValue(element, kAXMenuItemCmdCharAttribute as CFString, &raw) {
+        case .success:
+            if let key = raw as? String, !key.isEmpty {
+                var modifiers: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(element, kAXMenuItemCmdModifiersAttribute as CFString, &modifiers) == .success
+                else { return (nil, false) }
+                return (MenuShortcut(key: key, modifiers: modifiers as? Int ?? 0), true)
+            }
+            return noCharacter(element)
+        case .noValue, .attributeUnsupported: return noCharacter(element)
+        default: return (nil, false)
+        }
+    }
+    /// Arrow/Delete/F-key equivalents have no character. They are not shown,
+    /// but they are not “removed” either, so leave any saved value alone.
+    private static func noCharacter(_ element: AXUIElement) -> (shortcut: MenuShortcut?, known: Bool) {
+        var key: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, kAXMenuItemCmdVirtualKeyAttribute as CFString, &key)
+        if result == .success, key != nil { return (nil, false) }
+        return (nil, result == .noValue || result == .attributeUnsupported || result == .success)
     }
 }

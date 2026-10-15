@@ -300,6 +300,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Option went down: build the panel during the 0.25 s hold wait so the
     /// overlay only has to be ordered in when the wait ends. Nothing is shown,
     /// and shared presentation state is not touched until `show`.
+    /// Keep this preload (R185/R191, user decision): data that changes during the
+    /// hold is refreshed in `takePreparedOverlay`, not a reason to remove it.
     private func prepareOverlay() {
         guard panel?.isVisible != true, prepared == nil else { return }
         // No permission check here: a trust change restarts the hold monitor.
@@ -315,11 +317,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel?.isVisible != true else { return }
         optionReopen.cancel()
         checkPermission()
+        updateApps()
         let ready = previousLayout == nil ? takePreparedOverlay() : nil
         discardPreparedOverlay()
         let overlay: PreparedOverlay
         if let ready { overlay = ready } else {
-            updateApps()
             guard let built = buildOverlay(restoring: previousLayout) else { return }
             overlay = built
         }
@@ -332,10 +334,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let point = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main,
               screen.visibleFrame == ready.screenFrame else { return nil }
+        // Windows/app/menus may have changed during the hold. Update the prepared
+        // content to the current data (as the pinned overlay's live refresh does)
+        // instead of discarding the preload; only the size is recomputed.
+        ready.content.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
+                              commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
+                              menuHistory: settings.menuHistory)
         let old = ready.content.snapshot.layout
         let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
             .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
-        guard moved.frame.size == old.frame.size, moved.compact == old.compact, moved.scale == old.scale else { return nil }
+        guard moved.compact == old.compact, moved.scale == old.scale else { return nil }
         if moved != old {
             ready.content.snapshot.layout = moved
             ready.panel.setFrame(moved.frame, display: false)

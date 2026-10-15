@@ -12,8 +12,18 @@ public enum MenuNibResources {
         public let resource: String
         public let systemSymbol: Bool
     }
+    /// Any titled menu item with its localization key; used for language aliases.
+    public struct Item: Equatable {
+        public let title: String
+        public let titleKey: String?
+    }
     public static func links(in data: Data) -> [Link] {
         (try? Archive(data).links()) ?? []
+    }
+    /// One parse for both the image links and every titled menu item.
+    public static func contents(in data: Data) -> (links: [Link], items: [Item]) {
+        guard let archive = try? Archive(data) else { return ([], []) }
+        return (archive.links(), archive.items())
     }
     private enum Invalid: Error { case archive }
     private enum Value { case reference(Int), bytes(Data), ignored }
@@ -115,9 +125,19 @@ public enum MenuNibResources {
             default: return nil
             }
         }
+        private func isMenuItem(_ i: Int) -> Bool {
+            objects[i].name == "NSMenuItem" || string(i, "NSOriginalClassName") == "NSMenuItem"
+        }
+        func items() -> [Item] {
+            objects.indices.compactMap { i in
+                guard isMenuItem(i), let titleRef = reference(i, "NSTitle"), let title = string(titleRef),
+                      !title.isEmpty, title.count <= 240 else { return nil }
+                return Item(title: title, titleKey: string(titleRef, "NSKey"))
+            }
+        }
         func links() -> [Link] {
             objects.indices.compactMap { i in
-                guard objects[i].name == "NSMenuItem" || string(i, "NSOriginalClassName") == "NSMenuItem",
+                guard isMenuItem(i),
                       let titleRef = reference(i, "NSTitle"), let title = string(titleRef), !title.isEmpty,
                       let image = reference(i, "NSImage"), objects[image].name == "NSCustomResource",
                       string(image, "NSClassName") == "NSImage",
