@@ -1,13 +1,14 @@
 import Foundation
 
 public enum TileSection: String, CaseIterable, Identifiable {
-    case menus, windows, registered
+    case menus, windows, registered, handoff
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .menus: return "메뉴"
         case .windows: return "최근 창"
         case .registered: return "등록 항목"
+        case .handoff: return "Handoff"
         }
     }
 }
@@ -48,6 +49,8 @@ public struct TileColors: Codable, Equatable {
     public var menus: TileColor?
     public var windows: TileColor?
     public var registered: TileColor?
+    /// R192: the Handoff tile that replaces the first recent window.
+    public var handoff: TileColor?
     public init() {}
     public subscript(section: TileSection) -> TileColor? {
         get {
@@ -55,6 +58,7 @@ public struct TileColors: Codable, Equatable {
             case .menus: return menus
             case .windows: return windows
             case .registered: return registered
+            case .handoff: return handoff
             }
         }
         set {
@@ -62,6 +66,7 @@ public struct TileColors: Codable, Equatable {
             case .menus: menus = newValue
             case .windows: windows = newValue
             case .registered: registered = newValue
+            case .handoff: handoff = newValue
             }
         }
     }
@@ -71,6 +76,7 @@ public struct TileColors: Codable, Equatable {
         case .menus: return TileColor(theme.isClassic ? 0x247758 : 0xD6AD41)
         case .windows: return TileColor(0x236A9C)
         case .registered: return TileColor(0x8068AC)
+        case .handoff: return TileColor(0x0E9F9A)
         }
     }
     public static func restore(_ data: Data?) -> Self {

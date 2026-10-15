@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let presentation = OverlayPresentation()
     private let launches = ApplicationLaunchMonitor()
     let menuCatalog = MenuCatalog()
+    private let dockHandoff = DockHandoff()
+    private var handoffPoll: Timer?
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var menuIcons: MenuIconService?
     private var visibleContent: OverlayContent?
@@ -82,7 +84,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.schedulePinnedRefresh()
         }
         hold.onShow = { [weak self] in self?.show(held: true) }
-        hold.onPrepare = { [weak self] in self?.prepareOverlay() }
+        hold.onPrepare = { [weak self] in
+            // The Dock read finishes well within the 0.25 s wait; `show` refreshes
+            // the prepared content with the result.
+            self?.dockHandoff.refresh()
+            self?.prepareOverlay()
+        }
+        dockHandoff.onChange = { [weak self] handoff in
+            guard let self, self.panel?.isVisible == true else { return }
+            // Pinned: the usual live refresh. Held: swap only the first tile.
+            if self.presentation.isPinned { self.schedulePinnedRefresh() }
+            else { self.visibleContent?.setHandoff(handoff) }
+        }
         hold.onAbandon = { [weak self] in self?.discardPreparedOverlay() }
         hold.onQuickReopen = { [weak self] time in
             guard let self, let layout = self.optionReopen.take(at: time, enabled: self.settings.optionReopen.enabled) else { return false }
@@ -259,7 +272,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Opens the page only. System authorization remains the user's choice.
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles")!)
     }
-    @objc func openFromMenu() { show(held: false) }
+    @objc func openFromMenu() {
+        dockHandoff.refresh()
+        show(held: false)
+    }
     @objc private func reopenNotification(_ notification: Notification) {
         reopenExistingInterface(settings: notification.userInfo?["settings"] as? Bool == true, checkForUpdate: false)
     }
@@ -339,7 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // instead of discarding the preload; only the size is recomputed.
         ready.content.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                               commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
-                              menuHistory: settings.menuHistory)
+                              menuHistory: settings.menuHistory, handoff: dockHandoff.current)
         let old = ready.content.snapshot.layout
         let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
             .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
@@ -371,9 +387,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if reportErrors { error("작업 영역이 너무 작습니다. 화면 배율을 조절해 주세요. 최소 패널 크기는 512 × 420pt입니다.") }
             return nil
         }
-        let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: windows.count)
         let menuNow = Date()
-        let recent = OverlayContent.recentWindows(windows, context: lastContext)
+        let base = OverlayContent.recentWindows(windows, context: lastContext)
+        let recent = OverlayContent.applyHandoff(dockHandoff.current, to: base)
+        let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: recent.count)
         var snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid && !$0.isApplication }?.title,
                                        apps: Array(apps.prefix(3)),
@@ -387,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       workRows: snapshot.workRows())
             : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
         snapshot.layout = layout
-        let content = OverlayContent(snapshot)
+        let content = OverlayContent(snapshot, recentBase: base, manualCount: settings.automatic ? nil : settings.manualCount)
         let folderBrowser = FolderBrowser()
         let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation, launches: launches,
                             selectApp: { [weak self] in self?.select(app: $0) },
@@ -444,6 +461,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel = window
         heldPresentation = held
         hold.isShowing = true
+        // While the overlay is visible (held or pinned), notice Handoff offers
+        // that appear, change or end: one short Dock read (~50 AX items) every 0.5 s.
+        handoffPoll?.invalidate()
+        handoffPoll = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.dockHandoff.refresh() }
+        handoffPoll?.tolerance = 0.1
         // Receive local shortcuts without activating the launcher or changing the
         // captured app context. Global monitors cannot consume another app's keys.
         window.makeKeyAndOrderFront(nil)
@@ -497,7 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                                 commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
-                                menuHistory: settings.menuHistory)
+                                menuHistory: settings.menuHistory, handoff: dockHandoff.current)
         resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
@@ -507,6 +529,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             actionPending: pendingAction != nil, preferences: settings.optionReopen)
         pinnedRefresh?.cancel()
         pinnedRefresh = nil
+        handoffPoll?.invalidate()
+        handoffPoll = nil
         discardPreparedOverlay()
         panel?.orderOut(nil)
         panel?.contentView = nil
@@ -731,6 +755,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func select(window: WindowItem) {
+        if let handoff = window.handoff {
+            performImmediately { [weak self] in
+                self?.dockHandoff.press(handoff) { message in if let message { self?.error(message) } }
+            }
+            return
+        }
         if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
         performImmediately { [weak self] in
             self?.tracker.focus(id: window.id) { message in
@@ -898,6 +928,14 @@ if let index = CommandLine.arguments.firstIndex(of: "--glass-compare") {
     let seconds = CommandLine.arguments.indices.contains(index + 1)
         ? TimeInterval(CommandLine.arguments[index + 1]) ?? 120 : 120
     MainActor.assumeIsolated { GlassComparison.show(seconds: seconds) }
+    application.run()
+    exit(0)
+}
+// R192 uncommitted press test: `--press-handoff <output.json> [seconds]`.
+if let index = CommandLine.arguments.firstIndex(of: "--press-handoff"), CommandLine.arguments.indices.contains(index + 1) {
+    application.setActivationPolicy(.prohibited)
+    let seconds = CommandLine.arguments.indices.contains(index + 2) ? TimeInterval(CommandLine.arguments[index + 2]) ?? 600 : 600
+    DockDiagnostics.press(output: URL(fileURLWithPath: CommandLine.arguments[index + 1]), seconds: seconds)
     application.run()
     exit(0)
 }

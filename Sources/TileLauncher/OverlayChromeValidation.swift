@@ -51,6 +51,21 @@ enum OverlayChromeValidation {
             .clipShape(RoundedRectangle(cornerRadius: DeckSurfaceView.cornerRadius, style: .continuous))
         try PreviewExport.save(glyphs.environment(\.colorScheme, .light), dark: false,
                                to: directory.appendingPathComponent("menu-glyphs-light.png"))
+        // R192: a Handoff offer replaces the first recent tile at the same size.
+        let before = fixture.content.snapshot
+        let handoff = HandoffItem(appName: "Safari", appURL: PreviewIconAssets.app("Safari", path: "/Applications/Safari.app"),
+                                  device: "com.apple.iphone-15-pro-1")
+        fixture.content.snapshot = OverlaySnapshot(context: before.context, contextWindowTitle: before.contextWindowTitle,
+            apps: before.apps, windows: OverlayContent.applyHandoff(handoff, to: before.windows), layout: before.layout,
+            permission: true, pins: before.pins, profileID: before.profileID, profileName: before.profileName,
+            shortcuts: before.shortcuts, commands: before.commands, frequentMenuIDs: before.frequentMenuIDs)
+        guard fixture.content.snapshot.workRows() == before.workRows(),
+              fixture.content.snapshot.windows.count == before.windows.count else {
+            throw NSError(domain: "TileLauncher.Preview", code: 102,
+                          userInfo: [NSLocalizedDescriptionKey: "Handoff tile changed the recent layout"])
+        }
+        try PreviewExport.save(view, to: directory.appendingPathComponent("handoff-tile.png"))
+        fixture.content.snapshot = before
         let titles = VStack(spacing: 16) {
             OverlayTitleView(iconURL: snapshot.windows.first?.appURL, appName: "Finder", windowName: "Downloads")
             OverlayTitleView(iconURL: snapshot.windows.first?.appURL,

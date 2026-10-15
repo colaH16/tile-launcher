@@ -26,7 +26,7 @@ struct RecentWindowExplanation: View {
             Text("직사각형 · 활성 모니터의 현재 데스크탑")
             Text("큰 정사각형 · 다른 모니터에서 보이는 데스크탑")
             Text("작은 정사각형 · 보이지 않는 데스크탑")
-            Text("진한색 · 앱별 최근 창 / 파스텔 · 같은 앱의 다른 창").padding(.top, 4)
+            Text("진한색 · 대표 창(앱에서 마지막으로 사용) / 파스텔 · 같은 앱의 이전 창").padding(.top, 4)
             Text("회색 작은 타일 · 창 없이 실행 중인 앱")
         }.font(.caption).foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

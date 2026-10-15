@@ -622,18 +622,43 @@ struct DeckView: View {
             case .unknown: "데스크탑 확인 안 됨"
             }
         }() : desktop == .current ? "현재 데스크탑" : desktop == .other ? "다른 데스크탑" : "데스크탑 확인 안 됨"
-        let emphasized = previewEmphasizedWindows?.contains(window.id)
-            ?? (recentAppearance == .locationColor ? (firstIDs ?? firstWindowIDs).contains(window.id) : desktop == .current)
+        let emphasized = window.handoff != nil || (previewEmphasizedWindows?.contains(window.id)
+            ?? (recentAppearance == .locationColor ? (firstIDs ?? firstWindowIDs).contains(window.id) : desktop == .current))
         var colors = settings.tileColors
         if window.isApplication && recentAppearance.neutralApplications { colors.windows = TileColor(0x777777) }
-        let palette = DeckPalette(section: .windows, emphasized: emphasized,
+        // R192: a Handoff offer has its own color (Settings → Appearance, default teal).
+        let section: TileSection = window.handoff == nil ? .windows : .handoff
+        let palette = DeckPalette(section: section, emphasized: emphasized,
                                   dark: deckScheme == .dark, theme: settings.theme, colors: colors)
+        let help: String
+        let accessibilityLabel: String
+        if let handoff = window.handoff {
+            help = "Handoff · \(handoff.deviceName)에서 보던 작업을 \(window.appName)에서 계속"
+            accessibilityLabel = "\(index + 1). Handoff, \(handoff.deviceName)에서 \(window.appName)로 계속"
+        } else if window.isApplication {
+            help = "\(window.appName) · 열린 창 없음 · 앱 활성화"
+            accessibilityLabel = "\(index + 1). \(window.appName), 열린 창 없음"
+        } else {
+            help = "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "") + " · " + locationDescription
+            let role = recentAppearance == .locationColor ? (emphasized ? ", 대표 창(앱에서 마지막으로 사용)" : ", 같은 앱의 이전 창") : ""
+            accessibilityLabel = "\(index + 1). \(window.appName), \(window.title), \(locationDescription)" + role
+        }
         return Button { selectWindow(window) } label: {
             Group {
               if startTileLabels {
                 let compactTile = window.isApplication || small
                 ZStack(alignment: .bottomLeading) {
                     Icon(url: window.appURL, size: compactTile ? 26 : 58)
+                        .overlay(alignment: .bottomTrailing) {
+                            if let handoff = window.handoff {
+                                // The sending device, like the Dock's Handoff badge.
+                                Image(systemName: handoff.deviceSymbol)
+                                    .font(.system(size: u(compactTile ? 9 : 18), weight: .semibold))
+                                    .padding(u(compactTile ? 2 : 4))
+                                    .background(.regularMaterial, in: Circle())
+                                    .offset(x: u(compactTile ? 3 : 6), y: u(compactTile ? 3 : 6))
+                            }
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity,
                                alignment: compactTile && NumberShortcutAssignment.digit(for: index) != nil ? .leading : .center)
                         .padding(.leading, u(compactTile ? 3 : 0))
@@ -690,15 +715,14 @@ struct DeckView: View {
                         numberBadge(index).padding(u(previewLargeWindowIcons && (small || window.isApplication) ? 2 : 5))
                     }
                 }
-        }.buttonStyle(TileStyle(section: .windows, emphasized: emphasized,
+        }.buttonStyle(TileStyle(section: section, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)" || presentation.execution?.target == "window:\(window.id)", compact: small || window.isApplication))
             .disabled(window.isApplication && window.appURL.map(launches.isBlocked) == true)
             .overlay {
                 if window.isApplication && window.appURL.map(launches.isBlocked) == true { ApplicationLaunchBusy(compact: true) }
             }
-            .help(window.isApplication ? "\(window.appName) · 열린 창 없음 · 앱 활성화" : "\(window.appName) — \(window.title)" + (window.minimized ? " · 최소화됨" : "")
-                + " · " + locationDescription)
-            .accessibilityLabel(window.isApplication ? "\(index + 1). \(window.appName), 열린 창 없음" : "\(index + 1). \(window.appName), \(window.title), \(locationDescription)" + (recentAppearance == .locationColor ? (emphasized ? ", 앱별 최근 창" : ", 같은 앱의 다른 창") : ""))
+            .help(help)
+            .accessibilityLabel(accessibilityLabel)
             .contextMenu {
                 if window.isApplication {
                     Button("\(window.appName) 종료") { quitApplication(window) }

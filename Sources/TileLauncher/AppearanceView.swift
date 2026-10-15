@@ -37,7 +37,7 @@ struct AppearanceView: View {
                         }.padding(8)
                     }
                 }
-                Text("직접 고른 색은 테마를 바꿔도 유지됩니다. 기본색에서는 메뉴가 유리 테마의 노랑 / 클래식 테마의 초록, 최근 창은 파랑, 등록 항목은 보라 계열입니다. 메뉴 막대 아이콘은 두 테마 공통입니다.")
+                Text("직접 고른 색은 테마를 바꿔도 유지됩니다. 기본색에서는 메뉴가 유리 테마의 노랑 / 클래식 테마의 초록, 최근 창은 파랑, 등록 항목은 보라, Handoff는 청록 계열입니다. 메뉴 막대 아이콘은 두 테마 공통입니다.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("모든 섹션 기본색으로") { settings.tileColors = TileColors() }
                     .disabled(settings.tileColors == TileColors())
@@ -56,11 +56,14 @@ struct AppearanceView: View {
             sample("고정 메뉴", section: section, emphasized: true, width: 120)
         case .windows:
             smallWindowSample()
-            sample("다른 창", section: section, emphasized: false, width: 56).help("같은 앱의 다른 창 · 크기는 데스크탑 위치 기준")
-            sample("최근 창", section: section, emphasized: true, width: 56).help("각 앱에서 가장 최근에 사용한 창 · 크기는 데스크탑 위치 기준")
+            sample("이전 창", section: section, emphasized: false, width: 56).help("같은 앱의 나머지 창 · 크기는 데스크탑 위치 기준")
+            sample("대표 창", section: section, emphasized: true, width: 56).help("앱마다 마지막으로 사용한 창 · 크기는 데스크탑 위치 기준")
         case .registered:
             sample("폴더", section: section, emphasized: false, width: 56, symbol: "folder.fill")
             sample("앱", section: section, emphasized: true, width: 56, symbol: "app.fill")
+        case .handoff:
+            sample("Handoff", section: section, emphasized: true, width: 56, symbol: "iphone")
+                .help("iPhone·iPad에서 보던 작업을 이어서 열 때 첫 번째 최근 창 자리에 표시")
         }
     }
     private func smallWindowSample() -> some View {

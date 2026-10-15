@@ -43,6 +43,46 @@ enum DockDiagnostics {
         }
     }
 
+    /// Uncommitted R192 test: wait for a Handoff item, press it once, and record
+    /// whether the target app came to the front and the Dock item went away.
+    static func press(output: URL, seconds: TimeInterval) {
+        guard AXIsProcessTrusted(),
+              let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else {
+            fputs("Needs Accessibility trust and a running Dock.\n", stderr); exit(2)
+        }
+        let app = AXUIElementCreateApplication(dock.processIdentifier)
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        var log: [[String: Any]] = []
+        func finish() {
+            let data = (try? JSONSerialization.data(withJSONObject: log, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+            try? data.write(to: output)
+            exit(0)
+        }
+        let autohide = UserDefaults(suiteName: "com.apple.dock")?.bool(forKey: "autohide") ?? false
+        log.append(["event": "start", "dockAutohide": autohide])
+        print("Waiting up to \(Int(seconds)) s for a Handoff item…")
+        let end = Date().addingTimeInterval(seconds)
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            guard let item = items(app).first(where: { $0.subrole == "AXHandoffDockItem" }) else {
+                if Date() >= end { log.append(["event": "timeout"]); finish() }
+                return
+            }
+            timer.invalidate()
+            let before = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+            let result = AXUIElementPerformAction(item.element, kAXPressAction as CFString)
+            log.append(["event": "pressed", "title": item.title, "axResult": result.rawValue,
+                        "frontmostBefore": before, "detail": item.detail])
+            print("Pressed \(item.title): AXError \(result.rawValue)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                let still = items(app).contains { $0.subrole == "AXHandoffDockItem" }
+                log.append(["event": "after3s",
+                            "frontmost": NSWorkspace.shared.frontmostApplication?.localizedName ?? "",
+                            "handoffItemStillInDock": still])
+                finish()
+            }
+        }
+    }
+
     private struct Item {
         let element: AXUIElement
         let role: String, subrole: String, title: String

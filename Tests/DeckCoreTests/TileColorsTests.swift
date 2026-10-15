@@ -34,7 +34,7 @@ final class TileColorsTests: XCTestCase {
                 let basics = TileSection.allCases.map {
                     TileSurfaceColors(section: $0, emphasized: false, dark: dark, theme: theme, colors: TileColors()).fill.hex
                 }
-                XCTAssertEqual(Set(basics).count, 3)
+                XCTAssertEqual(Set(basics).count, TileSection.allCases.count)
                 for section in [TileSection.menus, .windows] {
                     let base = TileSurfaceColors(section: section, emphasized: false, dark: dark, theme: theme, colors: TileColors())
                     let highlight = TileSurfaceColors(section: section, emphasized: true, dark: dark, theme: theme, colors: TileColors())
