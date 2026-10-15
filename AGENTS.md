@@ -15,6 +15,7 @@
 
 ## 사용자 요청을 파일에 남기기
 
+- R194 전달 완료: 소스0ef8111b25a830d171fcae6c9cbcae73898446cc의1.8.0(35)을 XCTest172개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.8.0-arm64-unnotarized.zip에 복사했다.2,556,487바이트, SHA256 c667432be2cd8ec34fb98e18fc66b04d43d8744ff786ba7df0a429c55cb67a66이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.
 - R194: Option 유지/고정 모드는 닫히는 규칙 외에 통일한다(갱신·클릭 즉시 실행·드래그 이동). 기능 변경 minor1.8.0(35).
 
 - R193 전달 완료: 소스1337afacbdcf01e8dd3f2c9974d907dc875d816c의1.7.0(34)을 XCTest173개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.7.0-arm64-unnotarized.zip에 복사했다.2,557,378바이트, SHA256 0c0cf2ac332108d79af23da63c14f3f565f9fea3a8b85a61861d12ba2496a100이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.

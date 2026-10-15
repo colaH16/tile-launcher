@@ -8,6 +8,7 @@
 - `OverlayRefreshPolicy`(구 PinnedRefreshPolicy): 숫자 선택 대기(selection·pendingAction·실행 표시)와 마우스 버튼 눌림 중에만 갱신을 미루고, 그 외에는 두 모드 모두 0.12초 묶음 갱신으로 활성 앱·창·메뉴·Handoff를 반영한다. 미룬 갱신은 버튼을 떼면 다시 시도한다. Handoff 첫 칸만 교체하던 1.7.0의 Option 유지 전용 경로는 전체 갱신으로 대체했다.
 - Option 유지 오버레이도 상단 드래그 이동을 허용하고, Option 재입력 보정은 실제 패널 위치를 기억한다.
 - 유지한 차이: 닫힘(Option 놓기·다른 키·바깥 클릭·Space 변경 vs ×/Esc/⌘W/⌥W), 실행 후 닫힘 vs 유지·0.45초 실행 표시, 고정 시 앱 활성화(키 입력 소유·⌘W/⌘,/⌘H), Option 재입력 보정(Option 유지만).
+- 전달 완료: 소스0ef8111b25a830d171fcae6c9cbcae73898446cc의1.8.0(35)을 XCTest172개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.8.0-arm64-unnotarized.zip에 복사했다.2,556,487바이트, SHA256 c667432be2cd8ec34fb98e18fc66b04d43d8744ff786ba7df0a429c55cb67a66이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았다.
 
 ## 1.7.0 · Dock Handoff 타일·Handoff 색
 
