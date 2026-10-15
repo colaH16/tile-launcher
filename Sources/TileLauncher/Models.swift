@@ -43,11 +43,15 @@ extension PinnedItem {
     }
 }
 extension MenuCommand {
-    /// The chosen symbol only when this macOS has it installed.
-    var availableSymbol: String? {
-        MenuSymbolName.normalized(symbol).flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil ? nil : $0 }
+    /// A symbol name only when this macOS has it installed.
+    static func installed(_ name: String?) -> String? {
+        MenuSymbolName.normalized(name).flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil ? nil : $0 }
     }
-    var glyph: MenuTileGlyph { MenuTileGlyph.resolve(symbol: availableSymbol, shortcut: shortcut) }
+    var presetSymbol: String? { Self.installed(MenuSymbolPreset.symbol(for: title)) }
+    var glyph: MenuTileGlyph {
+        MenuTileGlyph.resolve(symbol: symbol == MenuSymbolName.hidden ? symbol : Self.installed(symbol),
+                              preset: presetSymbol, shortcut: shortcut)
+    }
     var usageDescription: String {
         "누적 \(totalUseCount)회 · 메뉴 막대 \(observedCount)회 · Tile Launcher \(useCount)회"
     }
@@ -189,7 +193,7 @@ final class SettingsStore: ObservableObject {
     }
     func setSymbol(_ name: String?, for id: UUID) {
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
-        let symbol = MenuSymbolName.normalized(name)
+        let symbol = MenuSymbolName.stored(name)
         if commands[i].symbol != symbol { commands[i].symbol = symbol }
     }
     /// The app's current keyboard equivalent; nil clears a removed shortcut.

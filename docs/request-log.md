@@ -1314,6 +1314,12 @@
 - 검증: XCTest 162개·Python 23개 통과, 네이티브 오프스크린 검사·렌더(menu-glyphs-light, adopted-143, settings-native-menus) 확인. 실제 AX 일괄 조회·응답 없는 앱·메뉴 막대 영역 판정·미리 만들기의 실기 동작과 체감 지연은 사용자 환경에서 확인이 필요하다.
 - 전달 완료: 소스5468306108334342219915759f49063e6dcd44a4의 1.5.0(28)을 XCTest162개/Python23개·네이티브 오프스크린 검사와 서명 실행 파일 렌더(시안과 PNG 해시 일치) 후 Developer ID Application(VV2W9U5XT3) 서명·미공증 ZIP으로 저장소 상위 Tile-Launcher-1.5.0-arm64-unnotarized.zip에 복사했다.2,384,576바이트, SHA256 e7250876ca3def467f68799dc134a974e2ed3a8c3b999bb4ca7cf3b0836e6891이며 원본과 일치한다. 공증·GitHub 바이너리 공개·개발 Mac 설치는 하지 않았고 iCloud 업로드/다른 Mac 수신은 미확인이다.
 
+### R186 · 기본 메뉴 아이콘 복원·New Window 추가
+
+- 사용자: R183 시안에서 붙였던 New Tab, New Folder, Get Info, Go to Folder, Connect to Server, Hide Sidebar의 SF Symbol이 1.5.0에서 빠진 것을 확인하고 다시 넣으라고 요청했다. Finder 메뉴는 아니지만 New Window도 기본 아이콘으로 미리 저장하라고 했다.
+- 에이전트 판단: R185에서 내장 표를 뺀 것은 R184의 “앱 용량만 커지는 것 아니냐”는 질문을 제거 요청으로 해석한 결과였다. 이번 요청으로 정확한 이름 일치 7종(+Show Sidebar, 한국어 이름)만 기본값으로 둔다. 직접 선택이 우선하며, 기본값/아이콘 없음을 구분한다. 버전은 UI patch 1.5.1(29)이다.
+- 검증: XCTest 163개·Python 23개 통과, 오프스크린 menu-glyphs-light 렌더에서 기본 아이콘 6종·직접 선택·아이콘 없음(⌘K) 확인. 서명 빌드·전달·push는 아직 하지 않았다.
+
 ## 다음 요청 기록 양식
 
 새 날짜 아래 `R번호 · 주제`를 추가하고 다음을 기록합니다.

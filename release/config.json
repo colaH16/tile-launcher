@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
-  "build": "28",
+  "version": "1.5.1",
+  "build": "29",
   "architecture": "arm64",
   "minimum_macos": "26.0",
   "prerelease": false

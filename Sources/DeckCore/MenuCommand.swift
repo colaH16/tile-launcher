@@ -15,7 +15,8 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     public private(set) var recentUses: [Date]
     /// Last keyboard equivalent seen in the app's menu bar, if any.
     public var shortcut: MenuShortcut?
-    /// User-chosen SF Symbol name for the overlay tile.
+    /// User-chosen SF Symbol for the overlay tile: nil = built-in default,
+    /// `MenuSymbolName.hidden` = no icon.
     public var symbol: String?
     public var title: String { path.last ?? "" }
     public var totalUseCount: Int {
@@ -57,7 +58,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = try c.decodeIfPresent(Bool.self, forKey: .isAutomatic) ?? false
         observedCount = max(0, try c.decodeIfPresent(Int.self, forKey: .observedCount) ?? 0)
         shortcut = try? c.decodeIfPresent(MenuShortcut.self, forKey: .shortcut)
-        symbol = MenuSymbolName.normalized(try? c.decodeIfPresent(String.self, forKey: .symbol))
+        symbol = MenuSymbolName.stored(try? c.decodeIfPresent(String.self, forKey: .symbol))
         if let dates = try c.decodeIfPresent([Date].self, forKey: .recentUses) {
             recentUses = Array(dates.sorted(by: >).prefix(3))
         } else {

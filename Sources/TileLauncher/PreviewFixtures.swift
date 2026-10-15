@@ -108,8 +108,9 @@ final class PreviewFixture: ObservableObject {
                 // Finder's real equivalents; Open in New Tab has none.
                 command.shortcut = [("t", 0), ("n", 1), ("n", 0), nil, ("i", 0), ("g", 1), ("k", 0), ("j", 0), ("s", 4)][index]
                     .flatMap { MenuShortcut(key: $0.0, modifiers: $0.1) }
-                // User-chosen icons on a few; the rest fall back to shortcut or text.
-                command.symbol = ["plus.square.on.square", "folder.badge.plus", nil, nil, "info.circle", nil, nil, nil, "sidebar.left"][index]
+                // Built-in defaults cover most Finder titles; one user choice and one
+                // explicit “no icon” show the other paths.
+                command.symbol = [nil, nil, "macwindow.badge.plus", nil, nil, nil, MenuSymbolName.hidden, nil, nil][index]
                 return command
             }
         }

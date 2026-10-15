@@ -8,6 +8,19 @@ final class MenuTileGlyphTests: XCTestCase {
         XCTAssertEqual(MenuTileGlyph.resolve(symbol: nil, shortcut: shortcut), .shortcut("⌘J"))
         XCTAssertEqual(MenuTileGlyph.resolve(symbol: "  ", shortcut: nil), .text)
     }
+    func testPresetAppliesUnlessUserChoseOrHidIcon() {
+        XCTAssertEqual(MenuSymbolPreset.symbol(for: "Go to Folder…"), "folder")
+        XCTAssertEqual(MenuSymbolPreset.symbol(for: "New Window"), "macwindow.badge.plus")
+        XCTAssertEqual(MenuSymbolPreset.symbol(for: "새로운 폴더"), "folder.badge.plus")
+        XCTAssertNil(MenuSymbolPreset.symbol(for: "New Finder Window"))
+        XCTAssertNil(MenuSymbolPreset.symbol(for: "Open in New Tab"))
+        let shortcut = MenuShortcut(key: "i", modifiers: 0)
+        XCTAssertEqual(MenuTileGlyph.resolve(symbol: nil, preset: "info.circle", shortcut: shortcut), .symbol("info.circle"))
+        XCTAssertEqual(MenuTileGlyph.resolve(symbol: "star", preset: "info.circle", shortcut: shortcut), .symbol("star"))
+        XCTAssertEqual(MenuTileGlyph.resolve(symbol: MenuSymbolName.hidden, preset: "info.circle", shortcut: shortcut), .shortcut("⌘I"))
+        XCTAssertEqual(MenuSymbolName.stored(""), MenuSymbolName.hidden)
+        XCTAssertNil(MenuSymbolName.stored(nil))
+    }
     func testSymbolNamesAreTrimmedAndRestricted() {
         XCTAssertEqual(MenuSymbolName.normalized(" star.fill "), "star.fill")
         XCTAssertNil(MenuSymbolName.normalized("../etc"))

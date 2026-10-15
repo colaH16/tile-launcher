@@ -36,7 +36,7 @@ struct MenuSymbolPicker: View {
     @State private var name: String
     init(command: MenuCommand, choose: @escaping (String?) -> Void) {
         self.command = command; self.choose = choose
-        _name = State(initialValue: command.symbol ?? "")
+        _name = State(initialValue: command.symbol ?? "")  // "" also for “no icon”
     }
     /// A starting set only; any installed SF Symbol name can be typed.
     static let suggestions = [
@@ -75,8 +75,14 @@ struct MenuSymbolPicker: View {
                  "SF Symbols 앱에서 이름을 복사해 붙여 넣을 수도 있어요. 아이콘이 없으면 단축키, 단축키도 없으면 메뉴 이름을 크게 표시합니다.")
                 .font(.caption).foregroundStyle(trimmed != nil && !valid ? .red : .secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let preset = command.presetSymbol {
+                Label("기본 아이콘: \(preset)", systemImage: preset).font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
-                Button("아이콘 없음") { choose(nil) }
+                Button("기본값") { choose(nil) }
+                    .help(command.presetSymbol == nil ? "직접 고른 아이콘을 지웁니다" : "직접 고른 아이콘을 지우고 기본 아이콘을 씁니다")
+                Button("아이콘 없음") { choose(MenuSymbolName.hidden) }
+                    .help("기본 아이콘도 쓰지 않고 단축키나 메뉴 이름을 표시합니다")
                 Spacer()
                 Button("적용") { choose(trimmed) }.keyboardShortcut(.defaultAction).disabled(!valid)
             }
