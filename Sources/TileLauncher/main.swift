@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuIcons: MenuIconService?
     private var visibleContent: OverlayContent?
     private var visibleSnapshot: OverlaySnapshot? { visibleContent?.snapshot }
-    private var pinnedRefresh: DispatchWorkItem?
+    private var overlayRefresh: DispatchWorkItem?
     private var appRecency = Recency<String>()
     private var apps: [AppItem] = []
     private var windows: [WindowItem] = []
@@ -81,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let states = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0.desktop) })
                 if self.presentation.windowDesktops != states { self.presentation.windowDesktops = states }
             }
-            self.schedulePinnedRefresh()
+            self.scheduleOverlayRefresh()
         }
         hold.onShow = { [weak self] in self?.show(held: true) }
         hold.onPrepare = { [weak self] in
@@ -90,11 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.dockHandoff.refresh()
             self?.prepareOverlay()
         }
-        dockHandoff.onChange = { [weak self] handoff in
+        dockHandoff.onChange = { [weak self] _ in
             guard let self, self.panel?.isVisible == true else { return }
-            // Pinned: the usual live refresh. Held: swap only the first tile.
-            if self.presentation.isPinned { self.schedulePinnedRefresh() }
-            else { self.visibleContent?.setHandoff(handoff) }
+            self.scheduleOverlayRefresh()
         }
         hold.onAbandon = { [weak self] in self?.discardPreparedOverlay() }
         hold.onQuickReopen = { [weak self] time in
@@ -147,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         refreshFocus()
         updateApps()
-        menuUsage.onCapture = { [weak self] in self?.schedulePinnedRefresh() }
+        menuUsage.onCapture = { [weak self] in self?.scheduleOverlayRefresh() }
         menuUsage.start()
         checkPermission(force: true)
         let center = NSWorkspace.shared.notificationCenter
@@ -169,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateApps()
             self.checkPermission()
             self.tracker.activate(item)
-            self.schedulePinnedRefresh()
+            self.scheduleOverlayRefresh()
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                             object: nil, queue: .main) { [weak self] _ in
@@ -388,8 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         let menuNow = Date()
-        let base = OverlayContent.recentWindows(windows, context: lastContext)
-        let recent = OverlayContent.applyHandoff(dockHandoff.current, to: base)
+        let recent = OverlayContent.recentWindows(windows, context: lastContext, handoff: dockHandoff.current)
         let count = layout.windowLimit(manual: settings.automatic ? nil : settings.manualCount, actual: recent.count)
         var snapshot = OverlaySnapshot(context: lastContext,
                                        contextWindowTitle: windows.first { $0.pid == lastContext?.pid && !$0.isApplication }?.title,
@@ -404,7 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       workRows: snapshot.workRows())
             : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
         snapshot.layout = layout
-        let content = OverlayContent(snapshot, recentBase: base, manualCount: settings.automatic ? nil : settings.manualCount)
+        let content = OverlayContent(snapshot)
         let folderBrowser = FolderBrowser()
         let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation, launches: launches,
                             selectApp: { [weak self] in self?.select(app: $0) },
@@ -495,26 +492,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // app keyboard ownership, including the macOS command/menu route.
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
-        schedulePinnedRefresh()
+        scheduleOverlayRefresh()
     }
-    private func schedulePinnedRefresh() {
-        guard panel?.isVisible == true, presentation.isPinned else { return }
-        pinnedRefresh?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.refreshPinnedContent() }
-        pinnedRefresh = work
+    private func scheduleOverlayRefresh() {
+        guard panel?.isVisible == true else { return }
+        overlayRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshOverlayContent() }
+        overlayRefresh = work
         // Coalesce activation + AX focus/title notifications without scanning menus.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
-    private func refreshPinnedContent() {
-        pinnedRefresh = nil
+    private func refreshOverlayContent() {
+        overlayRefresh = nil
         guard panel?.isVisible == true else { return }
         let mouseDown = NSEvent.pressedMouseButtons != 0
-        guard PinnedRefreshPolicy.allows(isPinned: presentation.isPinned, optionDown: hold.optionDown,
-                                        hasSelection: presentation.selection != nil || presentation.execution != nil,
-                                        hasPendingAction: pendingAction != nil, mouseDown: mouseDown) else {
+        guard OverlayRefreshPolicy.allows(hasSelection: presentation.selection != nil || presentation.execution != nil,
+                                          hasPendingAction: pendingAction != nil, mouseDown: mouseDown) else {
             // Native window dragging may not deliver mouse-up. Retry only while
             // a known refresh is deferred by that gesture, never poll app contents.
-            if mouseDown && presentation.isPinned && !hold.optionDown { schedulePinnedRefresh() }
+            if mouseDown { scheduleOverlayRefresh() }
             return
         }
         visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
@@ -524,11 +520,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
         clearKeyboardFeedback()
-        optionReopen.record(visibleSnapshot?.layout, at: time, reason: reason,
+        // A held overlay can be dragged now; reopen where it actually is.
+        let shownLayout = visibleSnapshot.map { layout in
+            PanelLayout(frame: panel?.frame ?? layout.layout.frame, compact: layout.layout.compact,
+                        supported: layout.layout.supported, scale: layout.layout.scale)
+        }
+        optionReopen.record(shownLayout, at: time, reason: reason,
                             held: heldPresentation && panel?.isVisible == true,
                             actionPending: pendingAction != nil, preferences: settings.optionReopen)
-        pinnedRefresh?.cancel()
-        pinnedRefresh = nil
+        overlayRefresh?.cancel()
+        overlayRefresh = nil
         handoffPoll?.invalidate()
         handoffPoll = nil
         discardPreparedOverlay()
@@ -563,12 +564,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let cleanup = DispatchWorkItem { [weak self] in
                 self?.presentation.clearExecution(id: id)
                 self?.keyboardFeedbackCleanup = nil
-                self?.schedulePinnedRefresh()
+                self?.scheduleOverlayRefresh()
             }
             keyboardFeedbackCleanup = cleanup
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: cleanup)
         }
-        schedulePinnedRefresh()
+        scheduleOverlayRefresh()
     }
     private func clearKeyboardFeedback() {
         keyboardFeedbackCleanup?.cancel()
@@ -728,7 +729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }) { [weak self] message in
                     if let message { self?.error(message) } else {
                         self?.settings.recordUse(menu.id)
-                        self?.schedulePinnedRefresh()
+                        self?.scheduleOverlayRefresh()
                     }
                 }
             }

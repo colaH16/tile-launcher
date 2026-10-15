@@ -180,10 +180,11 @@ struct DeckView: View {
             // drag view and SwiftUI button anchors share physical coordinates.
             .overlayPreferenceValue(HeaderControlsKey.self) { controls in
                 GeometryReader { geometry in
-                    OverlayDragHandle(enabled: presentation.isPinned,
+                    // R194: held and pinned overlays move the same way.
+                    OverlayDragHandle(enabled: true,
                                       excludedRects: controls.map { geometry[$0] })
                         .frame(height: DeckSpacing.header(compact: compact, scale: snapshot.layout.scale))
-                        .allowsHitTesting(presentation.isPinned)
+                        .allowsHitTesting(true)
                 }
             }
     }

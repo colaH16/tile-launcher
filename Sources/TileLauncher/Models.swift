@@ -81,25 +81,7 @@ struct OverlaySnapshot: Equatable {
 }
 final class OverlayContent: ObservableObject {
     @Published var snapshot: OverlaySnapshot
-    /// The recent list before a Handoff tile replaces its first entry, so the
-    /// first tile can be swapped back while Option is held (R192).
-    private(set) var recentBase: [WindowItem] = []
-    private var manualCount: Int?
-    init(_ snapshot: OverlaySnapshot, recentBase: [WindowItem] = [], manualCount: Int? = nil) {
-        self.snapshot = snapshot; self.recentBase = recentBase; self.manualCount = manualCount
-    }
-    /// Swap only the first tile for a new Handoff state. Order, numbers and the
-    /// other tiles stay frozen as during any Option hold.
-    func setHandoff(_ handoff: HandoffItem?) {
-        let list = Self.applyHandoff(handoff, to: recentBase)
-        let windows = Array(list.prefix(snapshot.layout.windowLimit(manual: manualCount, actual: list.count)))
-        guard windows != snapshot.windows else { return }
-        let old = snapshot
-        snapshot = OverlaySnapshot(context: old.context, contextWindowTitle: old.contextWindowTitle, apps: old.apps,
-                                   windows: windows, layout: old.layout, permission: old.permission, pins: old.pins,
-                                   profileID: old.profileID, profileName: old.profileName, shortcuts: old.shortcuts,
-                                   commands: old.commands, frequentMenuIDs: old.frequentMenuIDs)
-    }
+    init(_ snapshot: OverlaySnapshot) { self.snapshot = snapshot }
     static func activeAppKey(_ context: AppItem?, in windows: [WindowItem]) -> String? {
         guard let context else { return nil }
         return windows.first {
@@ -149,9 +131,7 @@ final class OverlayContent: ObservableObject {
                  trusted: Bool, commands: [MenuCommand], manualCount: Int?,
                  menuHistory: MenuHistoryPreferences = .init(), handoff: HandoffItem? = nil, now: Date = Date()) {
         let old = snapshot
-        recentBase = Self.recentWindows(windows, context: context)
-        self.manualCount = manualCount
-        let recent = Self.applyHandoff(handoff, to: recentBase)
+        let recent = Self.recentWindows(windows, context: context, handoff: handoff)
         let count = old.layout.windowLimit(manual: manualCount, actual: recent.count)
         let next = OverlaySnapshot(context: context,
                                    contextWindowTitle: windows.first { $0.pid == context?.pid && !$0.isApplication }?.title,
