@@ -561,6 +561,8 @@ enum PreviewExport {
         try ApplicationLaunchMonitor.verifyForPreview()
         try verifySettingsNavigation()
         try verifyGroupedWindowContent()
+        try ApplicationSettingsValidation.verify()
+        try IconReadAheadValidation.verify()
         try verifyScaledDragTargets()
         try verifyRegisteredViewport(to: directory)
         try OverlayChromeValidation.verify(to: directory)
@@ -749,20 +751,42 @@ enum PreviewExport {
         }
         guard let drag = dragViews(surface).first,
               abs(drag.bounds.width - layout.frame.width) < 1,
-              abs(drag.bounds.height - DeckSpacing.header(compact: layout.compact, scale: layout.scale)) < 1,
-              drag.excludedRects.count == 2,
-              drag.excludedRects.allSatisfy({ abs($0.width - DeckSpacing.toolbarButton) < 1 && drag.bounds.contains($0) }),
+              abs(drag.bounds.height - layout.frame.height) < 1,
+              drag.excludedRects.count > 20,
               !window.isVisible else {
             throw NSError(domain: "TileLauncher.Preview", code: 82,
                           userInfo: [NSLocalizedDescriptionKey: "Scaled header/controls must use physical window coordinates."])
         }
-        for rect in drag.excludedRects {
-            let point = drag.convert(CGPoint(x: rect.midX, y: rect.midY), to: drag.superview)
-            guard drag.hitTest(point) == nil else { throw NSError(domain: "TileLauncher.Preview", code: 83) }
+        var starts = 0
+        drag.beginDragForValidation = { _ in starts += 1 }
+        func event(_ point: CGPoint, type: NSEvent.EventType = .leftMouseDown) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: drag.convert(point, to: nil), modifierFlags: [],
+                timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+                clickCount: 1, pressure: 0)!
         }
-        let background = drag.convert(CGPoint(x: drag.bounds.midX, y: drag.bounds.midY), to: drag.superview)
-        guard drag.hitTest(background) === drag else { throw NSError(domain: "TileLauncher.Preview", code: 84) }
-        print("Scaled header: \(layout.frame.size), scale=\(layout.scale), physical drag bounds and both control exclusions passed offscreen.")
+        for rect in drag.excludedRects {
+            let point = CGPoint(x: rect.midX, y: rect.midY)
+            guard !drag.canStartDrag(at: point), drag.hitTest(point) == nil,
+                  drag.handleMouseDown(event(point)) != nil else {
+                throw NSError(domain: "TileLauncher.Preview", code: 83)
+            }
+        }
+        // Header title, outer side gap, inter-grid gap and footer are draggable.
+        let candidates = [CGPoint(x: drag.bounds.midX, y: 15), CGPoint(x: 3, y: drag.bounds.midY),
+                          CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 10)]
+        for point in candidates {
+            guard drag.canStartDrag(at: point), drag.hitTest(point) == nil,
+                  drag.handleMouseDown(event(point)) == nil else {
+                throw NSError(domain: "TileLauncher.Preview", code: 84)
+            }
+            guard drag.handleMouseDown(event(point, type: .rightMouseDown)) != nil else {
+                throw NSError(domain: "TileLauncher.Preview", code: 85)
+            }
+        }
+        guard starts == candidates.count else { throw NSError(domain: "TileLauncher.Preview", code: 86) }
+        drag.enabled = false
+        guard drag.handleMouseDown(event(candidates[0])) != nil else { throw NSError(domain: "TileLauncher.Preview", code: 87) }
+        print("Full overlay: \(layout.frame.size), scale=\(layout.scale), \(drag.excludedRects.count) tile/control exclusions; background drags and ordinary control/right-click events passed offscreen.")
     }
 
     @MainActor private static func verifyRegisteredViewport(to directory: URL) throws {

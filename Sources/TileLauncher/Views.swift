@@ -2,10 +2,27 @@ import AppKit
 import SwiftUI
 import DeckCore
 
-private struct HeaderControlsKey: PreferenceKey {
-    static var defaultValue: [Anchor<CGRect>] { [] }
-    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+private struct OverlayInteractionRegion {
+    let bounds: Anchor<CGRect>
+    var clips: [Anchor<CGRect>] = []
+    func resolve(in geometry: GeometryProxy) -> CGRect? {
+        OverlayDragGeometry.clipped(geometry[bounds], to: clips.map { geometry[$0] })
+    }
+}
+private struct OverlayControlsKey: PreferenceKey {
+    static var defaultValue: [OverlayInteractionRegion] { [] }
+    static func reduce(value: inout [OverlayInteractionRegion], nextValue: () -> [OverlayInteractionRegion]) {
         value.append(contentsOf: nextValue())
+    }
+}
+private extension View {
+    func overlayDragExcluded() -> some View {
+        anchorPreference(key: OverlayControlsKey.self, value: .bounds) { [.init(bounds: $0)] }
+    }
+    func overlayDragClip() -> some View {
+        transformAnchorPreference(key: OverlayControlsKey.self, value: .bounds) { regions, clip in
+            for index in regions.indices { regions[index].clips.append(clip) }
+        }
     }
 }
 
@@ -72,6 +89,7 @@ private struct RegisteredTileStyle: ButtonStyle {
                 .onHover { hovering = $0 }
                 .offset(y: selected && !reduceMotion ? 2 * scale : 0)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
+                .overlayDragExcluded()
         }
     }
 }
@@ -118,6 +136,7 @@ private struct TileStyle: ButtonStyle {
                 .onHover { hovering = $0 }
                 .offset(y: selected && !reduceMotion ? 2 * scale : 0)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
+                .overlayDragExcluded()
         }
     }
 }
@@ -179,13 +198,12 @@ struct DeckView: View {
             .font(.system(size: NSFont.systemFontSize))
             // Layout and text are drawn at their final point sizes. The native
             // drag view and SwiftUI button anchors share physical coordinates.
-            .overlayPreferenceValue(HeaderControlsKey.self) { controls in
+            .overlayPreferenceValue(OverlayControlsKey.self) { controls in
                 GeometryReader { geometry in
                     // R194: held and pinned overlays move the same way.
                     OverlayDragHandle(enabled: true,
-                                      excludedRects: controls.map { geometry[$0] })
-                        .frame(height: DeckSpacing.header(compact: compact, scale: snapshot.layout.scale))
-                        .allowsHitTesting(true)
+                                      excludedRects: controls.compactMap { $0.resolve(in: geometry) })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
     }
@@ -216,7 +234,7 @@ struct DeckView: View {
                          ?? launches.statusText
                          ?? presentation.execution.map { "실행 요청: \($0.title)" }
                          ?? (compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
-                         : presentation.isPinned ? "상단 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정"))
+                         : presentation.isPinned ? "빈 배경 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정"))
                         .font(.caption).lineLimit(1)
                     Spacer()
                     Text(compact ? "⌥A/S ← · ⌥D/F →" : "⌥A/S 이전 · ⌥D/F 다음")
@@ -264,7 +282,7 @@ struct DeckView: View {
                 .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                 .help(presentation.isPinned ? "닫기 · Esc · ⌘W · ⌥W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
-                .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
+                .overlayDragExcluded()
 
                 if browser.current != nil {
                     Button(action: browser.back) {
@@ -274,7 +292,7 @@ struct DeckView: View {
                     .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                     .help("뒤로")
                     .accessibilityLabel("이전 폴더로 이동")
-                    .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
+                    .overlayDragExcluded()
                 }
                 Spacer()
                 Button { showSettings(.general) } label: {
@@ -282,7 +300,7 @@ struct DeckView: View {
                 }
                 .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular).help("설정 · ⌘, 또는 ⌥,")
                 .accessibilityLabel("설정")
-                .anchorPreference(key: HeaderControlsKey.self, value: .bounds) { [$0] }
+                .overlayDragExcluded()
             }
         }
         .frame(height: DeckSpacing.headerContent(compact: compact, scale: snapshot.layout.scale))
@@ -325,7 +343,7 @@ struct DeckView: View {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
                 Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).help("설정에서 앱별 메뉴 추가")
+                    .buttonStyle(.plain).overlayDragExcluded().help("설정에서 앱별 메뉴 추가")
             }.frame(height: 20)
             if menuEntries.isEmpty {
                 Button { showSettings(.addMenu) } label: {
@@ -355,7 +373,7 @@ struct DeckView: View {
                     }.frame(width: geometry.menuWidth,
                             height: CGFloat(bottom) * micro + CGFloat(max(0, bottom - 1)) * geometry.gap,
                             alignment: .topLeading)
-                }.scrollIndicators(.visible)
+                }.scrollIndicators(.visible).overlayDragClip()
             } else {
                 let packed = rows(menuEntries.map {
                     ($0.isPinned || (menuAppearance == .original && $0.isFrequent(snapshot.frequentMenuIDs))) ? 2 : 1
@@ -371,7 +389,7 @@ struct DeckView: View {
                             }
                         }
                     }
-                }.scrollIndicators(.visible)
+                }.scrollIndicators(.visible).overlayDragClip()
             }
         }.frame(height: height)
     }
@@ -490,11 +508,11 @@ struct DeckView: View {
                 Spacer()
                 Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
                 Button { showSettings(.registered) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).help("앱·폴더 추가 및 순서 변경")
+                    .buttonStyle(.plain).overlayDragExcluded().help("앱·폴더 추가 및 순서 변경")
             }.frame(height: 26)
             if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가") { showSettings(.registered) }
-                    .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity).overlayDragExcluded()
             } else {
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(grid.side), spacing: grid.gap), count: grid.columns),
@@ -533,7 +551,7 @@ struct DeckView: View {
                                 .accessibilityLabel(pinHelp(pin, index: index))
                         }
                     }.padding(.top, 4)
-                }.id(presentation.profile?.id ?? snapshot.profileID)
+                }.id(presentation.profile?.id ?? snapshot.profileID).overlayDragClip()
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -550,7 +568,7 @@ struct DeckView: View {
         }
         .menuStyle(.borderlessButton).fixedSize()
         .padding(.horizontal, 8).frame(height: 26)
-        .glassEffect(.regular.interactive(), in: Capsule())
+        .glassEffect(.regular.interactive(), in: Capsule()).overlayDragExcluded()
         .help("프로필 선택 · ⌥A/S 이전 · ⌥D/F 다음 · 키/휠 임시 전환은 닫으면 복귀")
         .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
         .accessibilityAction(named: Text("다음 프로필")) { cycleProfile(1) }
@@ -583,7 +601,7 @@ struct DeckView: View {
             if !snapshot.permission {
                 VStack(spacing: u(8)) {
                     Text("창을 보여주려면 접근성 권한이 필요해요.").font(font(.callout))
-                    Button("접근성 허용하기", action: requestPermission).buttonStyle(.borderedProminent)
+                    Button("접근성 허용하기", action: requestPermission).buttonStyle(.borderedProminent).overlayDragExcluded()
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if snapshot.windows.isEmpty {
                 Text("열린 창을 확인하고 있어요.\n잠시 후 다시 열어 주세요.")
@@ -757,13 +775,13 @@ struct DeckView: View {
             HStack(spacing: 8) {
                 Picker("정렬", selection: $browser.sort) {
                     ForEach(FolderSort.allCases) { Text($0.rawValue).tag($0) }
-                }.labelsHidden().frame(width: 160)
+                }.labelsHidden().frame(width: 160).overlayDragExcluded()
                     .help("추가 날짜가 없는 파일은 생성일로 정렬합니다.")
                 Spacer()
                 Button("Finder에서 열기") { if let url = browser.current { openInFinder(url) } }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.borderless).overlayDragExcluded()
                 Button(action: browser.refresh) { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.plain).help("새로고침")
+                    .buttonStyle(.plain).overlayDragExcluded().help("새로고침")
             }
             if browser.loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -786,7 +804,7 @@ struct DeckView: View {
                             }.buttonStyle(TileStyle(section: .registered)).help(entry.name)
                         }
                     }
-                }
+                }.overlayDragClip()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -824,6 +842,6 @@ private struct RecentTileScroll<Tile: View>: View {
         }
         .onScrollGeometryChange(for: CGFloat.self) { value in max(0, value.visibleRect.minY) }
         action: { _, value in offset = value }
-        .scrollIndicators(.visible)
+        .scrollIndicators(.visible).overlayDragClip()
     }
 }

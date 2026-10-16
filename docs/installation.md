@@ -10,7 +10,11 @@ Apple Silicon Mac용 ZIP입니다. macOS 26 이상을 실행 대상으로 빌드
 
 ## 1.0.0 이후 Developer ID 서명·Apple 공증 배포
 
-현재 [1.9.1 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.9.1)는 Developer ID Application으로 서명했고 Apple 공증·공증 티켓·Gatekeeper 검사를 통과했습니다. 인터넷에서 내려받은 앱이라는 일반 확인창은 표시될 수 있습니다. 이전 미공증 배포를 위한 ‘그래도 열기’를 기본 설치 단계로 요구하지 않습니다. 접근성 권한은 공증과 별개로 사용자가 직접 허용합니다.
+현재 [최신 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/latest)는 Developer ID Application으로 서명했고 Apple 공증·공증 티켓·Gatekeeper 검사를 통과했습니다. 인터넷에서 내려받은 앱이라는 일반 확인창은 표시될 수 있습니다. 이전 미공증 배포를 위한 ‘그래도 열기’를 기본 설치 단계로 요구하지 않습니다. 접근성 권한은 공증과 별개로 사용자가 직접 허용합니다.
+
+## Developer ID 서명·미공증 시험본
+
+`-unnotarized.zip`으로 배포되는 시험본은 Developer ID 서명을 확인했더라도 Apple 공증을 받지 않은 상태입니다. GitHub의 Pre-release와 해당 릴리스 노트를 확인하세요. 첫 실행이 차단되면 신뢰하는 원본인지 확인한 뒤 아래 ‘그래도 열기’ 절차를 사용할 수 있습니다. 시험본은 정식 최신 릴리스와 구분합니다.
 
 ## 개발용 서명·공증 없음으로 표시된 릴리스
 

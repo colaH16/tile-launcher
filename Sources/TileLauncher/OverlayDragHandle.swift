@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
+import DeckCore
 
-/// The header background starts a native window drag; tiles and header buttons remain
-/// separate click targets. No position is persisted beyond this presentation.
+/// Observe only left clicks in this overlay. A transparent mouse-capturing layer
+/// would steal wheel scrolling from the grids beneath its blank gaps.
 struct OverlayDragHandle: NSViewRepresentable {
     let enabled: Bool
     var excludedRects: [CGRect] = []
@@ -12,44 +13,52 @@ struct OverlayDragHandle: NSViewRepresentable {
         if view.excludedRects != excludedRects { view.excludedRects = excludedRects }
         view.enabled = enabled
     }
+    static func dismantleNSView(_ view: DragView, coordinator: ()) { view.enabled = false }
 
     final class DragView: NSView {
         var excludedRects: [CGRect] = []
+        /// Synthetic native validation replaces the actual OS drag only.
+        var beginDragForValidation: ((NSEvent) -> Void)?
+        private var monitor: Any?
         override var isFlipped: Bool { true }
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            let local = convert(point, from: superview)
-            guard enabled, !isHidden, bounds.contains(local),
-                  !excludedRects.contains(where: { $0.contains(local) }) else { return nil }
-            return self
-        }
-
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
         var enabled = false {
             didSet { if oldValue != enabled { updateWindow() } }
         }
-
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             updateWindow()
         }
-
+        deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
         private func updateWindow() {
+            if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
             window?.isMovable = enabled
-            // Only this header starts a drag, not the tile grid. Actual control
-            // bounds come from SwiftUI so padding and gaps remain draggable.
             window?.isMovableByWindowBackground = false
-            toolTip = enabled ? "상단의 빈 곳을 드래그하여 오버레이 이동" : nil
-            setAccessibilityElement(enabled)
-            setAccessibilityRole(.group)
-            setAccessibilityLabel("오버레이 이동 영역")
-            setAccessibilityHelp(enabled ? "고정된 창의 상단에서 버튼을 제외한 빈 곳이나 제목을 드래그하여 이동합니다." : nil)
+            setAccessibilityElement(false)
+            guard enabled, window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+                guard let self else { return event }
+                return self.handleMouseDown(event)
+            }
         }
-
-        override func mouseDown(with event: NSEvent) {
-            guard enabled, let window else { return }
-            window.performDrag(with: event)
+        func canStartDrag(at point: NSPoint) -> Bool {
+            enabled && !isHiddenOrHasHiddenAncestor
+                && OverlayDragGeometry.canBegin(at: point, bounds: bounds, excluding: excludedRects)
         }
-
-        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { enabled }
+        func handleMouseDown(_ event: NSEvent) -> NSEvent? {
+            guard event.type == .leftMouseDown, let window, event.window === window,
+                  canStartDrag(at: convert(event.locationInWindow, from: nil)) else { return event }
+            // Native scrollbars are controls too, including overlay scrollers.
+            if let content = window.contentView {
+                var hit = content.hitTest(content.convert(event.locationInWindow, from: nil))
+                while let view = hit {
+                    if view is NSScroller { return event }
+                    hit = view.superview
+                }
+            }
+            if let beginDragForValidation { beginDragForValidation(event) }
+            else { window.performDrag(with: event) }
+            return nil
+        }
     }
 }

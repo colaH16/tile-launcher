@@ -243,9 +243,15 @@ enum SavedMenuImages {
     private final class Entry { let image: NSImage?; init(_ image: NSImage?) { self.image = image } }
     private static let cache = NSCache<NSString, Entry>()
     static func invalidate() { cache.removeAllObjects() }
+    private static func key(_ icon: MenuResourceIcon) -> NSString {
+        (root.path + icon.kind.rawValue + icon.digest + (icon.template ? "-template" : "-color")) as NSString
+    }
+    static func isCached(_ icon: MenuResourceIcon) -> Bool {
+        icon.validDigest && cache.object(forKey: key(icon)) != nil
+    }
     static func image(_ icon: MenuResourceIcon) -> NSImage? {
         guard icon.validDigest else { return nil }
-        let key = (root.path + icon.kind.rawValue + icon.digest + (icon.template ? "-template" : "-color")) as NSString
+        let key = key(icon)
         if let hit = cache.object(forKey: key) { return hit.image }
         let loaded = icon.kind == .symbol
             ? NSImage(systemSymbolName: icon.resourceName, accessibilityDescription: nil)
@@ -258,6 +264,7 @@ enum SavedMenuImages {
 }
 
 final class MenuIconService {
+    var onImagesUpdated: ((String) -> Void)?
     private weak var settings: SettingsStore?
     private let queue = DispatchQueue(label: "TileLauncher.menu-icons", qos: .utility)
     // Lazy so disk I/O begins on the utility queue, not at overlay launch.
@@ -339,6 +346,7 @@ final class MenuIconService {
                 }
                 if excluded != settings.menuCapture.excludedMenus { settings.menuCapture.excludedMenus = excluded }
                 if next != settings.commands { settings.commands = next }
+                self.onImagesUpdated?(appID)
                 if refresh {
                     settings.refreshingMenuIcons.remove(appID)
                     settings.menuIconStatus[appID] = failed ? "앱 리소스를 읽지 못해 저장된 아이콘을 유지했습니다."

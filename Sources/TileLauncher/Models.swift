@@ -464,6 +464,7 @@ final class AppIconCache {
     static let shared = AppIconCache()
     private let cache = NSCache<NSString, NSImage>()
     private init() { cache.countLimit = 96 }
+    func isCached(_ url: URL) -> Bool { cache.object(forKey: url.path as NSString) != nil }
     func icon(_ url: URL?) -> NSImage {
         guard let url else { return NSImage(systemSymbolName: "app", accessibilityDescription: nil)! }
         let key = url.path as NSString

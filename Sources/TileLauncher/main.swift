@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let appSettingsMenu = ApplicationSettingsMenu()
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var menuIcons: MenuIconService?
+    private var iconReadAhead: IconReadAhead?
     private var visibleContent: OverlayContent?
     private var visibleSnapshot: OverlaySnapshot? { visibleContent?.snapshot }
     private var overlayRefresh: DispatchWorkItem?
@@ -60,7 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var profileChangeRevision = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        iconReadAhead = IconReadAhead(settings: settings)
         menuIcons = MenuIconService(settings: settings)
+        menuIcons?.onImagesUpdated = { [weak self] appID in self?.iconReadAhead?.prepareMenus(appID: appID) }
         NSApp.setActivationPolicy(.accessory)
         configureApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -98,9 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appSettingsMenu.onChange = { [weak self] in self?.scheduleOverlayRefresh() }
         settings.onAppSettingsVisibilityChanged = { [weak self] enabled in
             guard let self else { return }
-            if enabled, self.panel?.isVisible == true || self.prepared != nil {
-                self.refreshAppSettingsMenu()
-            } else { self.appSettingsMenu.cancel() }
+            if enabled { self.refreshAppSettingsMenu() }
+            else { self.appSettingsMenu.cancel() }
             self.scheduleOverlayRefresh()
         }
         hold.onAbandon = { [weak self] in
@@ -108,7 +110,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.discardPreparedOverlay()
             if self.panel?.isVisible != true {
                 self.dockHandoff.stopMonitoring()
-                self.appSettingsMenu.cancel()
             }
         }
         hold.onQuickReopen = { [weak self] time in
@@ -167,7 +168,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
                      NSWorkspace.didUnhideApplicationNotification, NSWorkspace.didWakeNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                if name == NSWorkspace.didTerminateApplicationNotification,
+                   let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                    self?.appSettingsMenu.invalidate(pid: app.processIdentifier)
+                }
+                if name == NSWorkspace.didLaunchApplicationNotification,
+                   let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                   let url = self?.item(app)?.url { self?.iconReadAhead?.prepareApp(url) }
                 self?.updateApps()
                 self?.refreshWindows()
                 self?.checkPermission()
@@ -183,7 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.updateApps()
             self.checkPermission()
             self.tracker.activate(item)
-            if self.panel?.isVisible == true { self.refreshAppSettingsMenu() }
+            self.iconReadAhead?.activate(item)
+            self.refreshAppSettingsMenu()
             self.scheduleOverlayRefresh()
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
@@ -195,6 +204,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                                                 object: nil, queue: .main) { [weak self] _ in
             self?.hide()
         })
+        updateApps()
+        if let lastContext { iconReadAhead?.activate(lastContext) }
+        refreshAppSettingsMenu()
         // Trust can be granted in System Settings while this accessory app stays inactive.
         // This checks one Boolean; it does not poll other apps or their menus.
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -269,11 +281,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func checkPermission(force: Bool = false) {
         let value = AXIsProcessTrusted()
         guard force || value != trusted else { return }
+        let changed = value != trusted
         trusted = value
         menuUsage.refresh()
         if !value { windows = [] }
         hold.start()
         refreshWindows()
+        if changed { refreshAppSettingsMenu() }
     }
     @objc func requestPermission() {
         hide()
@@ -337,7 +351,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // No permission check here: a trust change restarts the hold monitor.
         // `show` checks it and rejects this overlay if trust changed meanwhile.
         updateApps()
-        refreshAppSettingsMenu()
         prepared = buildOverlay(restoring: nil, reportErrors: false)
     }
     private func discardPreparedOverlay() {
@@ -349,7 +362,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         optionReopen.cancel()
         checkPermission()
         updateApps()
-        refreshAppSettingsMenu()
         let ready = previousLayout == nil ? takePreparedOverlay() : nil
         discardPreparedOverlay()
         let overlay: PreparedOverlay
@@ -556,7 +568,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overlayRefresh?.cancel()
         overlayRefresh = nil
         dockHandoff.stopMonitoring()
-        appSettingsMenu.cancel()
         discardPreparedOverlay()
         panel?.orderOut(nil)
         panel?.contentView = nil
@@ -568,11 +579,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         presentation.reset()
         profileScroll.reset()
     }
-    private func performImmediately(_ action: () -> Void) {
+    private func performImmediately(retainingOverlay: Bool = false, _ action: () -> Void) {
         clearKeyboardFeedback()
         pendingAction = nil
         presentation.selection = nil
-        if !presentation.isPinned { hide() }
+        if retainingOverlay {
+            // Batch quit is an in-overlay action. Survive Option release and
+            // app focus changes just like a user-pinned presentation.
+            presentation.pin()
+            if let panel, panel.isVisible {
+                NSApp.activate()
+                panel.makeKeyAndOrderFront(nil)
+            }
+        } else if !presentation.isPinned { hide() }
         action()
     }
     private func finishOptionSelection() {
@@ -646,7 +665,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               presentation.isPinned else {
             throw NSError(domain: "TileLauncher.Preview", code: 64)
         }
-        print("AppDelegate: immediate click while Option held, pinned retention, queued-number cancellation and exactly-once deferred number execution passed.")
+        for pinned in [false, true] {
+            presentation.reset()
+            if pinned { presentation.pin() }
+            var quits = 0, queued = 0
+            pendingAction = { queued += 1 }
+            presentation.selection = "stale-number"
+            let target = WindowItem(id: UUID(), pid: 123, appName: "Synthetic", appURL: nil, title: "Synthetic", minimized: false,
+                                    isApplication: true)
+            requestQuit(windowless: target, request: { _ in quits += 1; return nil })
+            requestQuit(windowless: target, request: { _ in quits += 1; return nil })
+            finishOptionSelection()
+            guard quits == 2, queued == 0, pendingAction == nil, presentation.selection == nil,
+                  presentation.isPinned, !presentation.dismisses(for: .release),
+                  !presentation.dismisses(for: .outsideClick), presentation.dismisses(for: .escape) else {
+                throw NSError(domain: "TileLauncher.Preview", code: 65)
+            }
+        }
+        print("AppDelegate: immediate clicks/numbers preserved; batch quit pins the overlay, cancels queued actions and survives release/focus changes without terminating real apps.")
     }
     private func refreshFocus(completion: (() -> Void)? = nil) {
         Task { @MainActor [weak self] in
@@ -683,6 +719,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clearKeyboardFeedback()
         profileChangeRevision += 1
         presentation.profile = profile
+        iconReadAhead?.prepareRegistered(profile.items)
         resizeOverlay(registeredCount: profile.items.count)
     }
     private func resizeOverlay(registeredCount: Int, workRows: CGFloat? = nil) {
@@ -806,12 +843,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
     }
-    private func requestQuit(windowless window: WindowItem) {
+    private func requestQuit(windowless window: WindowItem,
+                             request: (NSRunningApplication?) -> String? = ApplicationTermination.request) {
         guard window.isApplication else { return }
-        // Menu selection is immediate even while Option is held. A pinned
-        // overlay remains open; no force termination or app-file changes occur.
-        performImmediately { [weak self] in
-            if let message = ApplicationTermination.request(window.runningApplication) { self?.error(message) }
+        performImmediately(retainingOverlay: true) { [weak self] in
+            if let message = request(window.runningApplication) { self?.error(message) }
+            self?.scheduleOverlayRefresh()
         }
     }
     private func select(url: URL) {
@@ -933,6 +970,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         dockHandoff.stopMonitoring()
+        appSettingsMenu.cancel()
+        iconReadAhead?.stop()
         hold.stop()
         menuUsage.stop()
         permissionTimer?.invalidate()
