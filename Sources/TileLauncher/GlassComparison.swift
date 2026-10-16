@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import SwiftUI
 import DeckCore
@@ -72,3 +73,4 @@ import DeckCore
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { NSApp.terminate(nil) }
     }
 }
+#endif

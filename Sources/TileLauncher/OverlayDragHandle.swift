@@ -17,8 +17,10 @@ struct OverlayDragHandle: NSViewRepresentable {
 
     final class DragView: NSView {
         var excludedRects: [CGRect] = []
+        #if TILE_LAUNCHER_DIAGNOSTICS
         /// Synthetic native validation replaces the actual OS drag only.
         var beginDragForValidation: ((NSEvent) -> Void)?
+        #endif
         private var monitor: Any?
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -56,8 +58,12 @@ struct OverlayDragHandle: NSViewRepresentable {
                     hit = view.superview
                 }
             }
+            #if TILE_LAUNCHER_DIAGNOSTICS
             if let beginDragForValidation { beginDragForValidation(event) }
             else { window.performDrag(with: event) }
+            #else
+            window.performDrag(with: event)
+            #endif
             return nil
         }
     }

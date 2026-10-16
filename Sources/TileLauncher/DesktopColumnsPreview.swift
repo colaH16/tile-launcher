@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import SwiftUI
 import DeckCore
 
@@ -152,3 +153,4 @@ struct DesktopColumnsPreview<Tile: View>: View {
         }.frame(width: columnWidth(modules), height: CGFloat(bottom) * (micro + gap) - gap, alignment: .topLeading)
     }
 }
+#endif

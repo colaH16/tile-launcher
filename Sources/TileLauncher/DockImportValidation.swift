@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import DeckCore
 
@@ -59,3 +60,4 @@ enum DockImportValidation {
         return preview
     }
 }
+#endif

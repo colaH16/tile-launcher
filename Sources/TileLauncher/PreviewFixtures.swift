@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import SwiftUI
 import DeckCore
@@ -562,6 +563,8 @@ enum PreviewExport {
         try verifySettingsNavigation()
         try verifyGroupedWindowContent()
         try ApplicationSettingsValidation.verify()
+        try ApplicationSettingsLaunchValidation.verify()
+        try AppSettingsProductionValidation.verify()
         try IconReadAheadValidation.verify()
         try verifyScaledDragTargets()
         try verifyRegisteredViewport(to: directory)
@@ -1184,3 +1187,4 @@ enum PreviewExport {
         window.close()
     }
 }
+#endif

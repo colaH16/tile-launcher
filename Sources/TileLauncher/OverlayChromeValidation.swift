@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import SwiftUI
 import DeckCore
@@ -122,3 +123,4 @@ enum OverlayChromeValidation {
         print("Adopted chrome: 1568×918, 39 registered items, tile scale 1.4, independent title/footer sizes.")
     }
 }
+#endif

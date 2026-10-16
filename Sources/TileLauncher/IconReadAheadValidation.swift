@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import DeckCore
 
@@ -122,3 +123,4 @@ enum IconReadAheadValidation {
         print("Icon read ahead: new apps, registered items, manual/automatic menus, late/changed resources, cache hits/eviction, usage/pin changes and shutdown passed without reading real apps.")
     }
 }
+#endif

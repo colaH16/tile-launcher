@@ -170,6 +170,7 @@ final class ApplicationLaunchMonitor: ObservableObject {
             workspaceObservation = nil
         }
     }
+    #if TILE_LAUNCHER_DIAGNOSTICS
     /// Exercises real monitor coordination with synthetic requests; never opens an app.
     @MainActor static func verifyForPreview() throws {
         var clock: TimeInterval = 0
@@ -200,5 +201,6 @@ final class ApplicationLaunchMonitor: ObservableObject {
               errors == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 94) }
         print("Launch monitor: duplicate suppression, unrelated app access, start timeout, stale callback, error retry and native launch state passed without launching apps.")
     }
+    #endif
     deinit { timer?.invalidate() }
 }

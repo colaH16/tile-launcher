@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import DeckCore
 
@@ -171,3 +172,4 @@ enum SettingsEditingValidation {
     }
 
 }
+#endif

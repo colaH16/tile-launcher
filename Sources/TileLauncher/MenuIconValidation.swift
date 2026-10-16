@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import SwiftUI
 import DeckCore
@@ -172,3 +173,4 @@ enum MenuIconValidation {
         print("Verified item-scoped paths/6 Music symbols, stored languages \(stored.sorted()), ID/pin preservation, translated exclusion/re-add/deletion race, bounded AX fallback, original PDF/512px bitmap.")
     }
 }
+#endif

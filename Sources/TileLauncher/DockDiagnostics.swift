@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import ApplicationServices
 
@@ -120,3 +121,4 @@ enum DockDiagnostics {
         return value as? String ?? ""
     }
 }
+#endif

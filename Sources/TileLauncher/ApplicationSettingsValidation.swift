@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import ApplicationServices
 import DeckCore
@@ -40,7 +41,7 @@ enum ApplicationSettingsValidation {
             if app == missing { return nil }
             if app == b && count < 3 { return nil }
             return found(app)
-        }, trusted: { true }, processIdentity: { pid in
+        }, retryMisses: false, trusted: { true }, processIdentity: { pid in
             ProcessIdentity(pid: pid, startedSeconds: starts[pid, default: 1], startedMicroseconds: 0)
         })
         var changes = 0
@@ -67,13 +68,31 @@ enum ApplicationSettingsValidation {
         starts[missing.pid] = 2
         try activate(missing)
         try require(reads.count(missing.pid) == 6, "PID reuse must reset exhausted cache")
+        // A successful capability survives termination, a new PID and even
+        // PID reuse by the same app, without a new menu read or change callback.
         starts[a.pid] = 2
-        try activate(a)
-        try require(reads.count(a.pid) == 2, "PID reuse must reset successful cache")
+        let beforeKnownRestart = changes
+        service.refresh(app: a)
+        try require(service.hasSettings(in: a) && reads.count(a.pid) == 1 && changes == beforeKnownRestart,
+                    "Known app was queried again after restart")
         service.invalidate(pid: a.pid)
-        try activate(a)
-        try require(reads.count(a.pid) == 3, "Termination must invalidate the cache")
+        let afterTermination = changes
+        let restartedA = AppItem(id: a.id, pid: 123004, name: a.name, url: nil)
+        try require(service.hasSettings(in: restartedA), "Known capability disappeared for the new PID")
+        service.refresh(app: restartedA)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+        try require(reads.count(restartedA.pid) == 0 && changes == afterTermination,
+                    "Restarted known app repeated a lookup or update")
+        let reusedPID = AppItem(id: "preview.unrelated", pid: a.pid, name: "Unrelated", url: nil)
+        try require(!service.hasSettings(in: reusedPID), "Capability leaked across app IDs sharing a PID")
+        // Disabling/cancelling a query does not erase a known app. UI permission
+        // and display settings still gate whether its tile is shown.
         service.cancel()
+        try require(service.hasSettings(in: restartedA), "Cancellation erased known capability")
+        service.refresh(app: nil)
+        try require(service.hasSettings(in: restartedA), "Missing current app erased known capability")
+        let freshLauncher = ApplicationSettingsMenu(trusted: { true })
+        try require(!freshLauncher.hasSettings(in: restartedA), "Capability persisted into another launcher session")
 
         // Slow, cancelled requests never publish or spend an attempt; cached
         // activation while another lookup runs must not requeue the old app.
@@ -87,7 +106,7 @@ enum ApplicationSettingsValidation {
                 if cancelled() { return nil }
             }
             return found(app)
-        }, trusted: { true }, processIdentity: { pid in
+        }, retryMisses: false, trusted: { true }, processIdentity: { pid in
             .init(pid: pid, startedSeconds: 1, startedMicroseconds: 0)
         })
         var serialChanges = 0
@@ -108,9 +127,10 @@ enum ApplicationSettingsValidation {
         serial.cancel()
         let untrusted = ApplicationSettingsMenu(reader: { _, _, _ in
             throw NSError(domain: "Unexpected untrusted read", code: 1)
-        }, trusted: { false })
+        }, retryMisses: false, trusted: { false })
         untrusted.refresh(app: a)
         try require(!untrusted.hasSettings(in: a), "Untrusted app exposed settings")
-        print("App settings cache: activation-only reads, five-failure stop, successful cache, recovery, PID reuse, termination and cancelled results passed.")
+        print("App settings cache: activation-only reads, app-lifetime success cache, five-failure stop, negative PID reset, launcher reset and cancelled results passed.")
     }
 }
+#endif

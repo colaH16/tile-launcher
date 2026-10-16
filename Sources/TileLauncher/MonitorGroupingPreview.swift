@@ -1,3 +1,4 @@
+#if TILE_LAUNCHER_DIAGNOSTICS
 import AppKit
 import SwiftUI
 import DeckCore
@@ -245,3 +246,4 @@ struct OverlayScalePreview: View {
         }
     }
 }
+#endif

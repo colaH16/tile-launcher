@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let menuCatalog = MenuCatalog()
     private let dockHandoff = DockHandoff()
     private let appSettingsMenu = ApplicationSettingsMenu()
+
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var menuIcons: MenuIconService?
     private var iconReadAhead: IconReadAhead?
@@ -164,11 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateApps()
         menuUsage.onCapture = { [weak self] in self?.scheduleOverlayRefresh() }
         menuUsage.start()
+
         checkPermission(force: true)
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
                      NSWorkspace.didUnhideApplicationNotification, NSWorkspace.didWakeNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+
                 if name == NSWorkspace.didTerminateApplicationNotification,
                    let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
                     self?.appSettingsMenu.invalidate(pid: app.processIdentifier)
@@ -179,13 +182,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.updateApps()
                 self?.refreshWindows()
                 self?.checkPermission()
+                if name == NSWorkspace.didLaunchApplicationNotification,
+                   let self, self.settings.showAppSettingsTile,
+                   let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                   let item = self.item(app) {
+                    self.appSettingsMenu.preloadLaunchedApp(item)
+                }
                 if name == NSWorkspace.didWakeNotification { self?.refreshFocus() }
             })
         }
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
                                             object: nil, queue: .main) { [weak self] note in
-            guard let self, let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  let item = self.item(app) else { return }
+            let activated = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+
+            guard let self, let app = activated, let item = self.item(app) else { return }
             self.appRecency.touch(item.id)
             self.lastContext = item
             self.updateApps()
@@ -213,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.checkPermission()
         }
         permissionTimer?.tolerance = 1
-        if CommandLine.arguments.contains("--show") || CommandLine.arguments.contains("--render-check") {
+        if CommandLine.arguments.contains("--show") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.show(held: false) }
         }
         if CommandLine.arguments.contains("--settings") {
@@ -384,7 +394,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ready.content.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                               commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
                               menuHistory: settings.menuHistory, handoff: dockHandoff.current,
-                              hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext))
+                              hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext),
+                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext))
         let old = ready.content.snapshot.layout
         let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
             .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
@@ -427,13 +438,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                        profileName: settings.activeProfile.name, shortcuts: settings.numberShortcuts,
                                        commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
                                        frequentMenuIDs: MenuCommand.frequentIDs(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
-                                       hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext))
+                                       hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext),
+                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext))
         layout = restored
             ? layout.refittingContent(registeredCount: settings.activeProfile.items.count, visibleFrame: layoutScreen.visibleFrame,
                                       workRows: snapshot.workRows())
             : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
         snapshot.layout = layout
         snapshot.menuContextWindow = windows.first { $0.pid == lastContext?.pid && !$0.isApplication && $0.handoff == nil }
+
         let content = OverlayContent(snapshot)
         let folderBrowser = FolderBrowser()
         let view = DeckView(content: content, settings: settings, browser: folderBrowser, presentation: presentation, launches: launches,
@@ -498,6 +511,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Receive local shortcuts without activating the launcher or changing the
         // captured app context. Global monitors cannot consume another app's keys.
         window.makeKeyAndOrderFront(nil)
+
+        #if TILE_LAUNCHER_DIAGNOSTICS
         if let index = CommandLine.arguments.firstIndex(of: "--render-check"),
            CommandLine.arguments.indices.contains(index + 1) {
             let path = CommandLine.arguments[index + 1]
@@ -513,6 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.quit()
             }
         }
+        #endif
         refreshWindows()
     }
     private func pinOverlay() {
@@ -527,11 +543,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scheduleOverlayRefresh()
     }
     private func refreshAppSettingsMenu() {
-        if settings.showAppSettingsTile { appSettingsMenu.refresh(app: lastContext) }
-        else { appSettingsMenu.cancel() }
+        if settings.showAppSettingsTile {
+            appSettingsMenu.refresh(app: lastContext)
+        } else { appSettingsMenu.cancel() }
     }
+
     private func scheduleOverlayRefresh() {
-        guard panel?.isVisible == true else { return }
+
+        guard panel?.isVisible == true else {
+            return
+        }
         overlayRefresh?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.refreshOverlayContent() }
         overlayRefresh = work
@@ -546,13 +567,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                           hasPendingAction: pendingAction != nil, mouseDown: mouseDown) else {
             // Native window dragging may not deliver mouse-up. Retry only while
             // a known refresh is deferred by that gesture, never poll app contents.
+
             if mouseDown { scheduleOverlayRefresh() }
             return
         }
         visibleContent?.refresh(context: lastContext, apps: apps, windows: windows, trusted: trusted,
                                 commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
                                 menuHistory: settings.menuHistory, handoff: dockHandoff.current,
-                                hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext))
+                                hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext),
+                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext))
         resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
@@ -620,6 +643,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         keyboardFeedbackCleanup = nil
         presentation.clearExecution()
     }
+    #if TILE_LAUNCHER_DIAGNOSTICS
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
     func verifyClickExecutionForPreview() throws {
         hold.canTriggerHold = { false }
@@ -684,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         print("AppDelegate: immediate clicks/numbers preserved; batch quit pins the overlay, cancels queued actions and survives release/focus changes without terminating real apps.")
     }
+    #endif
     private func refreshFocus(completion: (() -> Void)? = nil) {
         Task { @MainActor [weak self] in
             do { self?.settings.focusProfileID = try await LauncherFocusIntent.current.profile?.id }
@@ -791,7 +816,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     private func selectAppSettings(context: AppItem?, window: WindowItem?) {
-        guard settings.showAppSettingsTile, let context else { return }
+        guard settings.showAppSettingsTile, let context, appSettingsMenu.hasSettings(in: context) else { return }
         performMenu(in: context, window: window) { [weak self] in
             self?.appSettingsMenu.execute(in: context, prepare: { [weak self] command, press in
                 self?.menuUsage.suppressLauncherAction(command, completion: press)
@@ -976,11 +1001,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menuUsage.stop()
         permissionTimer?.invalidate()
         DistributedNotificationCenter.default().removeObserver(self)
+
     }
 }
 
 // Register with AppKit, then acquire before constructing monitors or the status item.
 let application = NSApplication.shared
+#if TILE_LAUNCHER_DIAGNOSTICS
 if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
     // Xcode's canvas owns its preview hosts. Never install global monitors,
     // acquire the user's app instance lock or create a status item here.
@@ -988,6 +1015,7 @@ if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
     application.run()
     exit(0)
 }
+
 if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
    CommandLine.arguments.indices.contains(index + 1) {
     application.setActivationPolicy(.prohibited)
@@ -1062,11 +1090,15 @@ if let index = CommandLine.arguments.firstIndex(of: "--diagnose-window-inventory
     withExtendedLifetime(probe) { application.run() }
     exit(0)
 }
+#endif
 let instanceLock: InstanceLock
 let runningBuild: AppBuild
 do {
     runningBuild = try InstanceCoordinator.build(at: Bundle.main.bundleURL)
-    guard let lock = try InstanceCoordinator.acquire(build: runningBuild) else { exit(0) }
+    guard let lock = try InstanceCoordinator.acquire(build: runningBuild) else {
+
+        exit(0)
+    }
     instanceLock = lock
 } catch {
     let alert = NSAlert()

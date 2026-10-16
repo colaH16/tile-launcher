@@ -30,24 +30,27 @@ struct Icon: View {
     let url: URL?
     var size: CGFloat = 34
     @Environment(\.deckScale) private var scale
+    private var renderedIcon: some View {
+        Image(nsImage: AppIconCache.shared.icon(url)).resizable().interpolation(.high)
+    }
     var body: some View {
         Group {
+            #if TILE_LAUNCHER_DIAGNOSTICS
             if let image = PreviewIconAssets.image(for: url) {
                 Image(nsImage: image).resizable().interpolation(.high)
             } else if url?.scheme == "tile-preview", let symbol = url?.host {
-                // Synthetic icons keep offscreen comparisons independent of
-                // WindowServer's native app-icon representation caching.
                 let color: Color = symbol == "terminal" ? .green : symbol == "calendar" ? .red : symbol == "note.text" ? .orange : .blue
                 ZStack {
                     RoundedRectangle(cornerRadius: size * scale / 5).fill(color)
                     Image(systemName: symbol).font(.system(size: size * scale * 0.58, weight: .semibold)).foregroundStyle(.white)
                 }
-            } else {
-                Image(nsImage: AppIconCache.shared.icon(url)).resizable().interpolation(.high)
-            }
+            } else { renderedIcon }
+            #else
+            renderedIcon
+            #endif
         }
-            .frame(width: size * scale, height: size * scale)
-            .accessibilityHidden(true)
+        .frame(width: size * scale, height: size * scale)
+        .accessibilityHidden(true)
     }
 }
 private struct RegisteredTileStyle: ButtonStyle {
@@ -168,6 +171,7 @@ struct DeckView: View {
     var startTileLabels = true
     /// R183 comparison: the 0.28 window-color layer above the native glass.
     var backdropTint = true
+    #if TILE_LAUNCHER_DIAGNOSTICS
     // Synthetic comparison inputs only; production callers keep all defaults.
     var previewWindowSizes: [RecentTileSize]? = nil
     var previewEmphasizedWindows: Set<UUID>? = nil
@@ -175,6 +179,13 @@ struct DeckView: View {
     var previewDesktopColumns: DesktopColumnsPreviewData? = nil
     var previewLargeWindowIcons = false
     var previewBalancedWindowLabels = false
+    #else
+    private var previewWindowSizes: [RecentTileSize]? { nil }
+    private var previewEmphasizedWindows: Set<UUID>? { nil }
+    private var previewRecentLegend: String? { nil }
+    private var previewLargeWindowIcons: Bool { false }
+    private var previewBalancedWindowLabels: Bool { false }
+    #endif
     let dismiss: () -> Void
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
@@ -322,8 +333,12 @@ struct DeckView: View {
     private var menuItems: [MenuCommand] { editedMenus ?? snapshot.commands }
     private var menuEntries: [OverlayMenuEntry] { snapshot.menuEntries(commands: menuItems) }
     private var workRows: CGFloat {
+        #if TILE_LAUNCHER_DIAGNOSTICS
         recentAppearance == .locationColor && previewDesktopColumns == nil && previewWindowSizes == nil
             ? snapshot.workRows(commands: menuItems) : 3.3
+        #else
+        recentAppearance == .locationColor ? snapshot.workRows(commands: menuItems) : 3.3
+        #endif
     }
     private func workArea(height: CGFloat) -> some View {
         HStack(alignment: .top, spacing: DeckSpacing.columns) {
@@ -401,14 +416,17 @@ struct DeckView: View {
                 ZStack(alignment: .bottomLeading) {
                     Image(systemName: "gear").font(.system(size: u(44), weight: .light))
                         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(22))
-                    Text("앱 설정").font(.system(size: u(12), weight: .medium)).padding(u(8))
+                    Text(snapshot.hasAppSettings ? "앱 설정" : "앱 설정 · 확인 중").font(.system(size: u(12), weight: .medium)).padding(u(8))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .topTrailing) {
                         Image(systemName: "pin.fill").font(.system(size: u(9))).padding(u(8))
                     }
             }.buttonStyle(TileStyle(section: .menus, emphasized: true))
-                .help("\(snapshot.context?.name ?? "현재 앱") 설정 열기 · 모든 앱에 공통으로 제공하는 메뉴")
-                .accessibilityLabel("\(snapshot.context?.name ?? "현재 앱") 설정 열기")
+                .disabled(!snapshot.hasAppSettings)
+                .saturation(snapshot.hasAppSettings ? 1 : 0)
+                .opacity(snapshot.hasAppSettings ? 1 : 0.42)
+                .help(snapshot.hasAppSettings ? "\(snapshot.context?.name ?? "현재 앱") 설정 열기" : "설정 메뉴를 확인하고 있습니다. 확인이 끝나면 사용할 수 있습니다.")
+                .accessibilityLabel(snapshot.hasAppSettings ? "\(snapshot.context?.name ?? "현재 앱") 설정 열기" : "앱 설정 확인 중, 사용 불가")
         }
     }
     private func menuTile(_ command: MenuCommand, small: Bool = false) -> some View {
@@ -607,38 +625,49 @@ struct DeckView: View {
                 Text("열린 창을 확인하고 있어요.\n잠시 후 다시 열어 주세요.")
                     .font(font(.callout)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
-                DesktopColumnsPreview(data: columns, sizes: sizes, width: columns.preferredWidth ?? geometry.windowWidth) { index, size in
-                    windowTile(snapshot.windows[index], index: index, wide: size == .wide, small: size == .application)
-                }
             } else {
-                let identities = snapshot.windows.map(\.appKey)
-                // Location, first appearances and numbered targets all use the
-                // same snapshot while Option is held.
-                let sizes = previewWindowSizes ?? (recentAppearance == .locationColor
-                    ? snapshot.windows.map { $0.isApplication ? .application : $0.location.size }
-                    : recentAppearance == .grouped
-                    ? GroupedRecentWindows.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
-                                                 desktops: snapshot.windows.map(\.desktop),
-                                                 activeApp: OverlayContent.activeAppKey(snapshot.context, in: snapshot.windows))
-                    : recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
-                    : RecentTileArrangement.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
-                                                 consecutiveSmall: recentAppearance == .consecutiveSmall))
-                let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
-                let firstIDs = firstWindowIDs
-                // The scroll offset lives in its own view: scrolling re-evaluates only
-                // the visible recent tiles, not the menus and registered grid.
-                RecentTileScroll(placements: packed, module: (geometry.unit - geometry.gap) / 2, gap: geometry.gap,
-                                 width: geometry.windowWidth,
-                                 viewport: max(0, height - DeckSpacing.workHeader(scale: snapshot.layout.scale))) { place in
-                    windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4,
-                               small: place.height == 1, firstIDs: firstIDs)
-                }
-                // A new window list starts at the top with a fresh offset.
-                .id(snapshot.windows.map(\.id))
+                recentWindowList(height: height)
             }
         }.frame(height: height)
     }
+    @ViewBuilder private func recentWindowList(height: CGFloat) -> some View {
+        #if TILE_LAUNCHER_DIAGNOSTICS
+        if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
+                DesktopColumnsPreview(data: columns, sizes: sizes, width: columns.preferredWidth ?? geometry.windowWidth) { index, size in
+                    windowTile(snapshot.windows[index], index: index, wide: size == .wide, small: size == .application)
+                }
+        } else { standardWindowList(height: height) }
+        #else
+        standardWindowList(height: height)
+        #endif
+    }
+    @ViewBuilder private func standardWindowList(height: CGFloat) -> some View {
+        let identities = snapshot.windows.map(\.appKey)
+        // Location, first appearances and numbered targets all use the
+        // same snapshot while Option is held.
+        let sizes = previewWindowSizes ?? (recentAppearance == .locationColor
+            ? snapshot.windows.map { $0.isApplication ? .application : $0.location.size }
+            : recentAppearance == .grouped
+            ? GroupedRecentWindows.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
+                                         desktops: snapshot.windows.map(\.desktop),
+                                         activeApp: OverlayContent.activeAppKey(snapshot.context, in: snapshot.windows))
+            : recentAppearance == .squares ? snapshot.windows.map { $0.isApplication ? RecentTileSize.application : .square }
+            : RecentTileArrangement.sizes(apps: identities, applications: snapshot.windows.map(\.isApplication),
+                                         consecutiveSmall: recentAppearance == .consecutiveSmall))
+        let packed = RecentTileArrangement.place(sizes: sizes, columns: geometry.windowColumns * 2)
+        let firstIDs = firstWindowIDs
+        // The scroll offset lives in its own view: scrolling re-evaluates only
+        // the visible recent tiles, not the menus and registered grid.
+        RecentTileScroll(placements: packed, module: (geometry.unit - geometry.gap) / 2, gap: geometry.gap,
+                         width: geometry.windowWidth,
+                         viewport: max(0, height - DeckSpacing.workHeader(scale: snapshot.layout.scale))) { place in
+            windowTile(snapshot.windows[place.index], index: place.index, wide: place.width == 4,
+                       small: place.height == 1, firstIDs: firstIDs)
+        }
+        // A new window list starts at the top with a fresh offset.
+        .id(snapshot.windows.map(\.id))
+    }
+    #if TILE_LAUNCHER_DIAGNOSTICS
     /// Unclipped version of the same comparison for reviewing every app group.
     @ViewBuilder var desktopColumnDetails: some View {
         if let columns = previewDesktopColumns, let sizes = previewWindowSizes {
@@ -649,6 +678,7 @@ struct DeckView: View {
             .environment(\.tileColors, settings.tileColors)
         }
     }
+    #endif
     private func windowTile(_ window: WindowItem, index: Int, wide: Bool, small: Bool = false,
                             firstIDs: Set<UUID>? = nil) -> some View {
         let desktop = window.isApplication ? .unknown : presentation.windowDesktops[window.id] ?? .unknown
