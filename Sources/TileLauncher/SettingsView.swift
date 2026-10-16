@@ -9,24 +9,46 @@ struct SettingsView: View {
     let requestPermission: () -> Void
     let openAppManagementSettings: () -> Void
     var applicationProvider: (() -> [AppItem])? = nil
+    @StateObject private var editor: SettingsEditingSession
     @State private var profileName = ""
 
+    init(settings: SettingsStore, loginItem: LoginItemManager, navigation: SettingsNavigation,
+         requestPermission: @escaping () -> Void, openAppManagementSettings: @escaping () -> Void,
+         applicationProvider: (() -> [AppItem])? = nil, editor: SettingsEditingSession? = nil) {
+        self.settings = settings; self.loginItem = loginItem; self.navigation = navigation
+        self.requestPermission = requestPermission; self.openAppManagementSettings = openAppManagementSettings
+        self.applicationProvider = applicationProvider
+        _editor = StateObject(wrappedValue: editor ?? SettingsEditingSession(source: settings))
+    }
     var body: some View {
         GeometryReader { geometry in
             TabView(selection: $navigation.tab) {
                 GeneralSettingsView(settings: settings, loginItem: loginItem,
                                     requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
                     .tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
-                AppearanceView(settings: settings).tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
-                MenuSettingsView(settings: settings, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition,
-                                 additionSize: MenuAdditionLayout.size(for: geometry.size), applicationProvider: applicationProvider)
+                SettingsEditorPane(session: editor, draft: editor.appearance, tab: .appearance) { draft in
+                    AppearanceView(settings: draft)
+                }.tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
+                SettingsEditorPane(session: editor, draft: editor.menus, tab: .menus) { draft in
+                    MenuSettingsView(settings: draft, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition,
+                                     additionSize: MenuAdditionLayout.size(for: geometry.size), applicationProvider: applicationProvider)
+                }
                     .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
-                registered.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
+                SettingsEditorPane(session: editor, draft: editor.registered, tab: .registered, onCancel: { profileName = "" }) { draft in
+                    registeredPane(settings: draft)
+                }.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
             }.padding(SettingsWindowLayout.outerPadding)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         }
+        .onAppear { editor.activate() }
+        .sheet(item: Binding(get: { editor.registered.dockImportPreview }, set: { editor.registered.dockImportPreview = $0 }),
+               onDismiss: editor.registered.cancelDockImport) { change in
+            DockImportPreview(change: change, apply: { editor.registered.applyDockImport(change) },
+                              cancel: editor.registered.cancelDockImport)
+        }
+        .onDisappear { editor.registered.cancelDockImport(); editor.pause() }
     }
-    private var registered: some View {
+    private func registeredPane(settings: SettingsStore) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox("프로필") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -92,7 +114,19 @@ struct SettingsView: View {
                     }
                 } label: { Label("추가", systemImage: "plus") }.fixedSize()
             }
-            if let message = settings.dockImportMessage { Text(message).font(.caption).foregroundStyle(.secondary) }
+            if settings.dockImportMessage != nil || settings.canUndoDockImport {
+                HStack(alignment: .top) {
+                    if let message = settings.dockImportMessage {
+                        Text(message).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    if settings.canUndoDockImport {
+                        Button("가져오기 되돌리기", action: settings.undoDockImport)
+                            .controlSize(.small).fixedSize()
+                            .help("이 프로필의 다른 등록 항목을 수정하거나 앱을 종료하기 전까지 되돌릴 수 있습니다.")
+                    }
+                }
+            }
             List {
                 ForEach(settings.pins) { pin in
                     HStack {
@@ -137,9 +171,6 @@ struct MenuSettingsView: View {
     @State private var selectedID = ""
     @State private var search = ""
     @State private var manualPath = ""
-    @State private var recentDaysText = ""
-    @State private var frequentDaysText = ""
-    @State private var invalidHistory = false
     @State private var showingAddition = false
     @State private var handledRequestID: UUID?
     @State private var configurationHeight: CGFloat = 360
@@ -183,6 +214,8 @@ struct MenuSettingsView: View {
             handleAdditionRequest()
         }
         .onChange(of: additionRequest?.id) { _, _ in handleAdditionRequest() }
+        .onChange(of: settings.menuRecentDaysInput) { _, _ in settings.updateMenuHistoryInput() }
+        .onChange(of: settings.menuFrequentDaysInput) { _, _ in settings.updateMenuHistoryInput() }
         .sheet(isPresented: $showingAddition) {
             MenuAdditionSheet(settings: settings, catalog: catalog, selectedID: $selectedID,
                               search: $search, manualPath: $manualPath, appNames: appNames,
@@ -217,21 +250,17 @@ struct MenuSettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("최근 사용")
-                        TextField("30", text: $recentDaysText).frame(width: 70).accessibilityLabel("최근 사용 기간, 일")
+                        TextField("30", text: $settings.menuRecentDaysInput).frame(width: 70).accessibilityLabel("최근 사용 기간, 일")
                         Text("일 또는 앱별 최근 5개")
                     }
                     HStack {
                         Text("자주 사용")
-                        TextField("90", text: $frequentDaysText).frame(width: 70).accessibilityLabel("자주 사용 기간, 일")
+                        TextField("90", text: $settings.menuFrequentDaysInput).frame(width: 70).accessibilityLabel("자주 사용 기간, 일")
                         Text("일 안에 3회 이상")
                         Spacer()
-                        Button("적용", action: saveHistory)
                     }
-                    if invalidHistory { Text("기간은 1–36,500일로 입력해 주세요.").font(.caption).foregroundStyle(.red) }
+                    if settings.validMenuHistoryInput == nil { Text("기간은 1–36,500일로 입력해 주세요.").font(.caption).foregroundStyle(.red) }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-            }.onAppear {
-                recentDaysText = String(settings.menuHistory.recentDays)
-                frequentDaysText = String(settings.menuHistory.frequentDays)
             }
             HStack {
                 Picker("앱", selection: $selectedID) {
@@ -324,15 +353,6 @@ struct MenuSettingsView: View {
         guard request.id != handledRequestID else { return }
         handledRequestID = request.id
         beginAddition(app: request.app)
-    }
-    private func saveHistory() {
-        guard let recent = Int(recentDaysText.trimmingCharacters(in: .whitespaces)),
-              let frequent = Int(frequentDaysText.trimmingCharacters(in: .whitespaces)),
-              MenuHistoryPreferences.dayRange.contains(recent), MenuHistoryPreferences.dayRange.contains(frequent) else {
-            invalidHistory = true; return
-        }
-        invalidHistory = false
-        settings.menuHistory = MenuHistoryPreferences(recentDays: recent, frequentDays: frequent)
     }
     private func refreshApps() {
         applications = applicationProvider?() ?? NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }

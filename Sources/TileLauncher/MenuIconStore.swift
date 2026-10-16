@@ -264,26 +264,33 @@ final class MenuIconService {
     private let root: URL
     private let preferredLanguages: [String]
     private let applicationURL: (String) -> URL?
+    private var generation = UUID()
     private lazy var repository = MenuIconRepository(root: root, preferredLanguages: preferredLanguages)
     init(settings: SettingsStore, root: URL = MenuIconRepository.defaultRoot,
          preferredLanguages: [String] = Locale.preferredLanguages,
+         resolveExisting: Bool = true, resolveAdded: Bool = true,
          applicationURL: @escaping (String) -> URL? = { id in
              id.hasPrefix("/") ? URL(fileURLWithPath: id) : NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
          }) {
         self.root = root; self.preferredLanguages = preferredLanguages; self.applicationURL = applicationURL
         self.settings = settings
-        settings.onMenuAdded = { [weak self] command in self?.request([command], refresh: false, restoreExclusions: !command.isAutomatic) }
+        if resolveAdded {
+            settings.onMenuAdded = { [weak self] command in self?.request([command], refresh: false, restoreExclusions: !command.isAutomatic) }
+        }
         settings.onRefreshMenuIcons = { [weak self, weak settings] appID in
             guard let settings else { return }
             self?.request(settings.commands.filter { $0.appID == appID }, refresh: true)
         }
         // Menus saved before language aliases existed: read each app once in the
         // background. Later launches only resolve from the saved catalog.
-        let missing = Dictionary(grouping: settings.commands.filter { $0.resourceIdentityVersion != 1 }, by: \.appID)
-        for commands in missing.values.sorted(by: { $0[0].appID < $1[0].appID }) { request(commands, refresh: false) }
+        if resolveExisting {
+            let missing = Dictionary(grouping: settings.commands.filter { $0.resourceIdentityVersion != 1 }, by: \.appID)
+            for commands in missing.values.sorted(by: { $0[0].appID < $1[0].appID }) { request(commands, refresh: false) }
+        }
     }
     private func request(_ commands: [MenuCommand], refresh: Bool, restoreExclusions: Bool = false) {
         guard let first = commands.first, let settings else { return }
+        let requestGeneration = generation
         let appID = first.appID
         if refresh && settings.refreshingMenuIcons.contains(appID) { return }
         if refresh { settings.refreshingMenuIcons.insert(appID) }
@@ -303,7 +310,7 @@ final class MenuIconService {
                 : commands.map { ($0.id, self.repository.resolve($0), self.repository.binding(for: $0)) }
             let languages = self.repository.localizations(appID: appID) ?? []
             DispatchQueue.main.async { [weak self] in
-                guard let settings = self?.settings else { return }
+                guard let self, self.generation == requestGeneration, let settings = self.settings else { return }
                 SavedMenuImages.invalidate()
                 var next = settings.commands, found = 0
                 var excluded = settings.menuCapture.excludedMenus
@@ -340,4 +347,5 @@ final class MenuIconService {
             }
         }
     }
+    func invalidatePending() { generation = UUID() }
 }

@@ -135,11 +135,11 @@ final class MenuUsageMonitor {
             let element = reader.element(at: point)
             let role = element.flatMap { reader.value($0, kAXRoleAttribute) as? String }
             let menuRole = role == kAXMenuItemRole || role == kAXMenuBarItemRole || role == kAXMenuRole
-            guard menuRole || self.menuSession || self.down != nil else {
+            let hit = element.flatMap { self.hit($0, reader: reader) }
+            guard menuRole || hit?.isHelpResult == true || self.menuSession || self.down != nil else {
                 self.resetInteraction()
                 return
             }
-            let hit = element.flatMap { self.hit($0, reader: reader) }
             if type == .leftMouseDown {
                 self.gate.cancel(); self.action = nil
                 self.down = hit
@@ -372,9 +372,12 @@ private final class MenuAXReader {
         return nil
     }
     static func isHelp(_ value: String) -> Bool {
-        ["help", "도움말", "aide", "hilfe", "ayuda", "aiuto", "ヘルプ", "帮助", "說明"].contains(MenuCapturePolicy.normalize(value))
+        MenuCapturePolicy.isHelpMenuTitle(value)
     }
     func hit(_ original: AXUIElement, allowHelp: Bool) -> MenuHit? {
+        let role = value(original, kAXRoleAttribute) as? String
+        if [kAXRowRole, kAXCellRole, kAXStaticTextRole, kAXImageRole].contains(role ?? ""),
+           let result = helpSearchHit(original) { return result }
         var current = original
         for _ in 0..<4 {
             if value(current, kAXRoleAttribute) as? String == kAXMenuItemRole { break }
@@ -412,6 +415,32 @@ private final class MenuAXReader {
                                          commandModifier: modifiers & (1 << 3) == 0, modifiers: modifiers,
                                          shortcutKnown: reading.known),
                        frame: frame, isHelpResult: path.first.map(Self.isHelp) == true)
+    }
+    private func helpSearchHit(_ original: AXUIElement) -> MenuHit? {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(original, &pid) == .success, pid == app.pid else { return nil }
+        let result = MenuHelpSearchRow.read(from: original, role: { node in
+            switch self.value(node, kAXRoleAttribute) as? String {
+            case kAXRowRole: return .row
+            case kAXCellRole: return .cell
+            case kAXTableRole: return .table
+            case kAXStaticTextRole: return .staticText
+            default: return .other
+            }
+        }, parent: { self.element($0, kAXParentAttribute) }, children: children,
+           staticText: { self.value($0, kAXValueAttribute) as? String },
+           frame: frame, menuPath: menuPath)
+        guard let result, hasTime else { return nil }
+        return MenuHit(menu: CapturedMenu(appID: app.id, appName: app.name, path: ["Help", result.label]),
+                       frame: result.frame, isHelpResult: true)
+    }
+    private func frame(_ node: AXUIElement) -> CGRect? {
+        guard let position = value(node, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
+              let size = value(node, kAXSizeAttribute), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero, extent = CGSize.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &point),
+              AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
+        return CGRect(origin: point, size: extent)
     }
     func focusedMenuItem() -> AXUIElement? {
         guard let focused = element(AXUIElementCreateApplication(app.pid), kAXFocusedUIElementAttribute),

@@ -15,7 +15,7 @@ final class DeckPanel: NSPanel {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let runningBuild: AppBuild
     private lazy var replacement = BuildReplacement(running: runningBuild)
     init(build: AppBuild, settings: SettingsStore = SettingsStore()) {
@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: DeckPanel?
     private var preferences: NSWindow?
+    private var preferencesEditor: SettingsEditingSession?
     private var observers: [NSObjectProtocol] = []
     private var permissionTimer: Timer?
     private var trusted = false
@@ -838,6 +839,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hide()
         settingsNavigation.open(destination, app: context)
         if let preferences {
+            preferencesEditor?.activate()
             if !preferences.isVisible {
                 sizeSettingsWindow(preferences)
                 preferences.center()
@@ -846,8 +848,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences.makeKeyAndOrderFront(nil)
             return
         }
+        let editor = SettingsEditingSession(source: settings)
+        preferencesEditor = editor
         let view = SettingsView(settings: settings, loginItem: loginItem, navigation: settingsNavigation,
-                                requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
+                                requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings,
+                                editor: editor)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: SettingsWindowLayout.defaultWidth, height: 660),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
@@ -856,10 +861,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = NSHostingView(rootView: view)
         sizeSettingsWindow(window)
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.center()
         preferences = window
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === preferences else { return }
+        preferencesEditor?.registered.cancelDockImport()
+        preferencesEditor?.pause()
     }
     private func sizeSettingsWindow(_ window: NSWindow) {
         MainActor.assumeIsolated {

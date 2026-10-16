@@ -164,14 +164,37 @@ final class OverlayContent: ObservableObject {
 }
 final class SettingsStore: ObservableObject {
     @Published private(set) var importingDock = false
-    @Published private(set) var dockImportMessage: String?
-    @Published var profiles: [LauncherProfile] { didSet { save() } }
+    @Published private var dockImportMessages: [String: String] = [:]
+    var dockImportMessage: String? { dockImportMessages[activeProfile.id] }
+    @Published var dockImportPreview: DockImportChange?
+    @Published private var dockImportUndo: [String: DockImportChange] = [:]
+    private var dockImportRequest: UUID?
+    @Published var profiles: [LauncherProfile] {
+        didSet {
+            dockImportUndo = dockImportUndo.filter { id, change in
+                profiles.first(where: { $0.id == id }).flatMap { change.undoing(in: $0) } != nil
+            }
+            save()
+        }
+    }
     @Published var manualProfileID: String { didSet { save() } }
     @Published var followFocus: Bool { didSet { save() } }
     @Published var focusProfileID: String?
     @Published var numberShortcuts: NumberShortcutAssignment { didSet { save() } }
     @Published var commands: [MenuCommand] { didSet { save() } }
     @Published var menuHistory: MenuHistoryPreferences { didSet { save() } }
+    @Published var menuRecentDaysInput = "30"
+    @Published var menuFrequentDaysInput = "90"
+    var validMenuHistoryInput: MenuHistoryPreferences? {
+        guard let recent = Int(menuRecentDaysInput.trimmingCharacters(in: .whitespaces)),
+              let frequent = Int(menuFrequentDaysInput.trimmingCharacters(in: .whitespaces)),
+              MenuHistoryPreferences.dayRange.contains(recent),
+              MenuHistoryPreferences.dayRange.contains(frequent) else { return nil }
+        return MenuHistoryPreferences(recentDays: recent, frequentDays: frequent)
+    }
+    func updateMenuHistoryInput() {
+        if let value = validMenuHistoryInput, value != menuHistory { menuHistory = value }
+    }
     @Published var menuCapture: MenuCapturePreferences { didSet { save() } }
     @Published var showAppSettingsTile: Bool {
         didSet { save(); onAppSettingsVisibilityChanged?(showAppSettingsTile) }
@@ -274,8 +297,12 @@ final class SettingsStore: ObservableObject {
     @Published var tileColors: TileColors { didSet { save() } }
     @Published var manualCount: Int { didSet { save() } }
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) {
+    private let persistsChanges: Bool
+    private var saveDepth = 0
+    private var pendingSave = false
+    init(defaults: UserDefaults = .standard, persistsChanges: Bool = true) {
         self.defaults = defaults
+        self.persistsChanges = persistsChanges
         profiles = LauncherProfile.restore(profiles: defaults.data(forKey: "launcherProfiles"),
                                            legacyPins: defaults.data(forKey: "pinnedItems"))
         manualProfileID = defaults.string(forKey: "manualProfileID") ?? "default"
@@ -292,9 +319,32 @@ final class SettingsStore: ObservableObject {
             ?? .glass
         tileColors = TileColors.restore(defaults.data(forKey: "tileColors"))
         manualCount = max(6, defaults.object(forKey: "manualWindowCount") as? Int ?? 12)
+        menuRecentDaysInput = String(menuHistory.recentDays)
+        menuFrequentDaysInput = String(menuHistory.frequentDays)
         save()
     }
+    func makeEditingCopy() -> SettingsStore {
+        let copy = SettingsStore(defaults: defaults, persistsChanges: false)
+        copy.profiles = profiles; copy.manualProfileID = manualProfileID; copy.followFocus = followFocus
+        copy.focusProfileID = focusProfileID; copy.numberShortcuts = numberShortcuts
+        copy.commands = commands; copy.menuHistory = menuHistory; copy.menuCapture = menuCapture
+        copy.menuRecentDaysInput = String(menuHistory.recentDays)
+        copy.menuFrequentDaysInput = String(menuHistory.frequentDays)
+        copy.showAppSettingsTile = showAppSettingsTile
+        copy.automatic = automatic; copy.optionTriggerEnabled = optionTriggerEnabled
+        copy.optionReopen = optionReopen; copy.theme = theme; copy.tileColors = tileColors
+        copy.manualCount = manualCount
+        return copy
+    }
+    func batchSave(_ changes: () -> Void) {
+        saveDepth += 1
+        changes()
+        saveDepth -= 1
+        if saveDepth == 0, pendingSave { pendingSave = false; save() }
+    }
     private func save() {
+        guard persistsChanges else { return }
+        guard saveDepth == 0 else { pendingSave = true; return }
         if let data = try? JSONEncoder().encode(profiles) { defaults.set(data, forKey: "launcherProfiles") }
         if let data = try? JSONEncoder().encode(profiles.first { $0.id == "default" }?.items ?? profiles[0].items) {
             defaults.set(data, forKey: "pinnedItems")
@@ -353,27 +403,64 @@ final class SettingsStore: ObservableObject {
         pins[index].setOpenMode(mode)
     }
     func importDock() {
-        guard !importingDock else { return }
+        guard !importingDock, dockImportPreview == nil else { return }
         importingDock = true
-        dockImportMessage = nil
+        let request = UUID()
+        dockImportRequest = request
         let targetProfileID = activeProfile.id
+        dockImportMessages.removeValue(forKey: targetProfileID)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try DockImporter.load() }
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard let self, self.dockImportRequest == request else { return }
+                self.dockImportRequest = nil
                 self.importingDock = false
                 switch result {
                 case .success(let imported):
-                    guard let target = self.profiles.first(where: { $0.id == targetProfileID }) else { return }
-                    let merged = DockImport.merge(imported.items, into: target.items)
-                    self.setItems(merged, profileID: targetProfileID)
-                    let added = max(0, merged.count - target.items.count)
-                    self.dockImportMessage = "\(added)개 추가 · Dock 순서로 정리했습니다."
-                        + (imported.skipped > 0 ? " 사용할 수 없거나 지원하지 않는 항목 \(imported.skipped)개는 건너뛰었습니다." : "")
-                case .failure(let error): self.dockImportMessage = error.localizedDescription
+                    self.previewDockImport(imported, profileID: targetProfileID)
+                case .failure(let error): self.dockImportMessages[targetProfileID] = error.localizedDescription
                 }
             }
         }
+    }
+    func previewDockImport(_ imported: DockImportResult, profileID: String) {
+        guard let target = profiles.first(where: { $0.id == profileID }) else {
+            dockImportMessages[activeProfile.id] = "가져올 프로필이 없어졌습니다. 프로필을 선택한 뒤 다시 시도하세요."
+            return
+        }
+        let change = DockImportChange(profile: target, imported: imported)
+        guard change.hasChanges else {
+            dockImportMessages[profileID] = "이미 같은 목록과 순서입니다."
+            return
+        }
+        dockImportPreview = change
+    }
+    func cancelDockImport() {
+        dockImportRequest = nil
+        importingDock = false
+        dockImportPreview = nil
+    }
+    func applyDockImport(_ change: DockImportChange) {
+        guard dockImportPreview?.id == change.id else { return }
+        dockImportPreview = nil
+        guard let target = profiles.first(where: { $0.id == change.profileID }),
+              let items = change.applying(to: target) else {
+            dockImportMessages[activeProfile.id] = "‘\(change.profileName)’의 목록이 바뀌었습니다. 다시 가져와서 확인하세요."
+            return
+        }
+        setItems(items, profileID: change.profileID)
+        dockImportUndo[change.profileID] = change
+        dockImportMessages[target.id] = "‘\(target.name)’에 \(change.addedIDs.count)개 추가 · Dock 순서로 정리했습니다."
+    }
+    var canUndoDockImport: Bool {
+        dockImportUndo[activeProfile.id]?.undoing(in: activeProfile) != nil
+    }
+    func undoDockImport() {
+        let target = activeProfile
+        guard let change = dockImportUndo[target.id], let items = change.undoing(in: target) else { return }
+        dockImportUndo.removeValue(forKey: target.id)
+        setItems(items, profileID: target.id)
+        dockImportMessages[target.id] = "‘\(target.name)’을 Dock에서 가져오기 전 목록으로 되돌렸습니다."
     }
 }
 

@@ -489,6 +489,46 @@ enum PreviewExport {
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
+        let dockPreview = try DockImportValidation.verify()
+        try save(DockImportPreview(change: dockPreview, apply: {}, cancel: {})
+                    .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("dock-import-preview.png"))
+        let dockFixture = PreviewFixture(theme: .classic)
+        let dockEditing = SettingsEditingSession(source: dockFixture.settings)
+        dockEditing.registered.previewDockImport(.init(items: dockPreview.after, skipped: 0),
+                                                profileID: dockEditing.registered.activeProfile.id)
+        if let pending = dockEditing.registered.dockImportPreview { dockEditing.registered.applyDockImport(pending) }
+        let dockNavigation = SettingsNavigation()
+        dockNavigation.tab = .registered
+        try save(SettingsView(settings: dockFixture.settings, loginItem: LoginItemManager(), navigation: dockNavigation,
+                              requestPermission: {}, openAppManagementSettings: {}, editor: dockEditing)
+                    .frame(width: 580, height: 918).background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("settings-dock-import-undo.png"))
+        // Target only this fixture when checking small sheet-layout refinements.
+        if ProcessInfo.processInfo.environment["TILE_PREVIEW_DOCK_ONLY"] == "1" { return }
+        let (editingSource, editing) = try SettingsEditingValidation.verify()
+        try save(SettingsEditorPane(session: editing, draft: editing.appearance, tab: .appearance) {
+            AppearanceView(settings: $0)
+        }.frame(width: 580, height: 918).background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("settings-appearance-save-cancel.png"))
+        try save(SettingsEditorPane(session: editing, draft: editing.menus, tab: .menus) { draft in
+            MenuSettingsView(settings: draft,
+                             preferredApp: .init(id: "preview.editor", pid: 0, name: "편집기", url: nil),
+                             additionRequest: nil, additionSize: CGSize(width: 540, height: 700),
+                             applicationProvider: { [] })
+        }.frame(width: 580, height: 918).background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("settings-menus-save-cancel.png"))
+        let editingNavigation = SettingsNavigation()
+        editingNavigation.tab = .registered
+        try save(SettingsView(settings: editingSource, loginItem: LoginItemManager(), navigation: editingNavigation,
+                              requestPermission: {}, openAppManagementSettings: {}, applicationProvider: { [] }, editor: editing)
+                    .frame(width: 580, height: 918).background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.colorScheme, .dark),
+                 to: directory.appendingPathComponent("settings-registered-save-cancel.png"))
+        if ProcessInfo.processInfo.environment["TILE_PREVIEW_SETTINGS_EDIT_ONLY"] == "1" { return }
         let delegate = AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
                                    settings: verification.settings)
         try delegate.verifyClickExecutionForPreview()

@@ -42,6 +42,9 @@ public struct CapturedMenu: Equatable {
 }
 
 public enum MenuCapturePolicy {
+    public static func isHelpMenuTitle(_ title: String) -> Bool {
+        ["help", "도움말", "aide", "hilfe", "ayuda", "aiuto", "ヘルプ", "帮助", "說明"].contains(normalize(title))
+    }
     public static func isAppleMenuPath(_ path: [String]) -> Bool {
         guard let root = path.first else { return false }
         return ["apple", ""].contains(normalize(root))
@@ -63,9 +66,20 @@ public enum MenuCapturePolicy {
         value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "…", with: "")
             .replacingOccurrences(of: "...", with: "").lowercased()
     }
-    /// Help results are only usable when the real menu command has one exact title match.
+    /// Resolve a Help result only when its label identifies one real menu path.
     public static func resolveHelp(title: String, choices: [CapturedMenu]) -> CapturedMenu? {
-        let matches = choices.filter { !isAppleMenuPath($0.identity.path) && normalize($0.identity.path.last ?? "") == normalize(title) }
+        let candidates = choices.filter { !isAppleMenuPath($0.identity.path) }
+        // A literal title may itself contain >. If it collides with a displayed
+        // breadcrumb, neither interpretation is safe without more evidence.
+        let exact = candidates.filter { normalize($0.identity.path.last ?? "") == normalize(title) }
+        let components = title.components(separatedBy: " > ").map(normalize)
+        var matches = exact
+        if components.count > 1, components.allSatisfy({ !$0.isEmpty }) {
+            matches += candidates.filter {
+                $0.identity.path.count >= components.count
+                    && Array($0.identity.path.suffix(components.count)).map(normalize) == components
+            }
+        }
         let unique = Dictionary(grouping: matches, by: \.identity)
         guard unique.count == 1, let match = unique.values.first?.first else { return nil }
         return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
