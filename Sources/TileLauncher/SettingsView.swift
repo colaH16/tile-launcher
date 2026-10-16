@@ -174,6 +174,17 @@ struct MenuSettingsView: View {
     @State private var showingAddition = false
     @State private var handledRequestID: UUID?
     @State private var configurationHeight: CGFloat = 360
+    init(settings: SettingsStore, preferredApp: AppItem?, additionRequest: MenuAdditionRequest?,
+         additionSize: CGSize, applicationProvider: (() -> [AppItem])? = nil) {
+        self.settings = settings
+        self.preferredApp = preferredApp
+        self.additionRequest = additionRequest
+        self.additionSize = additionSize
+        self.applicationProvider = applicationProvider
+        // Start with the known app so the table does not replace all its groups
+        // from inside its initial AppKit row/layout callbacks.
+        _selectedID = State(initialValue: preferredApp?.id ?? "")
+    }
     private var selectedApp: AppItem? { applications.first { $0.id == selectedID } }
     private var appNames: [(id: String, name: String)] {
         var names = Dictionary(settings.commands.map { ($0.appID, $0.appName) }, uniquingKeysWith: { first, _ in first })
@@ -209,7 +220,11 @@ struct MenuSettingsView: View {
                 }.fixedSize(horizontal: false, vertical: true)
             }
         }.modifier(SettingsPaneInsets())
-        .onAppear {
+        .task {
+            // Defer dynamic app/group changes until the initial table layout has
+            // returned, including when there is no known preferred app.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             refreshApps()
             handleAdditionRequest()
         }
@@ -301,6 +316,9 @@ struct MenuSettingsView: View {
     }
     private var savedMenus: some View {
         let commands = MenuCommand.ordered(settings.commands, appID: selectedID, history: settings.menuHistory, includingHidden: true)
+        let pinned = commands.filter(\.isPinned)
+        let collected = commands.filter { !$0.isPinned }
+        let moves = MenuCommand.pinnedMoveTargets(in: settings.commands)
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("자동 수집·고정 메뉴 \(commands.count)개").font(.caption).foregroundStyle(.secondary)
@@ -315,28 +333,54 @@ struct MenuSettingsView: View {
                 Text(status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             List {
-                ForEach(commands) { command in
-                    HStack {
-                        MenuGlyphButton(command: command) { settings.setSymbol($0, for: command.id) }
-                        MenuCommandDetails(command: command)
-                        Spacer()
-                        Button { settings.togglePin(command.id) } label: {
-                            Image(systemName: command.isPinned ? "pin.fill" : "pin")
-                        }.help(command.isPinned ? "고정 해제" : "앞에 고정")
-                        Button { settings.moveCommand(command.id, by: -1) } label: { Image(systemName: "chevron.up") }
-                            .disabled(!command.isWide(history: settings.menuHistory)).help("고정·자주 사용 그룹 안에서 앞으로 이동")
-                        Button { settings.moveCommand(command.id, by: 1) } label: { Image(systemName: "chevron.down") }
-                            .disabled(!command.isWide(history: settings.menuHistory)).help("고정·자주 사용 그룹 안에서 뒤로 이동")
-                        Button { settings.removeCommand(command) } label: { Image(systemName: "minus.circle") }.help("목록에서 삭제하고 자동 수집에서도 제외")
-                    }.buttonStyle(.borderless)
+                ForEach(menuRows(pinned: pinned, collected: collected)) { row in
+                    VStack(alignment: .leading, spacing: 0) {
+                        switch row {
+                        case .pinnedHeading:
+                            MenuGroupHeading(title: "고정", symbol: "pin.fill", count: pinned.count, detail: "직접 순서 변경")
+                        case .emptyPinned:
+                            Text("메뉴 오른쪽 핀을 누르면 이곳에 표시됩니다.")
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        case .divider:
+                            Divider().padding(.vertical, 12)
+                        case .collectedHeading:
+                            MenuGroupHeading(title: "자동 수집", symbol: "clock.arrow.circlepath", count: collected.count,
+                                             detail: "사용 횟수 많은 순")
+                        case .emptyCollected:
+                            Text("자동 수집된 메뉴가 없습니다.").font(.caption).foregroundStyle(.secondary)
+                        case .command(let command):
+                            savedMenuRow(command, moves: moves[command.id])
+                        }
+                    }.listRowSeparator(.hidden)
                 }
-            }.overlay {
-                if commands.isEmpty {
-                    Text("메뉴를 추가하거나 앱의 메뉴 막대에서 선택해 보세요.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }
+            }.listStyle(.plain)
         }
+    }
+    private func menuRows(pinned: [MenuCommand], collected: [MenuCommand]) -> [MenuSettingsRow] {
+        [.pinnedHeading] + (pinned.isEmpty ? [.emptyPinned] : pinned.map(MenuSettingsRow.command))
+            + [.divider, .collectedHeading]
+            + (collected.isEmpty ? [.emptyCollected] : collected.map(MenuSettingsRow.command))
+    }
+    private func savedMenuRow(_ command: MenuCommand, moves: MenuCommand.MoveTargets?) -> some View {
+        HStack {
+            MenuGlyphButton(command: command) { settings.setSymbol($0, for: command.id) }
+            MenuCommandDetails(command: command, history: settings.menuHistory)
+            Spacer()
+            Button { settings.togglePin(command.id) } label: {
+                Image(systemName: command.isPinned ? "pin.fill" : "pin")
+            }.help(command.isPinned ? "고정 해제" : "앞에 고정")
+                .accessibilityLabel("\(command.title) \(command.isPinned ? "고정 해제" : "앞에 고정")")
+            if command.isPinned {
+                Button { settings.moveCommand(command.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                    .disabled(moves?.previous == nil).help("고정 메뉴 안에서 앞으로 이동")
+                    .accessibilityLabel("\(command.title) 앞으로 이동")
+                Button { settings.moveCommand(command.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                    .disabled(moves?.next == nil).help("고정 메뉴 안에서 뒤로 이동")
+                    .accessibilityLabel("\(command.title) 뒤로 이동")
+            }
+            Button { settings.removeCommand(command) } label: { Image(systemName: "minus.circle") }
+                .help("목록에서 삭제하고 자동 수집에서도 제외")
+        }.buttonStyle(.borderless)
     }
     private func beginAddition(app: AppItem?) {
         refreshApps()
@@ -372,16 +416,55 @@ private struct MenuConfigurationHeight: PreferenceKey {
 /// Shared by the real settings list and the isolated native preview.
 struct MenuCommandDetails: View {
     let command: MenuCommand
+    var history: MenuHistoryPreferences? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(command.title)
             Text(command.path.joined(separator: " › ")).font(.caption).foregroundStyle(.secondary)
-            Text(command.usageDescription).font(.caption2).foregroundStyle(.secondary)
+            Text(usageDescription).font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if command.isAutomatic && MenuCapturePolicy.isAppleMenuPath(command.path) {
                 Text("Apple 시스템 메뉴 · 자동 수집 제외 · 고정하지 않으면 오버레이에서 숨김")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+        }
+    }
+    private var usageDescription: String {
+        guard let history, !command.isPinned else { return command.usageDescription }
+        let category = command.isFrequent(history: history) ? "자주 사용" : "최근 사용"
+        return "\(category) · \(command.usageDescription)"
+    }
+
+}
+
+struct MenuGroupHeading: View {
+    let title: String
+    let symbol: String
+    let count: Int
+    let detail: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+            Text(title).fontWeight(.semibold)
+            Text("\(count)개")
+            Spacer()
+            Text(detail)
+        }.font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
+    }
+}
+
+/// Give AppKit one stable, explicit row sequence even when a menu changes groups.
+private enum MenuSettingsRow: Identifiable {
+    case pinnedHeading, emptyPinned, divider, collectedHeading, emptyCollected
+    case command(MenuCommand)
+    var id: String {
+        switch self {
+        case .pinnedHeading: return "pinned-heading"
+        case .emptyPinned: return "empty-pinned"
+        case .divider: return "divider"
+        case .collectedHeading: return "collected-heading"
+        case .emptyCollected: return "empty-collected"
+        case .command(let command): return "menu-" + command.id.uuidString
         }
     }
 }

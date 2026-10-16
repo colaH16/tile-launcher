@@ -79,7 +79,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
             recentUses = (useCount > 0 || observedCount > 0) ? lastUsed.map { [$0] } ?? [] : []
         }
     }
-    /// Storage order is the manual order within pinned/frequent groups.
+    /// Storage order is manual only for pinned menus; all other entries use counts.
     /// Preserve stored history and intentional pins, but hide previously learned
     /// system commands from recent/frequent app menus.
     private var hiddenSystemCapture: Bool {
@@ -103,14 +103,36 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
                 || command.lastUsed.map { $0 >= cutoff } == true || (!command.isAutomatic && command.lastUsed == nil)
         }.sorted { lhs, rhs in
             let a = lhs.element, b = rhs.element
-            let ag = a.isPinned ? 0 : a.isWide(history: history, at: now) ? 1 : 2
-            let bg = b.isPinned ? 0 : b.isWide(history: history, at: now) ? 1 : 2
-            if ag != bg { return ag < bg }
-            if ag == 2 && a.lastUsed != b.lastUsed {
-                return (a.lastUsed ?? .distantPast) > (b.lastUsed ?? .distantPast)
+            if a.isPinned != b.isPinned { return a.isPinned }
+            if !a.isPinned {
+                if a.totalUseCount != b.totalUseCount { return a.totalUseCount > b.totalUseCount }
+                if a.lastUsed != b.lastUsed {
+                    return (a.lastUsed ?? .distantPast) > (b.lastUsed ?? .distantPast)
+                }
             }
             return lhs.offset < rhs.offset
         }.map(\.element)
+    }
+    public struct MoveTargets {
+        public var previous: UUID?
+        public var next: UUID?
+    }
+    /// Compute both arrows in one pass. Frequency never grants manual ordering.
+    public static func pinnedMoveTargets(in commands: [Self]) -> [UUID: MoveTargets] {
+        var result: [UUID: MoveTargets] = [:]
+        var last: [String: UUID] = [:]
+        for command in commands where command.isPinned {
+            let previous = last[command.appID]
+            result[command.id] = MoveTargets(previous: previous, next: nil)
+            if let previous { result[previous]?.next = command.id }
+            last[command.appID] = command.id
+        }
+        return result
+    }
+    public static func pinnedMoveTarget(for id: UUID, by offset: Int, in commands: [Self]) -> UUID? {
+        guard offset == -1 || offset == 1 else { return nil }
+        let targets = pinnedMoveTargets(in: commands)[id]
+        return offset == -1 ? targets?.previous : targets?.next
     }
     public static func frequentIDs(_ commands: [Self], appID: String,
                                    history: MenuHistoryPreferences = .init(), at now: Date = Date()) -> Set<UUID> {

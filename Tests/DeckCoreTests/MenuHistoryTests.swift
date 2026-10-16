@@ -109,7 +109,7 @@ final class MenuHistoryTests: XCTestCase {
         expired.recordUse(at: ago(0.5))
         let refreshed = visible(other + [expired])
         XCTAssertTrue(refreshed.contains { $0.id == expired.id })
-        XCTAssertEqual(refreshed[1].id, expired.id)
+        XCTAssertEqual(refreshed[0].id, expired.id)
         XCTAssertEqual(expired.useCount, 1)
         XCTAssertEqual(expired.observedCount, 1)
         XCTAssertEqual(expired.totalUseCount, 2)

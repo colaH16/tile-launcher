@@ -138,3 +138,7 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 4. 집중 모드 해제 후 마지막 수동 프로필로 돌아오는지 확인한다. 필터가 삭제된 프로필을 참조할 때도 수동 구성을 우선하도록 코드를 보완했다.
 
 앱 필터 아이콘은 앱 아이콘을 쓰며, 실행 중 앱의 perform 호출과 current 조회가 연동 경로다. [Apple Focus filters 설명](https://developer.apple.com/videos/play/wwdc2022/10121/). 아이콘 부재의 원인이 인증서 미등록이라고 단정하지 않는다.
+
+## 공증 제출 빈도 · R217
+
+2026-10-16 Apple의 [Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)에서 공증을 하루75건 이내로 제한하라는 안내를 확인했다. 이 프로젝트는 검증한 배포 빌드마다 한 번 제출하고, 진행 중에는 저장한 제출 ID의 상태만 조회한다. 실패/응답 중단 시 같은 파일을 반복 제출하지 않고 기존 ID를 복구한다. 공증 요청이 잦다는 이유로 성공/대기 시간을 보장하지 않으며 실제 상태를 확인한다.

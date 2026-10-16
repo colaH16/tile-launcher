@@ -281,14 +281,10 @@ final class SettingsStore: ObservableObject {
         commands[i].recordUse(at: Date())
     }
     func moveCommand(_ id: UUID, by offset: Int) {
-        guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
-        let now = Date()
-        guard commands[i].isWide(history: menuHistory, at: now) else { return }
-        let peers = commands.indices.filter {
-            commands[$0].appID == commands[i].appID && commands[$0].isPinned == commands[i].isPinned && commands[$0].isWide(history: menuHistory, at: now)
-        }
-        guard let old = peers.firstIndex(of: i), peers.indices.contains(old + offset) else { return }
-        commands.swapAt(i, peers[old + offset])
+        guard let target = MenuCommand.pinnedMoveTarget(for: id, by: offset, in: commands),
+              let from = commands.firstIndex(where: { $0.id == id }),
+              let to = commands.firstIndex(where: { $0.id == target }) else { return }
+        commands.swapAt(from, to)
     }
     @Published var automatic: Bool { didSet { save() } }
     @Published var optionTriggerEnabled: Bool { didSet { save() } }

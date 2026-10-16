@@ -486,6 +486,18 @@ struct FittedSettingsPreview: View {
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if ProcessInfo.processInfo.environment["TILE_PREVIEW_MENU_ORDER_PROPOSAL"] == "1" {
+            let collected = MenuOrderProposal.automaticallyOrdered
+            precondition(collected.map(\.totalUseCount) == [4, 3, 1])
+            try save(MenuOrderProposal(pinned: MenuOrderProposal.samples.filter(\.isPinned), collected: collected),
+                     to: directory.appendingPathComponent("menu-order-with-pins.png"))
+            try save(MenuOrderProposal(pinned: [], collected: collected),
+                     to: directory.appendingPathComponent("menu-order-no-pins-clean.png"))
+            try save(MenuOrderProposal(pinned: [], collected: collected, showsEmptyPinned: true),
+                     to: directory.appendingPathComponent("menu-order-no-pins-placeholder.png"))
+            print("Menu order proposals exported without touching live settings.")
+            return
+        }
         let verification = PreviewFixture(theme: .classic)
         try verification.verifyFocusSelection()
         try verification.verifySettingsRoundTrip()
@@ -521,6 +533,20 @@ enum PreviewExport {
         }.frame(width: 580, height: 918).background(Color(nsColor: .windowBackgroundColor))
             .environment(\.colorScheme, .dark),
                  to: directory.appendingPathComponent("settings-menus-save-cancel.png"))
+        for pinCount in 0...2 {
+            let orderSource = editingSource.makeEditingCopy()
+            orderSource.commands = MenuOrderProposal.automaticallyOrdered
+                + Array(MenuOrderProposal.samples.filter(\.isPinned).prefix(pinCount))
+            let orderEditing = SettingsEditingSession(source: orderSource)
+            try save(SettingsEditorPane(session: orderEditing, draft: orderEditing.menus, tab: .menus) { draft in
+                MenuSettingsView(settings: draft,
+                                 preferredApp: .init(id: "preview.iterm", pid: 0, name: "iTerm2", url: nil),
+                                 additionRequest: nil, additionSize: CGSize(width: 540, height: 700),
+                                 applicationProvider: { [] })
+            }.frame(width: 580, height: 918).background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, .dark),
+                     to: directory.appendingPathComponent("settings-menu-order-pins-\(pinCount).png"))
+        }
         let editingNavigation = SettingsNavigation()
         editingNavigation.tab = .registered
         try save(SettingsView(settings: editingSource, loginItem: LoginItemManager(), navigation: editingNavigation,

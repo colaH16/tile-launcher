@@ -3,6 +3,7 @@ import DeckCore
 
 enum SettingsEditingValidation {
     @MainActor static func verify() throws -> (SettingsStore, SettingsEditingSession) {
+        try verifyPinnedMenuOrder()
         let suite = "dev.cola16.TileLauncher.preview.settings-edit." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         // The preview objects are in-memory snapshots; no data is needed after this check.
@@ -134,4 +135,39 @@ enum SettingsEditingValidation {
         print("Per-tab edits: General immediate; independent Save/Cancel, no draft persistence/callbacks, live menu history/captures preserved, profile conflicts and Dock staging passed.")
         return (source, edit)
     }
+    @MainActor private static func verifyPinnedMenuOrder() throws {
+        let suite = "dev.cola16.TileLauncher.preview.menu-order." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { throw NSError(domain: "SettingsEditingValidation.MenuOrder", code: 1,
+                                           userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        let source = SettingsStore(defaults: defaults)
+        source.commands = MenuOrderProposal.automaticallyOrdered
+        let first = source.commands[0], second = source.commands[1]
+        let edit = SettingsEditingSession(source: source)
+        let initial = edit.menus.commands
+        edit.menus.moveCommand(first.id, by: 1)
+        try check(edit.menus.commands == initial && !edit.hasChanges(.menus), "An automatic menu could be moved manually")
+        edit.menus.togglePin(first.id)
+        let singleton = MenuCommand.pinnedMoveTargets(in: edit.menus.commands)[first.id]
+        try check(singleton?.previous == nil && singleton?.next == nil, "Singleton pinned menu offered an arrow target")
+        edit.menus.togglePin(second.id)
+        edit.menus.moveCommand(second.id, by: -1)
+        try check(edit.hasChanges(.menus) && source.commands == initial, "Pinned move bypassed the draft")
+        source.recordUse(first.id)
+        edit.save(.menus)
+        let ids = MenuCommand.ordered(source.commands, appID: first.appID).map(\.id)
+        try check(Array(ids.prefix(2)) == [second.id, first.id]
+                  && source.commands.first(where: { $0.id == first.id })?.totalUseCount == first.totalUseCount + 1
+                  && SettingsStore(defaults: defaults).commands == source.commands,
+                  "Pinned ordering failed to save or lost live history")
+        edit.menus.togglePin(second.id)
+        edit.menus.moveCommand(first.id, by: -1)
+        edit.cancel(.menus)
+        try check(edit.menus.commands == source.commands && !edit.hasChanges(.menus), "Cancel lost the saved pinned ordering")
+        print("Menu order: automatic arrows absent, singleton pinned boundaries, draft reorder Save/Cancel and live usage passed.")
+    }
+
 }
