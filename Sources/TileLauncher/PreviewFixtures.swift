@@ -760,36 +760,51 @@ enum PreviewExport {
             throw NSError(domain: "TileLauncher.Preview", code: 82,
                           userInfo: [NSLocalizedDescriptionKey: "Scaled header/controls must use physical window coordinates."])
         }
-        var starts = 0
-        drag.beginDragForValidation = { _ in starts += 1 }
-        func event(_ point: CGPoint, type: NSEvent.EventType = .leftMouseDown) -> NSEvent {
-            NSEvent.mouseEvent(with: type, location: drag.convert(point, to: nil), modifierFlags: [],
-                timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 1,
-                clickCount: 1, pressure: 0)!
-        }
-        for rect in drag.excludedRects {
-            let point = CGPoint(x: rect.midX, y: rect.midY)
-            guard !drag.canStartDrag(at: point), drag.hitTest(point) == nil,
-                  drag.handleMouseDown(event(point)) != nil else {
-                throw NSError(domain: "TileLauncher.Preview", code: 83)
-            }
-        }
-        // Header title, outer side gap, inter-grid gap and footer are draggable.
-        let candidates = [CGPoint(x: drag.bounds.midX, y: 15), CGPoint(x: 3, y: drag.bounds.midY),
-                          CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 10)]
-        for point in candidates {
-            guard drag.canStartDrag(at: point), drag.hitTest(point) == nil,
-                  drag.handleMouseDown(event(point)) == nil else {
+        guard window.isMovable, window.isMovableByWindowBackground,
+              drag.targetsForValidation.count > 15 else { throw NSError(domain: "TileLauncher.Preview", code: 83) }
+        for target in drag.targetsForValidation {
+            let point = CGPoint(x: target.rect.midX, y: target.rect.midY)
+            guard !drag.canStartDrag(at: point), drag.nativeTarget(at: point) is OverlayDragHandle.DragView.TileView else {
                 throw NSError(domain: "TileLauncher.Preview", code: 84)
             }
-            guard drag.handleMouseDown(event(point, type: .rightMouseDown)) != nil else {
-                throw NSError(domain: "TileLauncher.Preview", code: 85)
-            }
         }
-        guard starts == candidates.count else { throw NSError(domain: "TileLauncher.Preview", code: 86) }
-        drag.enabled = false
-        guard drag.handleMouseDown(event(candidates[0])) != nil else { throw NSError(domain: "TileLauncher.Preview", code: 87) }
-        print("Full overlay: \(layout.frame.size), scale=\(layout.scale), \(drag.excludedRects.count) tile/control exclusions; background drags and ordinary control/right-click events passed offscreen.")
+        for point in [CGPoint(x: drag.bounds.midX, y: 15), CGPoint(x: 3, y: drag.bounds.midY),
+                      CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 10)] {
+            guard drag.canStartDrag(at: point), drag.nativeTarget(at: point) === drag else { throw NSError(domain: "TileLauncher.Preview", code: 85) }
+        }
+        // Isolated callbacks never launch apps. Offscreen movement validates math
+        // and action dispatch, not physical native background dragging.
+        let input = OverlayDragHandle.DragView(frame: CGRect(x: 0, y: 0, width: 300, height: 220))
+        input.enabled = true; input.allowUnorderedActionsForValidation = true
+        let inputWindow = NSWindow(contentRect: input.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        inputWindow.isReleasedWhenClosed = false; inputWindow.contentView = input
+        var clicks = 0
+        input.updateTargets([OverlayDragTarget(id: "test", rect: CGRect(x: 20, y: 20, width: 200, height: 100), action: { clicks += 1 }),
+                             OverlayDragTarget(id: "disabled", rect: CGRect(x: 20, y: 150, width: 200, height: 40), action: nil)])
+        func event(_ point: CGPoint, type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: inputWindow.convertPoint(fromScreen: point), modifierFlags: [], timestamp: 1,
+                              windowNumber: inputWindow.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        }
+        let start = inputWindow.convertPoint(toScreen: input.convert(CGPoint(x: 70, y: 70), to: nil))
+        let scale = inputWindow.backingScaleFactor
+        input.begin(event(start, type: .leftMouseDown), id: "test")
+        input.drag(event(CGPoint(x: start.x + 6 / scale, y: start.y), type: .leftMouseDragged))
+        input.release(event(CGPoint(x: start.x + 6 / scale, y: start.y), type: .leftMouseUp))
+        guard clicks == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 86) }
+        let origin = inputWindow.frame.origin
+        input.begin(event(start, type: .leftMouseDown), id: "test")
+        let moved = CGPoint(x: start.x + 10 / scale, y: start.y)
+        input.drag(event(moved, type: .leftMouseDragged))
+        guard inputWindow.frame.origin == CGPoint(x: origin.x + 10 / scale, y: origin.y) else { throw NSError(domain: "TileLauncher.Preview", code: 87) }
+        input.release(event(moved, type: .leftMouseUp))
+        guard clicks == 1, inputWindow.isMovable, inputWindow.isMovableByWindowBackground else { throw NSError(domain: "TileLauncher.Preview", code: 88) }
+        input.begin(event(moved, type: .leftMouseDown), id: "test")
+        input.cancelPress(); input.release(event(moved, type: .leftMouseUp))
+        guard clicks == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 89) }
+        input.enabled = false
+        guard input.nativeTarget(at: CGPoint(x: 70, y: 70)) == nil else { throw NSError(domain: "TileLauncher.Preview", code: 90) }
+        print("Full overlay: \(layout.frame.size), \(drag.targetsForValidation.count) tile/control action regions; native routing and 7px threshold/click cancellation passed offscreen. Physical dragging not tested.")
+
     }
 
     @MainActor private static func verifyRegisteredViewport(to directory: URL) throws {

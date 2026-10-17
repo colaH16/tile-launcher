@@ -5,6 +5,8 @@ import DeckCore
 private struct OverlayInteractionRegion {
     let bounds: Anchor<CGRect>
     var clips: [Anchor<CGRect>] = []
+    var targetID: String?
+    var action: (() -> Void)?
     func resolve(in geometry: GeometryProxy) -> CGRect? {
         OverlayDragGeometry.clipped(geometry[bounds], to: clips.map { geometry[$0] })
     }
@@ -18,6 +20,11 @@ private struct OverlayControlsKey: PreferenceKey {
 private extension View {
     func overlayDragExcluded() -> some View {
         anchorPreference(key: OverlayControlsKey.self, value: .bounds) { [.init(bounds: $0)] }
+    }
+    func overlayDragAction(_ id: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        anchorPreference(key: OverlayControlsKey.self, value: .bounds) {
+            [.init(bounds: $0, targetID: id, action: enabled ? action : nil)]
+        }
     }
     func overlayDragClip() -> some View {
         transformAnchorPreference(key: OverlayControlsKey.self, value: .bounds) { regions, clip in
@@ -213,7 +220,11 @@ struct DeckView: View {
                 GeometryReader { geometry in
                     // R194: held and pinned overlays move the same way.
                     OverlayDragHandle(enabled: true,
-                                      excludedRects: controls.compactMap { $0.resolve(in: geometry) })
+                                      excludedRects: controls.compactMap { $0.resolve(in: geometry) },
+                                      targets: controls.compactMap { region in
+                                          guard let id = region.targetID, let rect = region.resolve(in: geometry) else { return nil }
+                                          return OverlayDragTarget(id: id, rect: rect, action: region.action)
+                                      })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -293,7 +304,7 @@ struct DeckView: View {
                 .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                 .help(presentation.isPinned ? "닫기 · Esc · ⌘W · ⌥W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
-                .overlayDragExcluded()
+                .overlayDragAction("chrome.pin") { if presentation.isPinned { dismiss() } else { pinOverlay() } }
 
                 if browser.current != nil {
                     Button(action: browser.back) {
@@ -303,7 +314,7 @@ struct DeckView: View {
                     .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                     .help("뒤로")
                     .accessibilityLabel("이전 폴더로 이동")
-                    .overlayDragExcluded()
+                    .overlayDragAction("chrome.back", action: browser.back)
                 }
                 Spacer()
                 Button { showSettings(.general) } label: {
@@ -311,7 +322,7 @@ struct DeckView: View {
                 }
                 .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular).help("설정 · ⌘, 또는 ⌥,")
                 .accessibilityLabel("설정")
-                .overlayDragExcluded()
+                .overlayDragAction("chrome.settings") { showSettings(.general) }
             }
         }
         .frame(height: DeckSpacing.headerContent(compact: compact, scale: snapshot.layout.scale))
@@ -358,7 +369,7 @@ struct DeckView: View {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
                 Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).overlayDragExcluded().help("설정에서 앱별 메뉴 추가")
+                    .buttonStyle(.plain).overlayDragAction("chrome.add-menu") { showSettings(.addMenu) }.help("설정에서 앱별 메뉴 추가")
             }.frame(height: 20)
             if menuEntries.isEmpty {
                 Button { showSettings(.addMenu) } label: {
@@ -368,7 +379,7 @@ struct DeckView: View {
                         Text("설정 → 메뉴에서 자주 쓰는 동작을 등록하세요.")
                             .font(font(.caption1)).foregroundStyle(.secondary)
                     }.padding(u(14)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                }.buttonStyle(TileStyle())
+                }.buttonStyle(TileStyle()).overlayDragAction("menu.empty") { showSettings(.addMenu) }
             } else if menuAppearance == .recentPastel {
                 let sizes = menuEntries.map { entry in
                     entry.isPinned ? RecentTileSize.wide : entry.isFrequent(snapshot.frequentMenuIDs) ? .square : .application
@@ -422,6 +433,7 @@ struct DeckView: View {
                         Image(systemName: "pin.fill").font(.system(size: u(9))).padding(u(8))
                     }
             }.buttonStyle(TileStyle(section: .menus, emphasized: true))
+                .overlayDragAction("menu.app-settings", enabled: snapshot.hasAppSettings) { selectAppSettings(snapshot.context, snapshot.menuContextWindow) }
                 .disabled(!snapshot.hasAppSettings)
                 .saturation(snapshot.hasAppSettings ? 1 : 0)
                 .opacity(snapshot.hasAppSettings ? 1 : 0.42)
@@ -501,6 +513,7 @@ struct DeckView: View {
             }.padding(u(small ? 4 : 10)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
+            .overlayDragAction("menu:\(command.id)") { selectMenu(command, snapshot.context, snapshot.menuContextWindow) }
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : "") + "\n" + command.usageDescription)
             .accessibilityValue(command.usageDescription)
             .contextMenu {
@@ -526,11 +539,12 @@ struct DeckView: View {
                 Spacer()
                 Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
                 Button { showSettings(.registered) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).overlayDragExcluded().help("앱·폴더 추가 및 순서 변경")
+                    .buttonStyle(.plain).overlayDragAction("chrome.add-pin") { showSettings(.registered) }.help("앱·폴더 추가 및 순서 변경")
             }.frame(height: 26)
             if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가") { showSettings(.registered) }
-                    .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity).overlayDragExcluded()
+                    .buttonStyle(.borderless).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlayDragAction("pin.empty") { showSettings(.registered) }
             } else {
                 ScrollView {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(grid.side), spacing: grid.gap), count: grid.columns),
@@ -560,6 +574,7 @@ struct DeckView: View {
                                 }
                             }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)" || presentation.execution?.target == "pin:\(pin.id)",
                                                               emphasized: pin.kind == .app))
+                                .overlayDragAction("pin:\(pin.id)", enabled: !(pin.kind == .app && launches.isBlocked(pin.url))) { selectPin(pin) }
                                 .disabled(pin.kind == .app && launches.isBlocked(pin.url))
                                 .overlay {
                                     if pin.kind == .app && launches.isBlocked(pin.url) { ApplicationLaunchBusy() }
@@ -786,6 +801,7 @@ struct DeckView: View {
                 }
         }.buttonStyle(TileStyle(section: section, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)" || presentation.execution?.target == "window:\(window.id)", compact: small || window.isApplication))
+            .overlayDragAction("window:\(window.id)", enabled: !(window.isApplication && window.appURL.map(launches.isBlocked) == true)) { selectWindow(window) }
             .disabled(window.isApplication && window.appURL.map(launches.isBlocked) == true)
             .overlay {
                 if window.isApplication && window.appURL.map(launches.isBlocked) == true { ApplicationLaunchBusy(compact: true) }
@@ -832,6 +848,7 @@ struct DeckView: View {
                                     Text(entry.name).font(font(.caption1)).lineLimit(2).multilineTextAlignment(.center)
                                 }.padding(u(10)).frame(maxWidth: .infinity).frame(height: u(108))
                             }.buttonStyle(TileStyle(section: .registered)).help(entry.name)
+                                .overlayDragAction("folder:\(entry.url.path)") { if entry.directory { browser.enter(entry) } else { openURL(entry.url) } }
                         }
                     }
                 }.overlayDragClip()
