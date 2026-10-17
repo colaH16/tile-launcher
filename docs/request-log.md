@@ -1908,3 +1908,22 @@ R257: 사용자는 오류면 비활성·오류 없는 미발견이면 숨김이 
 직전 조사에서는 이 Mac에 현재 AX 진단 로그가 없어 실제 Messages의 첫 경로 결과는 확인하지 못했다. 대신 배포53의 cache가 AX 오류/정상 미발견을 failures로 합치고 showsPendingTile이 둘 다 숨기는 것을 코드로 확인했다. 이번 수정은 이 결함을 교정하며 실환경 원인 확정이나 재현 성공으로 기록하지 않는다.
 
 R257 전달 완료:1.9.5(54) 서명·미공증 ZIP/안내/체크섬을 기존 상위 iCloud 동기화 폴더에 복사했다. XCTest215/Python23 및 마지막 소스의 비표시 네이티브 가상 검사가 통과했고 격리 Release 서명·ZIP 재추출·진단 코드 제외를 확인했다. 실제 Messages 재현이나 공증/정식 공개/설치 교체는 하지 않았다. docs/reviews/1.9.5-build54-settings-state.md 참조.
+
+## 2026-10-17 · R258 시험54 상태 관찰과 배경 드래그 조사
+
+사용자는 Discord가 사라졌다 재표시되고 Messages는 비활성으로 유지되는 것을 확인했다. 이는 상태 표시 수정의 화면 관찰이며 Messages 설정 탐지 성공을 뜻하지 않는다. 동시에 배경 드래그가 어렵고 ChatGPT 앱에서도 비슷하다며 macOS 베타 영향인지 질문했다.
+
+제품 소스는 타일/버튼/스크롤바를 제외한 좌표에서 로컬 leftMouseDown 모니터로 NSWindow.performDrag(with:)를 호출한다. 기존 비표시 검사는 네이티브 이동을 대체하는 콜백으로 시작 조건/호출을 확인했으며 실제 WindowServer의 창 이동 성공은 검증하지 않았다. 이 Mac은 macOS27.2(26B5112a)다. 최근30분의 특정 WindowServer ‘no client initiated window drag trait’ 로그는 없었으며 사용자 현상의 원인 부재를 뜻하지 않는다.
+
+Apple 개발자 포럼834488에는 macOS27의 원격 입력 창 드래그 실패 사례와 Apple DTS의 대응이 있다. 해당 사례는 원격이며 직접 조작에서는 정상이라는 보고여서 사용자의 현상과 같다고 단정할 수 없다. 직접 마우스/트랙패드인지 원격 접속인지 질문했다. 현재 제품/버전/배포/설치는 변경하지 않았다.
+
+참고: https://developer.apple.com/forums/thread/834488
+API: https://developer.apple.com/documentation/appkit/nswindow/performdrag(with:)
+
+## 2026-10-17 · R259 집 Mac 드래그 진단 지시문 전달
+
+사용자는 Codex 개발 접근만 원격이며 본인은 로컬 조작 중이고 화면 공유는 실패 중이라고 설명했다. 여기서 실제 드래그를 검증할 수 있는지, 집 Mac의 ChatGPT에 로깅을 요청하려면 무엇을 지시할지 물었으며 긴 지시문은 iCloud 파일로 전달하도록 허용했다.
+
+IORegistry의 IOConsoleLocked=true 및 CGSSessionScreenIsLocked=true를 읽기만 확인했다. 화면 캡처/잠금 해제/실제 앱·마우스 조작은 하지 않았다. 현재 잠긴 이 Mac에서 물리 입력 재현을 검증했다고 주장하지 않는다.
+
+상위 iCloud 동기화 폴더에 Tile-Launcher-드래그-진단-요청.md(UTF-8,7376바이트)를 작성했다. 집 Mac ChatGPT가 실제 버전/소스 확인 후 명시적으로 켠 진단본에서 앱 로컬 마우스 수신·제외 영역/스크롤바 판정·뷰/모니터 생명주기와 isMovable 변경·performDrag 호출 전후·실제 창 frame 변경을 연결하도록 요청했다. 사용자가 물리 입력으로 재현하고 개인정보/다른 앱 입력·화면은 수집하지 않으며 새 타일 드래그 기능이나 이동 방식 변경·공증·공개는 하지 않는 범위다. 여기 제품·빌드·설치 변경 없음. iCloud 서버 동기화 완료는 별도다.
