@@ -3,8 +3,14 @@ import AppKit
 // Standalone input comparison. No production imports, AX, global event monitor,
 // private APIs, performDrag, or application-controlled dragging.
 enum SampleMode: String, CaseIterable {
-    case all = "A", margins = "B"
-    var title: String { self == .all ? "A · 타일까지 전체 이동" : "B · 세 섹션 밖에서만 이동" }
+    case all = "A", margins = "B", tiles = "C"
+    var title: String {
+        switch self {
+        case .all: return "A · 타일까지 전체 이동"
+        case .margins: return "B · 세 섹션 밖에서만 이동"
+        case .tiles: return "C · 실제 타일/버튼 밖에서 이동"
+        }
+    }
 }
 struct SampleElement {
     let id: String
@@ -14,17 +20,19 @@ struct SampleElement {
 }
 struct SampleLayout {
     let bounds: CGRect
+    private(set) var elements: [SampleElement] = []
+    init(bounds: CGRect) { self.bounds = bounds; elements = makeElements() }
     var menu: CGRect { CGRect(x: 24, y: 90, width: (bounds.width - 68) * 0.45, height: (bounds.height - 210) * 0.52) }
     var sessions: CGRect { CGRect(x: menu.maxX + 20, y: menu.minY, width: bounds.width - menu.maxX - 44, height: menu.height) }
     var registered: CGRect { CGRect(x: 24, y: menu.maxY + 20, width: bounds.width - 48, height: bounds.height - menu.maxY - 106) }
     var sections: [(String, CGRect)] { [("메뉴", menu), ("세션", sessions), ("등록 앱", registered)] }
-    var elements: [SampleElement] {
+    private func makeElements() -> [SampleElement] {
         var result = [SampleElement(id: "settings", label: "설정", rect: CGRect(x: bounds.width - 178, y: 20, width: 72, height: 32), color: .darkGray),
                       SampleElement(id: "pin", label: "핀", rect: CGRect(x: bounds.width - 96, y: 20, width: 72, height: 32), color: .darkGray)]
-        for (section, count, columns, color) in [(0, 4, 2, NSColor.systemTeal), (1, 4, 2, NSColor.systemBlue), (2, 10, 5, NSColor.systemPurple)] {
+        for (section, count, columns, color) in [(0, 2, 2, NSColor.systemTeal), (1, 1, 2, NSColor.systemBlue), (2, 6, 5, NSColor.systemPurple)] {
             let (name, frame) = sections[section]
             let gap: CGFloat = 10
-            let rows = (count + columns - 1) / columns
+            let rows = 2 // Reserve empty slots to compare B section blocks with C tile-only blocks.
             let width = (frame.width - 24 - gap * CGFloat(columns - 1)) / CGFloat(columns)
             let height = (frame.height - 46 - gap * CGFloat(rows - 1)) / CGFloat(rows)
             for index in 0..<count {
@@ -37,7 +45,12 @@ struct SampleLayout {
         return result
     }
     func allowsDrag(_ point: CGPoint, mode: SampleMode) -> Bool {
-        bounds.contains(point) && (mode == .all || !sections.contains { $0.1.contains(point) })
+        guard bounds.contains(point) else { return false }
+        switch mode {
+        case .all: return true
+        case .margins: return !sections.contains { $0.1.contains(point) }
+        case .tiles: return !elements.contains { $0.rect.contains(point) }
+        }
     }
     func target(_ point: CGPoint) -> String { elements.first { $0.rect.contains(point) }?.id ?? "background" }
     func label(_ point: CGPoint) -> String { elements.first { $0.rect.contains(point) }?.label ?? "배경/섹션 여백" }
@@ -90,6 +103,20 @@ final class SampleLog {
 final class SamplePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    var dragPolicy: ((NSEvent) -> Bool)?
+    var reportGate: ((Bool) -> Void)?
+    func applyGate(_ allowed: Bool) {
+        isMovable = allowed
+        isMovableByWindowBackground = allowed
+    }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            let allowed = dragPolicy?(event) ?? true
+            applyGate(allowed); reportGate?(allowed)
+        }
+        super.sendEvent(event)
+        if event.type == .leftMouseUp { applyGate(true) }
+    }
 }
 final class SampleCanvas: NSView {
     weak var owner: SamplesController?
@@ -105,7 +132,11 @@ final class SampleCanvas: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    var geometry: SampleLayout { SampleLayout(bounds: bounds) }
+    private var cachedGeometry: SampleLayout?
+    var geometry: SampleLayout {
+        if cachedGeometry?.bounds != bounds { cachedGeometry = SampleLayout(bounds: bounds) }
+        return cachedGeometry!
+    }
     override var mouseDownCanMoveWindow: Bool {
         if let event = NSApp.currentEvent, event.type == .leftMouseDown, event.window === window {
             return geometry.allowsDrag(convert(event.locationInWindow, from: nil), mode: mode)
@@ -116,13 +147,13 @@ final class SampleCanvas: NSView {
         NSColor(calibratedWhite: 0.095, alpha: 1).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 22, yRadius: 22).fill()
         text(mode.title, rect: CGRect(x: 24, y: 20, width: bounds.width - 220, height: 30), size: 19, color: .white, bold: true)
-        text(mode == .all ? "전체 영역 이동 가능 · 타일/설정/핀도 입력 기능을 함께 시험" : "세 직사각형 안은 이동 금지 · 위/아래/좌/우/섹션 사이에서 이동", rect: CGRect(x: 24, y: 58, width: bounds.width - 48, height: 24), size: 12, color: .lightGray)
+        text(mode == .all ? "전체 영역 이동 가능 · 기존 A의 미세 움직임 처리도 그대로 비교" : mode == .margins ? "세 직사각형 안은 이동 금지 · 위/아래/좌/우/섹션 사이에서 이동" : "타일·설정·핀만 이동 금지 · 섹션 내부 빈자리와 타일 사이도 이동", rect: CGRect(x: 24, y: 58, width: bounds.width - 48, height: 24), size: 12, color: .lightGray)
         for (name, frame) in geometry.sections {
             (mode == .margins ? NSColor(calibratedWhite: 0.17, alpha: 1) : NSColor(calibratedWhite: 0.13, alpha: 1)).setFill()
             NSBezierPath(rect: frame).fill()
             (mode == .margins ? NSColor.systemOrange : .darkGray).setStroke()
             let outline = NSBezierPath(rect: frame); outline.lineWidth = 1; outline.stroke()
-            text(name + (mode == .margins ? " · 영역 전체 이동 금지" : " · 타일도 이동 가능"), rect: frame.insetBy(dx: 12, dy: 10), size: 12, color: .lightGray)
+            text(name + (mode == .margins ? " · 영역 전체 이동 금지" : mode == .tiles ? " · 타일만 금지 / 빈칸 이동" : " · 타일도 이동 가능"), rect: frame.insetBy(dx: 12, dy: 10), size: 12, color: .lightGray)
         }
         for item in geometry.elements {
             let selected = activeTarget == item.id
@@ -137,8 +168,14 @@ final class SampleCanvas: NSView {
     private func text(_ value: String, rect: CGRect, size: CGFloat, color: NSColor, bold: Bool = false) {
         (value as NSString).draw(in: rect, withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular), .foregroundColor: color])
     }
-    override func mouseDown(with event: NSEvent) { super.mouseDown(with: event) }
-    override func mouseDragged(with event: NSEvent) { super.mouseDragged(with: event) }
+    override func mouseDown(with event: NSEvent) {
+        guard press?.dragAllowed ?? mouseDownCanMoveWindow else { return }
+        super.mouseDown(with: event)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        guard press?.dragAllowed ?? mouseDownCanMoveWindow else { return }
+        super.mouseDragged(with: event)
+    }
     override func mouseUp(with event: NSEvent) { owner?.release(event); super.mouseUp(with: event) }
     override func rightMouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -156,6 +193,8 @@ final class SampleCanvas: NSView {
         let global = window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
         press = PressState(target: geometry.target(point), label: geometry.label(point), start: global, dragAllowed: geometry.allowsDrag(point, mode: mode))
         press?.startWindowOrigin = window?.frame.origin
+        // Apply before AppKit receives the original event, not just a getter.
+        (window as? SamplePanel)?.applyGate(press!.dragAllowed)
         activeTarget = press?.target; needsDisplay = true
         owner?.record("press.begin", ["target": press!.target, "dragAllowed": press!.dragAllowed, "point": [point.x, point.y]])
         let timer = Timer(timeInterval: 0.55, repeats: false) { [weak self] _ in
@@ -195,13 +234,14 @@ final class SampleCanvas: NSView {
         if final.canClick { owner?.action("click", target: previous.target, label: previous.label) }
         else {
             owner?.record("press.end", ["target": final.target, "displaced": final.displaced, "windowMoved": final.windowMoved, "long": final.longFired])
-            if final.displaced && !final.windowMoved { owner?.show(final.dragAllowed ? "움직임 입력 확인 · 실제 창 이동은 확인되지 않음" : "B: 섹션 내부 이동 금지 · 클릭은 취소됨") }
+            if final.displaced && !final.windowMoved { owner?.show(final.dragAllowed ? "움직임 입력 확인 · 실제 창 이동은 확인되지 않음" : "이 위치는 이동 금지 · 끌었으므로 클릭 취소") }
         }
     }
     func cancel(_ reason: String?) {
         longTimer?.invalidate(); longTimer = nil
         if press != nil, let reason { owner?.record("press.cancel", ["reason": reason]) }
         press = nil; activeTarget = nil; needsDisplay = true
+        (window as? SamplePanel)?.applyGate(true)
     }
 }
 final class SamplesController: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -216,17 +256,17 @@ final class SamplesController: NSObject, NSApplicationDelegate, NSWindowDelegate
     var mode: SampleMode = .all
     var changingMode = false
     func applicationDidFinishLaunching(_ notification: Notification) {
-        log.write("session", ["sampleVersion": "1", "os": ProcessInfo.processInfo.operatingSystemVersionString,
+        log.write("session", ["sampleVersion": "2", "os": ProcessInfo.processInfo.operatingSystemVersionString,
                               "pid": ProcessInfo.processInfo.processIdentifier, "mode": mode.rawValue, "inputScope": "own sample windows only", "maxBytes": 5242880])
         let menu = NSMenu(); let root = NSMenuItem(); menu.addItem(root)
         root.submenu = NSMenu(); root.submenu?.addItem(withTitle: "종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let reveal = NSMenuItem(title: "로그 폴더 열기", action: #selector(revealLogs(_:)), keyEquivalent: "l")
         reveal.target = self; root.submenu?.insertItem(reveal, at: 0)
         NSApp.mainMenu = menu
-        chooser = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 560, height: 210), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        chooser = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 560, height: 245), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         chooser.title = "Tile Launcher · 드래그 비교 샘플"; chooser.delegate = self; chooser.isReleasedWhenClosed = false
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
-        stack.addArrangedSubview(NSTextField(wrappingLabelWithString: "아래 A/B를 선택한 뒤 큰 샘플 창에서 시험하세요.\n타일·설정·핀의 클릭/길게/우클릭 결과는 창 아래에 표시됩니다. 실제 앱은 실행하지 않습니다."))
+        stack.addArrangedSubview(NSTextField(wrappingLabelWithString: "아래 A/B/C를 선택한 뒤 큰 샘플 창에서 시험하세요.\n타일·설정·핀의 클릭/길게/우클릭 결과는 창 아래에 표시됩니다. 실제 앱은 실행하지 않습니다."))
         for (index, value) in SampleMode.allCases.enumerated() {
             let button = NSButton(title: value.title, target: self, action: #selector(changeMode(_:))); button.tag = index
             stack.addArrangedSubview(button)
@@ -237,7 +277,7 @@ final class SamplesController: NSObject, NSApplicationDelegate, NSWindowDelegate
         chooser.contentView!.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: chooser.contentView!.leadingAnchor, constant: 20), stack.trailingAnchor.constraint(equalTo: chooser.contentView!.trailingAnchor, constant: -20), stack.topAnchor.constraint(equalTo: chooser.contentView!.topAnchor, constant: 16)])
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        panel = SamplePanel(contentRect: CGRect(x: 0, y: 0, width: min(960, visible.width - 48), height: min(600, visible.height - 240)), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel = SamplePanel(contentRect: CGRect(x: 0, y: 0, width: min(960, visible.width - 48), height: min(600, visible.height - 275)), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.delegate = self
         panel.isMovable = true; panel.isMovableByWindowBackground = true
         panel.level = .floating; panel.hidesOnDeactivate = false; panel.hasShadow = false
@@ -245,6 +285,11 @@ final class SamplesController: NSObject, NSApplicationDelegate, NSWindowDelegate
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         canvas = SampleCanvas(frame: CGRect(origin: .zero, size: panel.frame.size)); canvas.owner = self
         panel.contentView = canvas
+        panel.dragPolicy = { [weak canvas] event in
+            guard let canvas else { return false }
+            return canvas.geometry.allowsDrag(canvas.convert(event.locationInWindow, from: nil), mode: canvas.mode)
+        }
+        panel.reportGate = { [weak self] allowed in self?.record("native.gate", ["allowed": allowed]) }
         chooser.setFrameOrigin(CGPoint(x: visible.midX - chooser.frame.width / 2, y: visible.maxY - chooser.frame.height - 12))
         panel.setFrameOrigin(CGPoint(x: visible.midX - panel.frame.width / 2, y: max(visible.minY + 12, visible.maxY - chooser.frame.height - panel.frame.height - 32)))
         chooser.makeKeyAndOrderFront(nil); panel.orderFrontRegardless(); NSApp.activate(ignoringOtherApps: true)
@@ -287,7 +332,7 @@ final class SamplesController: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
     func record(_ type: String, _ data: [String: Any] = [:]) {
         var row = data; row["mode"] = mode.rawValue
-        if let panel { row["frame"] = [panel.frame.minX, panel.frame.minY, panel.frame.width, panel.frame.height]; row["movable"] = panel.isMovable; row["windowNumber"] = panel.windowNumber }
+        if let panel { row["backgroundMovable"] = panel.isMovableByWindowBackground; row["frame"] = [panel.frame.minX, panel.frame.minY, panel.frame.width, panel.frame.height]; row["movable"] = panel.isMovable; row["windowNumber"] = panel.windowNumber }
         log.write(type, row)
     }
     func windowDidMove(_ notification: Notification) {
@@ -319,8 +364,12 @@ func selfTest() {
         for point in [CGPoint(x: 4, y: size.height/2), CGPoint(x: size.width-4,y: size.height/2), CGPoint(x: size.width/2,y: 8), CGPoint(x: size.width/2,y: size.height-8), CGPoint(x: layout.menu.maxX+10,y: layout.menu.midY), CGPoint(x: size.width/2,y: layout.menu.maxY+10)] {
             check(layout.allowsDrag(point, mode: .margins), "B blocked margin/gap")
         }
+        let insideBlank = CGPoint(x: layout.menu.minX + 4, y: layout.menu.minY + 4)
+        check(layout.allowsDrag(insideBlank, mode: .tiles), "C blocked blank space inside section")
+        check(!layout.allowsDrag(insideBlank, mode: .margins), "B allowed blank space inside section")
         for item in layout.elements where item.id.hasPrefix("section") {
             check(!layout.allowsDrag(CGPoint(x:item.rect.midX,y:item.rect.midY),mode:.margins), "B allowed tile")
+            check(!layout.allowsDrag(CGPoint(x:item.rect.midX,y:item.rect.midY),mode:.tiles), "C allowed tile")
         }
     }
     var press = PressState(target: "test", label: "test", start: .zero, dragAllowed: true)
@@ -330,7 +379,7 @@ func selfTest() {
     press.longFired = true; check(!press.canClick && !press.canLongPress, "Long press duplicated click")
     press = PressState(target: "test", label: "test", start: .zero, dragAllowed: true)
     press.windowMoved = true; check(!press.canClick && !press.canLongPress, "Real movement kept click")
-    print("PASS: A/B region policy at three sizes; section rectangles, margins/gaps, tile exclusion, jitter, drag/long/click exclusivity.")
+    print("PASS: A/B/C region policy at three sizes; section rectangles, margins/gaps, tile exclusion, jitter, drag/long/click exclusivity.")
 }
 if CommandLine.arguments.contains("--self-test-native") {
     _ = NSApplication.shared
@@ -348,7 +397,9 @@ if CommandLine.arguments.contains("--self-test-native") {
         owner.mode = mode; canvas.mode = mode
         let previous = owner.counts["click", default: 0]
         canvas.begin(event(.leftMouseDown, point)); check(canvas.mouseDownCanMoveWindow == (mode == .all))
+        check(panel.isMovable == (mode == .all) && panel.isMovableByWindowBackground == (mode == .all))
         canvas.finish(event(.leftMouseUp, point)); check(owner.counts["click"] == previous + 1)
+        check(panel.isMovable && panel.isMovableByWindowBackground)
         canvas.finish(event(.leftMouseUp, point)); check(owner.counts["click"] == previous + 1)
         canvas.begin(event(.leftMouseDown, point))
         canvas.finish(event(.leftMouseUp, CGPoint(x: point.x + 9, y: point.y)))
@@ -372,7 +423,7 @@ if CommandLine.arguments.contains("--self-test-native") {
     let pinPoint = CGPoint(x: pin.midX, y: pin.midY)
     canvas.begin(event(.leftMouseDown, pinPoint)); canvas.finish(event(.leftMouseUp, pinPoint)); check(canvas.pinOn)
     canvas.cancel(nil)
-    print("PASS: offscreen AppKit A/B hit policy, click release/dedup, drag cancellation, real one-shot long timer, no-up cancellation, right action and pin toggle. No OS drag was invoked.")
+    print("PASS: offscreen AppKit A/B/C native movement gate, hit policy, click release/dedup, drag cancellation, real one-shot long timer, no-up cancellation, right action and pin toggle. No OS drag was invoked.")
     exit(0)
 }
 if CommandLine.arguments.contains("--self-test") { selfTest(); exit(0) }
@@ -386,7 +437,7 @@ if let flag = CommandLine.arguments.firstIndex(of: "--render"), flag + 1 < Comma
         view.cacheDisplay(in: view.bounds, to: rep)
         try rep.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("sample-\(mode.rawValue).png"))
     }
-    print("Rendered A/B layout only; physical dragging not tested."); exit(0)
+    print("Rendered A/B/C layout only; physical dragging not tested."); exit(0)
 }
 let app = NSApplication.shared
 let delegate = SamplesController()

@@ -13,7 +13,7 @@ from pathlib import Path
 Path(sys.argv[1]).write_bytes(plistlib.dumps(dict(
  CFBundleIdentifier='dev.cola16.TileLauncher.DragSamples',CFBundleName='Tile Launcher Drag Samples',
  CFBundleDisplayName='Tile Launcher Drag Samples',CFBundleExecutable='DragSamples',
- CFBundlePackageType='APPL',CFBundleShortVersionString='0.1.0',CFBundleVersion='1',
+ CFBundlePackageType='APPL',CFBundleShortVersionString='0.2.0',CFBundleVersion='2',
  LSMinimumSystemVersion='26.0',NSPrincipalClass='NSApplication',NSHighResolutionCapable=True)))
 PY
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE.txt"
