@@ -21,3 +21,11 @@ M2 Pro / 32GiB / macOS27.2(26B5112a), Swift5 언어 모드·arm64 macOS26타깃�
 
 재현 명령: DEVELOPER_DIR를 Xcode로 지정한 환경에서 tools/drag-samples/benchmark/run.sh OUTPUT_JSON.
 원본 JSON은 전달 ZIP의geometry-benchmark.json이다.
+
+## 전달 결과
+
+소스a8d80a7의독립샘플0.2.0(2), Developer ID 서명·미공증이다.최종화면밖AppKit검사는이동가능플래그게이트/클릭중복취소/단발길게/우클릭/핀을통과했고,실제마우스드래그는실행하지않았다.검사중sandbox_extension_issue_file_to_process 경고가있었으나검사/렌더링exit0이다.
+
+iCloud:Tile-Launcher-drag-samples-v2-ABC.zip
+ZIP226065바이트,SHA256 e47abfac9a6056f449f479bca0897eb4fe67e8dde9f756ea5fa133c7eb72351c.
+ZIP재추출서명/영역검사를통과했다.원본순수기하벤치마크JSON/소스/성능설명/실행안내/A·B·C PNG를동봉했다.기존샘플을종료한뒤v2의C항목이있는지확인해사용한다.제품앱/설치/정식배포는변경하지않았다.
