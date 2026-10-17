@@ -760,7 +760,7 @@ enum PreviewExport {
             throw NSError(domain: "TileLauncher.Preview", code: 82,
                           userInfo: [NSLocalizedDescriptionKey: "Scaled header/controls must use physical window coordinates."])
         }
-        guard window.isMovable, window.isMovableByWindowBackground,
+        guard window.isMovable, !window.isMovableByWindowBackground,
               drag.targetsForValidation.count > 15 else { throw NSError(domain: "TileLauncher.Preview", code: 83) }
         for target in drag.targetsForValidation {
             let point = CGPoint(x: target.rect.midX, y: target.rect.midY)
@@ -797,13 +797,31 @@ enum PreviewExport {
         input.drag(event(moved, type: .leftMouseDragged))
         guard inputWindow.frame.origin == CGPoint(x: origin.x + 10 / scale, y: origin.y) else { throw NSError(domain: "TileLauncher.Preview", code: 87) }
         input.release(event(moved, type: .leftMouseUp))
-        guard clicks == 1, inputWindow.isMovable, inputWindow.isMovableByWindowBackground else { throw NSError(domain: "TileLauncher.Preview", code: 88) }
+        guard clicks == 1, inputWindow.isMovable, !inputWindow.isMovableByWindowBackground else { throw NSError(domain: "TileLauncher.Preview", code: 88) }
         input.begin(event(moved, type: .leftMouseDown), id: "test")
         input.cancelPress(); input.release(event(moved, type: .leftMouseUp))
         guard clicks == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 89) }
+        let backgroundStart = inputWindow.convertPoint(toScreen: input.convert(CGPoint(x: 280, y: 210), to: nil))
+        let backgroundOrigin = inputWindow.frame.origin
+        input.beginBackground(event(backgroundStart, type: .leftMouseDown))
+        let onePixel = CGPoint(x: backgroundStart.x + 1 / scale, y: backgroundStart.y)
+        input.drag(event(onePixel, type: .leftMouseDragged))
+        guard inputWindow.frame.origin == CGPoint(x: backgroundOrigin.x + 1 / scale, y: backgroundOrigin.y) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 91)
+        }
+        input.release(event(onePixel, type: .leftMouseUp))
+        guard clicks == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 92) }
+        let circle = OverlayDragHandle.DragView.TileView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
+        circle.circular = true; circle.pressed = true
+        let bitmap = circle.bitmapImageRepForCachingDisplay(in: circle.bounds)!
+        circle.cacheDisplay(in: circle.bounds, to: bitmap)
+        guard bitmap.colorAt(x: 0, y: 0)!.alphaComponent < 0.01,
+              bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)!.alphaComponent > 0.05 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 93)
+        }
         input.enabled = false
         guard input.nativeTarget(at: CGPoint(x: 70, y: 70)) == nil else { throw NSError(domain: "TileLauncher.Preview", code: 90) }
-        print("Full overlay: \(layout.frame.size), \(drag.targetsForValidation.count) tile/control action regions; native routing and 7px threshold/click cancellation passed offscreen. Physical dragging not tested.")
+        print("Full overlay: \(layout.frame.size), \(drag.targetsForValidation.count) tile/control action regions; direct background movement, circular highlight and 7px threshold/click cancellation passed offscreen. Physical dragging not tested.")
 
     }
 

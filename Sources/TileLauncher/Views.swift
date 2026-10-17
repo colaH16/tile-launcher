@@ -5,6 +5,7 @@ import DeckCore
 private struct OverlayInteractionRegion {
     let bounds: Anchor<CGRect>
     var clips: [Anchor<CGRect>] = []
+    var circular = false
     var targetID: String?
     var action: (() -> Void)?
     func resolve(in geometry: GeometryProxy) -> CGRect? {
@@ -21,9 +22,9 @@ private extension View {
     func overlayDragExcluded() -> some View {
         anchorPreference(key: OverlayControlsKey.self, value: .bounds) { [.init(bounds: $0)] }
     }
-    func overlayDragAction(_ id: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+    func overlayDragAction(_ id: String, enabled: Bool = true, circular: Bool = false, action: @escaping () -> Void) -> some View {
         anchorPreference(key: OverlayControlsKey.self, value: .bounds) {
-            [.init(bounds: $0, targetID: id, action: enabled ? action : nil)]
+            [.init(bounds: $0, circular: circular, targetID: id, action: enabled ? action : nil)]
         }
     }
     func overlayDragClip() -> some View {
@@ -223,7 +224,7 @@ struct DeckView: View {
                                       excludedRects: controls.compactMap { $0.resolve(in: geometry) },
                                       targets: controls.compactMap { region in
                                           guard let id = region.targetID, let rect = region.resolve(in: geometry) else { return nil }
-                                          return OverlayDragTarget(id: id, rect: rect, action: region.action)
+                                          return OverlayDragTarget(id: id, rect: rect, action: region.action, circular: region.circular)
                                       })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -304,7 +305,7 @@ struct DeckView: View {
                 .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                 .help(presentation.isPinned ? "닫기 · Esc · ⌘W · ⌥W" : "창 고정 · ⌥X · Option을 놓아도 유지")
                 .accessibilityLabel(presentation.isPinned ? "고정된 오버레이 닫기" : "오버레이 고정")
-                .overlayDragAction("chrome.pin") { if presentation.isPinned { dismiss() } else { pinOverlay() } }
+                .overlayDragAction("chrome.pin", circular: true) { if presentation.isPinned { dismiss() } else { pinOverlay() } }
 
                 if browser.current != nil {
                     Button(action: browser.back) {
@@ -314,7 +315,7 @@ struct DeckView: View {
                     .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
                     .help("뒤로")
                     .accessibilityLabel("이전 폴더로 이동")
-                    .overlayDragAction("chrome.back", action: browser.back)
+                    .overlayDragAction("chrome.back", circular: true, action: browser.back)
                 }
                 Spacer()
                 Button { showSettings(.general) } label: {
@@ -322,7 +323,7 @@ struct DeckView: View {
                 }
                 .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular).help("설정 · ⌘, 또는 ⌥,")
                 .accessibilityLabel("설정")
-                .overlayDragAction("chrome.settings") { showSettings(.general) }
+                .overlayDragAction("chrome.settings", circular: true) { showSettings(.general) }
             }
         }
         .frame(height: DeckSpacing.headerContent(compact: compact, scale: snapshot.layout.scale))

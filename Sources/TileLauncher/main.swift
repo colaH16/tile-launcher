@@ -488,7 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.isMovable = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.contentView = surface
         window.setFrame(layout.frame, display: false)
         surface.layoutSubtreeIfNeeded()

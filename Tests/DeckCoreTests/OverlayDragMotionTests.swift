@@ -21,4 +21,10 @@ final class OverlayDragMotionTests: XCTestCase {
         XCTAssertNil(released.advance(to: CGPoint(x: 50, y: 50), mayBegin: false))
         XCTAssertFalse(released.committed)
     }
+    func testBackgroundHasNoDistanceThreshold() {
+        var drag = OverlayDragMotion(start: .zero, origin: CGPoint(x: 100, y: 200), pixels: 0, backingScale: 2)
+        XCTAssertEqual(drag.advance(to: CGPoint(x: 0.5, y: 0)), CGPoint(x: 100.5, y: 200))
+        XCTAssertTrue(drag.committed)
+    }
+
 }

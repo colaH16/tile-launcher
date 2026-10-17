@@ -6,9 +6,10 @@ struct OverlayDragTarget {
     let id: String
     let rect: CGRect
     let action: (() -> Void)?
+    var circular = false
 }
 
-/// Native background responder, with separate tile responders for delayed drag.
+/// Direct movement for empty background and thresholded tile responders.
 /// Right clicks, hover and wheel events pass through to the SwiftUI controls.
 struct OverlayDragHandle: NSViewRepresentable {
     let enabled: Bool
@@ -27,7 +28,7 @@ struct OverlayDragHandle: NSViewRepresentable {
         var excludedRects: [CGRect] = []
         var enabled = false {
             didSet {
-                if enabled && !oldValue { window?.isMovable = true; window?.isMovableByWindowBackground = true }
+                if enabled && !oldValue { window?.isMovable = true; window?.isMovableByWindowBackground = false }
                 if !enabled { cancelPress() }
             }
         }
@@ -42,12 +43,12 @@ struct OverlayDragHandle: NSViewRepresentable {
         private var motion: OverlayDragMotion?
         override var isFlipped: Bool { true }
         override var isOpaque: Bool { false }
-        override var mouseDownCanMoveWindow: Bool { true }
+        override var mouseDownCanMoveWindow: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             // Set once on attachment; never toggle either flag per mouse press.
-            if enabled { window?.isMovable = true; window?.isMovableByWindowBackground = true }
+            if enabled { window?.isMovable = true; window?.isMovableByWindowBackground = false }
             if window == nil { cancelPress() }
             setAccessibilityElement(false)
         }
@@ -65,6 +66,7 @@ struct OverlayDragHandle: NSViewRepresentable {
                 }
                 if child.frame != target.rect { child.frame = target.rect }
                 child.action = target.action
+                child.circular = target.circular
             }
         }
         func canStartDrag(at point: NSPoint) -> Bool {
@@ -93,6 +95,16 @@ struct OverlayDragHandle: NSViewRepresentable {
             }
             return target
         }
+        override func mouseDown(with event: NSEvent) { beginBackground(event) }
+        override func mouseDragged(with event: NSEvent) { drag(event) }
+        override func mouseUp(with event: NSEvent) { release(event) }
+        func beginBackground(_ event: NSEvent) {
+            cancelPress()
+            guard enabled, let window, event.window === window,
+                  canStartDrag(at: convert(event.locationInWindow, from: nil)) else { return }
+            motion = OverlayDragMotion(start: window.convertPoint(toScreen: event.locationInWindow),
+                                       origin: window.frame.origin, pixels: 0, backingScale: window.backingScaleFactor)
+        }
         func begin(_ event: NSEvent, id: String) {
             cancelPress()
             guard enabled, let window, event.window === window, controls[id] != nil else { return }
@@ -109,8 +121,9 @@ struct OverlayDragHandle: NSViewRepresentable {
             if let origin, window.frame.origin != origin { window.setFrameOrigin(origin) }
         }
         func release(_ event: NSEvent) {
-            guard let id = pressedID, let window, event.window === window else { cancelPress(); return }
+            guard let window, event.window === window, motion != nil else { cancelPress(); return }
             drag(event, mayBegin: false)
+            guard let id = pressedID else { cancelPress(); return }
             let local = convert(event.locationInWindow, from: nil)
             var canExecute = window.isVisible
             #if TILE_LAUNCHER_DIAGNOSTICS
@@ -129,6 +142,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             weak var owner: DragView?
             var id = ""
             var action: (() -> Void)?
+            var circular = false
             var pressed = false { didSet { if oldValue != pressed { needsDisplay = true } } }
             override var isOpaque: Bool { false }
             override var mouseDownCanMoveWindow: Bool { false }
@@ -139,7 +153,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             override func draw(_ dirtyRect: NSRect) {
                 if pressed {
                     NSColor.white.withAlphaComponent(0.12).setFill()
-                    NSBezierPath(rect: bounds).fill()
+                    (circular ? NSBezierPath(ovalIn: bounds) : NSBezierPath(rect: bounds)).fill()
                 }
             }
             override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); setAccessibilityElement(false) }
