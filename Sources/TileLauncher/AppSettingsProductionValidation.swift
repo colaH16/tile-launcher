@@ -72,6 +72,57 @@ enum AppSettingsProductionValidation {
             cancelled: { false }, reader: { _, _, _ in nil })
         try require(absent == nil, "All-miss race fabricated support")
 
+        for incomplete in [false, true] {
+            do {
+                _ = try AppSettingsRaceReader.find(in: app, deadline: ProcessInfo.processInfo.systemUptime + 2,
+                    cancelled: { false }, reader: { route, _, _ in
+                        if route == .multiple {
+                            if incomplete { throw ApplicationSettingsMenu.ReadError.incomplete }
+                            throw ApplicationSettingsMenu.ReadError.ax(.cannotComplete)
+                        }
+                        return nil
+                    })
+                try require(false, "Mixed unknown/miss race became confirmed absence")
+            } catch is ApplicationSettingsMenu.ReadError { }
+        }
+
+        // Display must track the last completed round, independently of retry
+        // count. Exercise both foreground and launch-child cache publication.
+        for launched in [false, true] {
+            let sequence = Counts()
+            let stateful = ApplicationSettingsMenu(reader: { item, _, _ in
+                let count = sequence.next(item.pid)
+                Thread.sleep(forTimeInterval: 0.01)
+                if count == 1 { throw ApplicationSettingsMenu.ReadError.ax(.cannotComplete) }
+                if count == 2 { return nil }
+                if count == 3 { throw ApplicationSettingsMenu.ReadError.incomplete }
+                return found(item)
+            }, trusted: { true }, retryDelays: [0.02, 0.02, 0.02, 0.02],
+               finishedLaunching: { _ in true }, processIdentity: identity)
+            var seen: [Int: Bool] = [:]
+            stateful.onChange = { seen[sequence.count(app.pid)] = stateful.showsPendingTile(in: app) }
+            if launched { stateful.preloadLaunchedApp(app) } else { stateful.refresh(app: app) }
+            try wait { stateful.hasSettings(in: app) }
+            try require(seen[1] == true && seen[2] == false && seen[3] == true && seen[4] == false,
+                        "AX/incomplete errors did not stay disabled, normal miss did not hide, or success did not enable")
+            stateful.cancel(); stateful.onChange = nil
+        }
+        let unknownCalls = Counts()
+        let unknown = ApplicationSettingsMenu(reader: { item, _, _ in
+            _ = unknownCalls.next(item.pid); throw ApplicationSettingsMenu.ReadError.ax(.cannotComplete)
+        }, trusted: { true }, retryDelays: [0.001, 0.001, 0.001, 0.001],
+           finishedLaunching: { _ in true }, processIdentity: identity)
+        unknown.preloadLaunchedApp(app)
+        try wait { unknownCalls.count(app.pid) == 5 && !unknown.isSearching(in: app) }
+        try require(unknown.showsPendingTile(in: app) && unknown.pendingTileSearchStopped(in: app),
+                    "Exhausted AX errors hid the disabled tile or claimed to still search")
+        for _ in 0..<10 { unknown.refresh(app: app); unknown.preloadLaunchedApp(app) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+        try require(unknownCalls.count(app.pid) == 5, "Unknown result exceeded five attempts")
+        unknown.invalidate(pid: app.pid)
+        try require(!unknown.showsPendingTile(in: app), "Terminated app kept unknown tile")
+        unknown.cancel()
+
         // Three blocked background IPC calls must not occupy every worker and
         // make a newly activated app wait for their responses.
         let backgroundRoutes = DispatchSemaphore(value: 0), releaseRoutes = DispatchSemaphore(value: 0)
@@ -190,7 +241,7 @@ enum AppSettingsProductionValidation {
         try require(!snapshot.menuEntries().contains { if case .appSettings = $0 { return true }; return false }, "Failed round retained pending tile")
         snapshot.hasAppSettings = true
         try require(snapshot.menuEntries().contains { if case .appSettings = $0 { return true }; return false }, "Recovered tile missing")
-        print("Product settings: three concurrent routes, first winner/loser stop, launch prewarm independent of focus, dedup, hidden retry/reappearance, five normal-miss retries, known restart and termination passed; synthetic only.")
+        print("Product settings: unknown/error vs normal miss, mixed-route errors, stopped disabled tile, three concurrent routes, first winner/loser stop, launch prewarm independent of focus, dedup, hidden retry/reappearance, five normal-miss retries, known restart and termination passed; synthetic only.")
     }
 }
 #endif

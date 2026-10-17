@@ -53,11 +53,12 @@ struct AppSettingsAXAccess {
             }
             bar = candidate
         }
-        guard let bar else { return nil }
+        guard let bar else { throw ApplicationSettingsMenu.ReadError.incomplete }
         try prepare(bar)
         var pid: pid_t = 0
         let status = AXUIElementGetPid(bar, &pid)
         try check(status)
-        return status == .success && pid == app.pid ? bar : nil
+        guard status == .success && pid == app.pid else { throw ApplicationSettingsMenu.ReadError.incomplete }
+        return bar
     }
 }

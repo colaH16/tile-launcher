@@ -416,7 +416,7 @@ struct DeckView: View {
                 ZStack(alignment: .bottomLeading) {
                     Image(systemName: "gear").font(.system(size: u(44), weight: .light))
                         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(22))
-                    Text(snapshot.hasAppSettings ? "앱 설정" : "앱 설정 · 확인 중").font(.system(size: u(12), weight: .medium)).padding(u(8))
+                    Text(snapshot.hasAppSettings ? "앱 설정" : snapshot.appSettingsSearchStopped ? "앱 설정 · 확인 실패" : "앱 설정 · 확인 중").font(.system(size: u(12), weight: .medium)).padding(u(8))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .topTrailing) {
                         Image(systemName: "pin.fill").font(.system(size: u(9))).padding(u(8))
@@ -426,7 +426,7 @@ struct DeckView: View {
                 .saturation(snapshot.hasAppSettings ? 1 : 0)
                 .opacity(snapshot.hasAppSettings ? 1 : 0.42)
                 .help(snapshot.hasAppSettings ? "\(snapshot.context?.name ?? "현재 앱") 설정 열기" : "설정 메뉴를 확인하고 있습니다. 확인이 끝나면 사용할 수 있습니다.")
-                .accessibilityLabel(snapshot.hasAppSettings ? "\(snapshot.context?.name ?? "현재 앱") 설정 열기" : "앱 설정 확인 중, 사용 불가")
+                .accessibilityLabel(snapshot.hasAppSettings ? "\(snapshot.context?.name ?? "현재 앱") 설정 열기" : snapshot.appSettingsSearchStopped ? "앱 설정 확인 실패, 사용 불가" : "앱 설정 확인 중, 사용 불가")
         }
     }
     private func menuTile(_ command: MenuCommand, small: Bool = false) -> some View {

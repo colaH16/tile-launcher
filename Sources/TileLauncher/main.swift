@@ -395,7 +395,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                               commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
                               menuHistory: settings.menuHistory, handoff: dockHandoff.current,
                               hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext),
-                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext))
+                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext),
+                              appSettingsSearchStopped: appSettingsMenu.pendingTileSearchStopped(in: lastContext))
         let old = ready.content.snapshot.layout
         let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
             .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
@@ -439,7 +440,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                        commands: MenuCommand.ordered(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
                                        frequentMenuIDs: MenuCommand.frequentIDs(settings.commands, appID: lastContext?.id ?? "", history: settings.menuHistory, at: menuNow),
                                        hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext),
-                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext))
+                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext),
+                              appSettingsSearchStopped: appSettingsMenu.pendingTileSearchStopped(in: lastContext))
         layout = restored
             ? layout.refittingContent(registeredCount: settings.activeProfile.items.count, visibleFrame: layoutScreen.visibleFrame,
                                       workRows: snapshot.workRows())
@@ -575,7 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                 commands: settings.commands, manualCount: settings.automatic ? nil : settings.manualCount,
                                 menuHistory: settings.menuHistory, handoff: dockHandoff.current,
                                 hasAppSettings: settings.showAppSettingsTile && appSettingsMenu.hasSettings(in: lastContext),
-                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext))
+                              appSettingsPending: settings.showAppSettingsTile && appSettingsMenu.showsPendingTile(in: lastContext),
+                              appSettingsSearchStopped: appSettingsMenu.pendingTileSearchStopped(in: lastContext))
         resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {

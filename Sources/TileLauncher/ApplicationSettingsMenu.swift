@@ -20,7 +20,7 @@ final class ApplicationSettingsMenu {
     private var launchedApp: AppItem?
     private var retryTimer: DispatchWorkItem?
     private enum CacheState { case found, failures(Int), unavailable }
-    private struct Cached { let appID: String; let process: ProcessIdentity; let state: CacheState }
+    private struct Cached { let appID: String; let process: ProcessIdentity; let state: CacheState; let confirmedMissing: Bool }
     private var cache: [pid_t: Cached] = [:]
     // Capability only: no PID, AX element or menu action survives an app restart.
     // Keep successful app IDs until this launcher instance exits.
@@ -76,14 +76,17 @@ final class ApplicationSettingsMenu {
         if launchedApp?.id == app.id, launchedApp?.pid == app.pid { return true }
         return launchedQueue.contains { $0.id == app.id && $0.pid == app.pid }
     }
-    /// Only the first unresolved round shows a disabled tile. A failed round
-    /// hides it during later retries; a later success creates the active tile.
+    /// Unknown/error results retain a disabled tile, including after retries
+    /// stop. Only a completed, error-free miss hides it; success enables it.
     func showsPendingTile(in app: AppItem?) -> Bool {
-        guard let app, isSearching(in: app) else { return false }
+        guard let app, !hasSettings(in: app) else { return false }
         if let cached = cache[app.pid], cached.appID == app.id {
-            switch cached.state { case .failures, .unavailable: return false; case .found: break }
+            return !cached.confirmedMissing
         }
-        return true
+        return isSearching(in: app)
+    }
+    func pendingTileSearchStopped(in app: AppItem?) -> Bool {
+        showsPendingTile(in: app) && !isSearching(in: app)
     }
     /// Launch notifications prewarm the new app independently of the overlay
     /// and current focus. One background app at a time; activation shares it.
@@ -261,6 +264,7 @@ final class ApplicationSettingsMenu {
                     result = nil
                     if case .ax = failure { retryableAXError = true }
                     if case .deadline = failure { retryableDeadline = true }
+                    if case .incomplete = failure { retryableAXError = true }
                 } catch { result = nil }
             }
 
@@ -286,7 +290,7 @@ final class ApplicationSettingsMenu {
                     } else { failures = 1 }
                     state = failures >= 5 ? .unavailable : .failures(failures)
                 }
-                self.cache[work.app.pid] = Cached(appID: work.app.id, process: work.process, state: state)
+                self.cache[work.app.pid] = Cached(appID: work.app.id, process: work.process, state: state, confirmedMissing: result == nil && normalMiss)
                 let failures: Int
                 switch state { case .found: failures = 0; case .failures(let count): failures = count; case .unavailable: failures = 5 }
 
@@ -366,7 +370,7 @@ final class ApplicationSettingsMenu {
     }
 
     struct Found { let element: AXUIElement; let command: MenuCommand }
-    enum ReadError: Error { case ax(AXError), deadline, cancelled }
+    enum ReadError: Error { case ax(AXError), deadline, cancelled, incomplete }
     static func find(in app: AppItem,
                              deadline: TimeInterval = ProcessInfo.processInfo.systemUptime + 2,
                              isCancelled: () -> Bool = { false },
@@ -397,22 +401,24 @@ final class ApplicationSettingsMenu {
         else {
             let application = AXUIElementCreateApplication(app.pid)
 
-            guard let rawBar = try value(application, kAXMenuBarAttribute), CFGetTypeID(rawBar) == AXUIElementGetTypeID() else { return nil }
+            guard let rawBar = try value(application, kAXMenuBarAttribute), CFGetTypeID(rawBar) == AXUIElementGetTypeID() else { throw ReadError.incomplete }
             bar = rawBar as! AXUIElement
         }
         // macOS's first menu is Apple, followed by the application's own menu.
         // Do not search document/project submenus for a coincidental “Settings”.
         guard let root = try children(bar).dropFirst().first,
               let rootTitle = try value(root, kAXTitleAttribute) as? String,
-              !MenuCapturePolicy.isAppleMenuPath([rootTitle]) else { return nil }
+              !rootTitle.isEmpty, !MenuCapturePolicy.isAppleMenuPath([rootTitle]) else { throw ReadError.incomplete }
         var items: [AXUIElement] = []
         for child in try children(root) {
-            if try value(child, kAXRoleAttribute) as? String == kAXMenuRole { items += try children(child) }
+            guard let role = try value(child, kAXRoleAttribute) as? String else { throw ReadError.incomplete }
+            if role == kAXMenuRole { items += try children(child) }
         }
-        guard items.count <= 100 else { return nil }
+        guard !items.isEmpty, items.count <= 100 else { throw ReadError.incomplete }
         var matches: [(AXUIElement, AppSettingsMenuMatch.Candidate)] = []
         for item in items {
-            guard try value(item, kAXRoleAttribute) as? String == kAXMenuItemRole,
+            guard let role = try value(item, kAXRoleAttribute) as? String else { throw ReadError.incomplete }
+            guard role == kAXMenuItemRole,
                   let title = try value(item, kAXTitleAttribute) as? String, !title.isEmpty else { continue }
             let key = try value(item, kAXMenuItemCmdCharAttribute) as? String ?? ""
             var shortcut: MenuShortcut?
@@ -424,11 +430,13 @@ final class ApplicationSettingsMenu {
             guard try children(item).isEmpty else { continue }
             matches.append((item, .init(title: title, shortcut: shortcut)))
         }
+        guard !matches.isEmpty else { return nil }
         guard let index = AppSettingsMenuMatch.index(in: matches.map(\.1)) else {
-            return nil
+            throw ReadError.incomplete
         }
         let (element, candidate) = matches[index]
-        guard try value(element, kAXEnabledAttribute) as? Bool == true else { return nil }
+        guard let enabled = try value(element, kAXEnabledAttribute) as? Bool else { throw ReadError.incomplete }
+        guard enabled else { throw ReadError.incomplete }
         var actions: CFArray?
         let remaining = deadline - ProcessInfo.processInfo.systemUptime
         guard remaining > 0, !isCancelled() else {
@@ -440,7 +448,7 @@ final class ApplicationSettingsMenu {
         let actionStatus = AXUIElementCopyActionNames(element, &actions)
 
         guard actionStatus == .success else { throw ReadError.ax(actionStatus) }
-        guard (actions as? [String] ?? []).contains(kAXPressAction) else { return nil }
+        guard (actions as? [String] ?? []).contains(kAXPressAction) else { throw ReadError.incomplete }
         var command = MenuCommand(appID: app.id, appName: app.name, path: [rootTitle, candidate.title])
         command.shortcut = candidate.shortcut
         return Found(element: element, command: command)

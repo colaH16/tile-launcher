@@ -85,6 +85,7 @@ struct OverlaySnapshot: Equatable {
     var menuContextWindow: WindowItem? = nil
     var hasAppSettings = false
     var appSettingsPending = false
+    var appSettingsSearchStopped = false
     func menuEntries(commands override: [MenuCommand]? = nil) -> [OverlayMenuEntry] {
         (override ?? commands).map(OverlayMenuEntry.command)
             + (context != nil && permission && (hasAppSettings || appSettingsPending) ? [.appSettings] : [])
@@ -147,7 +148,7 @@ final class OverlayContent: ObservableObject {
     func refresh(context: AppItem?, apps: [AppItem], windows: [WindowItem],
                  trusted: Bool, commands: [MenuCommand], manualCount: Int?,
                  menuHistory: MenuHistoryPreferences = .init(), handoff: HandoffItem? = nil,
-                 hasAppSettings: Bool = false, appSettingsPending: Bool = false, now: Date = Date()) {
+                 hasAppSettings: Bool = false, appSettingsPending: Bool = false, appSettingsSearchStopped: Bool = false, now: Date = Date()) {
         let old = snapshot
         let recent = Self.recentWindows(windows, context: context, handoff: handoff)
         let count = old.layout.windowLimit(manual: manualCount, actual: recent.count)
@@ -159,7 +160,8 @@ final class OverlayContent: ObservableObject {
                                    commands: MenuCommand.ordered(commands, appID: context?.id ?? "", history: menuHistory, at: now),
                                    frequentMenuIDs: MenuCommand.frequentIDs(commands, appID: context?.id ?? "", history: menuHistory, at: now),
                                    menuContextWindow: windows.first { $0.pid == context?.pid && !$0.isApplication && $0.handoff == nil },
-                                   hasAppSettings: hasAppSettings, appSettingsPending: appSettingsPending)
+                                   hasAppSettings: hasAppSettings, appSettingsPending: appSettingsPending,
+                                   appSettingsSearchStopped: appSettingsSearchStopped)
         if next != old { snapshot = next }
     }
 }
