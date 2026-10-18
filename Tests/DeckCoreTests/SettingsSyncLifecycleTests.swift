@@ -55,6 +55,13 @@ final class SettingsSyncLifecycleTests: XCTestCase {
                                  journalCommit: "n", defaultsCheckpoint: "n", managed: [manual.id]), .externalEdit)
     }
 
+    func testPathBasedAppMenusAreNotOutsideEdits() {
+        let journaled = projection()
+        let local = MenuCommand(appID: "/Applications/Local Tool.app", appName: "Local Tool", path: ["File", "Run"])
+        XCTAssertEqual(L.startup(current: projection(commands: [local]), observed: journaled,
+                                 journalCommit: "n", defaultsCheckpoint: "n", managed: []), .consistent)
+    }
+
     func testExternalImportRecordsNoEditTime() {
         let command = MenuCommand(appID: "test.app", appName: "Test", path: ["File", "Open"])
         var replica = SettingsSyncReplica()

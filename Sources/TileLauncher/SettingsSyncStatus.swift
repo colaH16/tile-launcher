@@ -14,6 +14,8 @@ final class SettingsSyncStatus: ObservableObject {
     var deletedMenus: [UUID: MenuCommand] = [:]
     var setEnabled: ((Bool) -> Void)?
     var refresh: (() -> Void)?
+    /// The settings window is visible. Editing locks apply only while it is.
+    var setSettingsVisible: ((Bool) -> Void)?
     var chooseInitial: ((Bool) -> Void)?
     var chooseIcon: ((String, String?) -> Void)?
     var beginIconEdit: ((UUID) -> Void)?

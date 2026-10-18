@@ -43,13 +43,13 @@ struct SettingsView: View {
             }.padding(SettingsWindowLayout.outerPadding)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         }
-        .onAppear { editor.activate(); settings.syncStatus.refresh?() }
+        .onAppear { editor.activate(); settings.syncStatus.setSettingsVisible?(true); settings.syncStatus.refresh?() }
         .sheet(item: Binding(get: { editor.registered.dockImportPreview }, set: { editor.registered.dockImportPreview = $0 }),
                onDismiss: editor.registered.cancelDockImport) { change in
             DockImportPreview(change: change, apply: { editor.registered.applyDockImport(change) },
                               cancel: editor.registered.cancelDockImport)
         }
-        .onDisappear { editor.registered.cancelDockImport(); editor.pause() }
+        .onDisappear { editor.registered.cancelDockImport(); editor.pause(); settings.syncStatus.setSettingsVisible?(false) }
     }
     private func registeredPane(settings: SettingsStore) -> some View {
         VStack(alignment: .leading, spacing: 12) {

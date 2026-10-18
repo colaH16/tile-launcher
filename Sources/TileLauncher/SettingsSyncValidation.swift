@@ -131,6 +131,29 @@ enum SettingsSyncValidation {
                   "Edit made during the failure was lost after recovery")
         sync.shutdown(); defaults.removePersistentDomain(forName: suite)
 
+        // C1: a failed commit must not leave a nonce that a later non-commit
+        // persist (here the sync toggle) writes without its checkpoint.
+        (defaults, file, suite) = fresh("diskfull-toggle")
+        failing = false
+        store = SettingsStore(defaults: defaults); store.theme = .glass
+        sync = SettingsSyncCoordinator(settings: store, defaults: defaults, file: file, write: { data, url in
+            if failing { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        store.showAppSettingsTile.toggle()     // a completed commit: journal and checkpoint agree
+        try check(defaults.string(forKey: "settingsSyncCheckpoint") != nil, "Completed save left no checkpoint")
+        failing = true
+        store.theme = .classic                 // journal write fails; defaults keep classic
+        failing = false
+        sync.setEnabled(false)                 // recovers through a non-commit persist
+        try check(store.syncStatus.error == nil, "Recovered journal write still reported failure")
+        sync.shutdown()
+        defaults.set(DeckTheme.glass.rawValue, forKey: "appearanceTheme") // older version: classic → glass
+        store = SettingsStore(defaults: defaults)
+        sync = SettingsSyncCoordinator(settings: store, defaults: defaults, file: file)
+        try check(store.theme == .glass, "Older-version edit after a recovered write failure was replayed away")
+        sync.shutdown(); defaults.removePersistentDomain(forName: suite)
+
         // A future-schema journal is preserved and never applied, even when the
         // rest of it decodes with this version's types.
         (defaults, file, suite) = fresh("future")

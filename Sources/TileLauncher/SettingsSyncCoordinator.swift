@@ -63,6 +63,11 @@ final class SettingsSyncCoordinator {
     /// Records rejected for a non-transient reason are not re-queued until the
     /// next explicit refresh, so a permanent error cannot become a send loop.
     private var rejected: Set<String> = []
+    /// Locks follow the agreed scope: only while the settings window is
+    /// visible, until its initial read finishes or a pending first-merge
+    /// choice is made. Upload gating is independent (`initialMergeDone`).
+    private var settingsVisible = false
+    private var lockedRead = false
 
     /// `defaults` must be the store's UserDefaults; `write` is replaced only by
     /// isolated validation to simulate a failing disk.
@@ -115,6 +120,10 @@ final class SettingsSyncCoordinator {
         status.enabled = disk.enabled; status.awaitingAccount = disk.awaitingAccount
         status.setEnabled = { [weak self] value in Task { @MainActor in self?.setEnabled(value) } }
         status.refresh = { [weak self] in Task { @MainActor in self?.refresh() } }
+        status.setSettingsVisible = { [weak self] visible in
+            guard let self else { return }
+            self.settingsVisible = visible; self.updateLock()
+        }
         status.chooseInitial = { [weak self] local in Task { @MainActor in self?.finishInitial(preferLocal: local) } }
         status.chooseIcon = { [weak self] id, symbol in Task { @MainActor in self?.chooseIcon(id, symbol) } }
         status.beginIconEdit = { [weak self] id in
@@ -164,8 +173,18 @@ final class SettingsSyncCoordinator {
     /// Journals a change that UserDefaults will receive next. Returns whether
     /// the journal write succeeded, i.e. whether the checkpoint may follow.
     private func commit() -> Bool {
+        // A nonce only becomes current once it is on disk. Otherwise a later
+        // non-commit persist would write it without its checkpoint, and an
+        // older version's edit would look like an interrupted write.
+        let previous = disk.commit
         disk.commit = UUID().uuidString
-        return persist()
+        if persist() { return true }
+        disk.commit = previous
+        return false
+    }
+    private func updateLock() {
+        let value = settingsVisible && (lockedRead || !status.initialConflicts.isEmpty)
+        if status.locked != value { status.locked = value }
     }
     private func checkpoint() {
         guard !readOnly, !writeFailed, let commit = disk.commit else { return }
@@ -242,7 +261,7 @@ final class SettingsSyncCoordinator {
         disk.enabled = value; status.enabled = value; persist()
         if value { refresh() }
         else {
-            stopTransport(); status.locked = false; status.initialConflicts = []
+            stopTransport(); status.initialConflicts = []; updateLock()
             status.message = "이 Mac의 동기화를 껐습니다. 이후 변경 시각은 보존합니다."
         }
     }
@@ -250,6 +269,7 @@ final class SettingsSyncCoordinator {
         generation = UUID(); work?.cancel(); work = nil; manualRequest = nil; rejected = []
         fetchDeadline?.cancel(); fetchDeadline = nil
         retry?.cancel(); retry = nil
+        lockedRead = false; updateLock()
         let old = transport; transport = nil
         Task { await old?.stop() }
     }
@@ -266,19 +286,20 @@ final class SettingsSyncCoordinator {
     func refresh(lock: Bool = true) {
         guard !readOnly, !writeFailed, disk.enabled, !disk.awaitingAccount else { return }
         guard Self.configured else {
-            status.locked = false; status.error = "이 실행본에는 iCloud 서명 권한이 없습니다. 오프라인으로 편집할 수 있습니다."
+            lockedRead = false; updateLock()
+            status.error = "이 실행본에는 iCloud 서명 권한이 없습니다. 오프라인으로 편집할 수 있습니다."
             return
         }
         if !status.initialConflicts.isEmpty { return }
         if lock { rejected = [] }
         let revision = generation
         if lock {
-            status.locked = true; status.error = nil; status.message = "iCloud의 최신 변경사항을 확인하고 있습니다…"
+            lockedRead = true; updateLock(); status.error = nil; status.message = "iCloud의 최신 변경사항을 확인하고 있습니다…"
             fetchDeadline?.cancel()
             fetchDeadline = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(15))
                 guard !Task.isCancelled, let self, self.generation == revision else { return }
-                self.status.locked = false
+                self.lockedRead = false; self.updateLock()
                 self.status.error = "iCloud 응답을 기다리고 있습니다. 오프라인 편집을 허용하며 연결되면 다시 합칩니다."
             }
         }
@@ -318,7 +339,7 @@ final class SettingsSyncCoordinator {
                 self.fetchCompleted()
             } catch {
                 guard !Task.isCancelled, self.generation == revision else { return }
-                self.status.locked = false; self.fetchDeadline?.cancel()
+                self.lockedRead = false; self.updateLock(); self.fetchDeadline?.cancel()
                 self.status.error = "iCloud 동기화에 실패했습니다. 오프라인으로 편집할 수 있습니다. \(error.localizedDescription)"
                 // Without an engine nothing else would retry (e.g. launched offline).
                 if self.transport == nil { self.scheduleRetry() }
@@ -373,9 +394,9 @@ final class SettingsSyncCoordinator {
     }
     private func accountChanged() {
         guard disk.enabled else { return }
-        stopTransport(); disk.awaitingAccount = true; status.locked = false
+        stopTransport(); disk.awaitingAccount = true
         // Choices for the previous account's first merge no longer apply.
-        status.initialConflicts = []
+        status.initialConflicts = []; updateLock()
         status.message = "iCloud 계정이 변경되었습니다. 다음 오버레이에서 동기화 방법을 선택해 주세요."
         persist(); publish()
     }
@@ -416,7 +437,9 @@ final class SettingsSyncCoordinator {
         if !account.initialMergeDone {
             let conflicts = disk.replica.legacyConflicts(with: account.remote)
             if !conflicts.isEmpty {
-                status.initialConflicts = conflicts; status.locked = true
+                // Waiting for the choice keeps uploads gated; edits lock only
+                // while the settings window shows the choice.
+                status.initialConflicts = conflicts; lockedRead = false; updateLock()
                 status.message = "2.0 이전 설정의 충돌을 선택해 주세요. 충돌 없는 항목은 합칩니다."
                 persist(); return
             }
@@ -426,11 +449,11 @@ final class SettingsSyncCoordinator {
                 let before = disk.replica.snapshot
                 try disk.replica.mergeInitial(account.remote, preferLocal: nil, at: Date())
                 markChanged(from: before)
-                applyReplicaIfNeeded(); status.locked = false
+                applyReplicaIfNeeded(); lockedRead = false; updateLock()
                 if account.quarantined.isEmpty { status.error = nil }
                 status.message = "iCloud의 최신 설정을 반영했습니다."
                 queueDirty()
-            } catch { status.locked = false; status.error = "동기화 기록 병합을 완료하지 못했습니다." }
+            } catch { lockedRead = false; updateLock(); status.error = "동기화 기록 병합을 완료하지 못했습니다." }
         }
     }
     private func finishInitial(preferLocal: Bool?) {
@@ -438,12 +461,15 @@ final class SettingsSyncCoordinator {
         do {
             try disk.replica.mergeInitial(disk.accounts[key, default: .init()].remote, preferLocal: preferLocal, at: Date())
             disk.accounts[key]!.initialMergeDone = true
-            disk.accounts[key]!.dirty.formUnion(disk.replica.snapshot.records.map(\.name))
-            status.initialConflicts = []; status.locked = false
+            // Upload what the account lacks or holds differently; identical
+            // records already on the server are not re-sent to every Mac.
+            let remote = disk.accounts[key]!.remote
+            disk.accounts[key]!.dirty.formUnion(disk.replica.snapshot.records.filter { remote.record(named: $0.name) != $0 }.map(\.name))
+            status.initialConflicts = []; lockedRead = false; updateLock()
             if disk.accounts[key]!.quarantined.isEmpty { status.error = nil }
             applyReplica(); status.message = "iCloud 동기화가 켜져 있습니다."
             queueDirty()
-        } catch { status.locked = false; status.error = "초기 동기화를 완료하지 못했습니다. 기존 데이터는 보존했습니다." }
+        } catch { lockedRead = false; updateLock(); status.error = "초기 동기화를 완료하지 못했습니다. 기존 데이터는 보존했습니다." }
     }
     private func queueDirty() {
         guard !readOnly, !writeFailed, disk.enabled, !disk.awaitingAccount, let key = disk.account,
@@ -507,12 +533,10 @@ final class SettingsSyncCoordinator {
             if changes.failedRecordSaves.contains(where: { $0.error.code == .userDeletedZone }) {
                 iCloudDataRemoved(account: key); return
             }
-            // Saved acknowledgements only change server metadata and dirty
-            // flags. The payload map is unchanged throughout this loop.
-            let acknowledgedPayloads = outgoingPayloads()
+            // Saved acknowledgements only change server metadata and dirty flags.
             for record in changes.savedRecords {
                 storeServer(record, account: key)
-                if let value = decode(record), acknowledgedPayloads[record.recordID.recordName] == value {
+                if let value = decode(record), disk.replica.snapshot.record(named: record.recordID.recordName) == value {
                     disk.accounts[key]!.dirty.remove(record.recordID.recordName)
                 }
             }
@@ -523,7 +547,7 @@ final class SettingsSyncCoordinator {
                     // Merge, then resend only if the merged value still differs.
                     if let record = failure.error.serverRecord {
                         receive(record, account: key)
-                        if disk.accounts[key]!.quarantined[name] == nil, decode(record) != outgoingPayloads()[name] {
+                        if disk.accounts[key]!.quarantined[name] == nil, decode(record) != disk.replica.snapshot.record(named: name) {
                             disk.accounts[key]!.dirty.insert(name)
                         }
                     } else { disk.accounts[key]!.dirty.insert(name) }
@@ -584,7 +608,7 @@ final class SettingsSyncCoordinator {
         fresh.capture(before: nil, after: current, at: Date())
         disk.replica = fresh; disk.observed = current; lastApplied = nil
         disk.enabled = false; disk.awaitingAccount = false
-        status.enabled = false; status.locked = false; status.initialConflicts = []; status.deletedMenus = [:]
+        status.enabled = false; status.initialConflicts = []; status.deletedMenus = [:]; updateLock()
         status.message = "이 Mac의 동기화를 껐습니다."
         status.error = "iCloud에서 Tile Launcher 동기화 데이터가 삭제되었습니다(설정 앱의 데이터 삭제 또는 암호화 데이터 재설정). 이 Mac의 설정은 그대로 두었고, 삭제된 데이터를 다시 올리지 않도록 동기화를 껐습니다."
         persist(); publish()
@@ -599,12 +623,14 @@ final class SettingsSyncCoordinator {
             try disk.accounts[account]!.remote.merge(record: payload)
             disk.accounts[account]!.quarantined.removeValue(forKey: record.recordID.recordName)
             if disk.accounts[account]!.initialMergeDone {
-                let old = disk.replica.snapshot
+                // A single-record merge changes only that record: compare it
+                // alone instead of copying and re-encoding the whole snapshot.
+                let name = payload.name
+                let before = disk.replica.snapshot.record(named: name)
                 try disk.replica.snapshot.merge(record: payload)
-                markChanged(from: old)
-                if outgoingPayloads()[record.recordID.recordName] == payload {
-                    disk.accounts[account]!.dirty.remove(record.recordID.recordName)
-                }
+                let after = disk.replica.snapshot.record(named: name)
+                if after == payload { disk.accounts[account]!.dirty.remove(name) }
+                else if after != before { disk.accounts[account]!.dirty.insert(name) }
             }
         } catch {
             disk.accounts[account]!.quarantined[record.recordID.recordName] = record["payload"] as? Data ?? Data()
@@ -619,14 +645,12 @@ final class SettingsSyncCoordinator {
     private func decode(_ record: CKRecord) -> SettingsSyncRecord? {
         (record["payload"] as? Data).flatMap { try? JSONDecoder().decode(SettingsSyncRecord.self, from: $0) }
     }
-    private func outgoingPayloads() -> [String: SettingsSyncRecord] {
-        Dictionary(disk.replica.snapshot.records.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
-    }
     func outgoingRecords(session: UUID) -> [String: CKRecord] {
         guard !readOnly, !writeFailed, disk.enabled, !disk.awaitingAccount, transport?.id == session,
               let key = disk.account, let account = disk.accounts[key], account.initialMergeDone else { return [:] }
         var result: [String: CKRecord] = [:]
-        for (name, value) in outgoingPayloads() where account.dirty.contains(name) && account.quarantined[name] == nil && !rejected.contains(name) {
+        for name in account.dirty where account.quarantined[name] == nil && !rejected.contains(name) {
+            guard let value = disk.replica.snapshot.record(named: name) else { continue }
             let previous = account.serverRecords[name].flatMap { try? NSKeyedUnarchiver.unarchivedObject(ofClass: CKRecord.self, from: $0) }
             let record = previous ?? CKRecord(recordType: "TileSettings", recordID: .init(recordName: name, zoneID: SettingsCloudTransport.zone))
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -695,13 +719,30 @@ extension SettingsSyncCoordinator {
         try check(coordinator.disk.accounts[account]!.quarantined.count == 1, "Invalid record was not quarantined")
         try check(coordinator.disk.accounts[account]!.remote.menus.count == 1, "Invalid record blocked a valid peer record")
         coordinator.fetchCompleted()
-        try check(coordinator.status.initialConflicts == ["pref:theme"] && coordinator.status.locked,
-                  "Initial legacy choice was bypassed")
+        try check(coordinator.status.initialConflicts == ["pref:theme"], "Initial legacy choice was bypassed")
         try check(coordinator.outgoingRecords(session: transport.id).isEmpty, "Uploaded before the initial choice")
+        // Lock scope: only while the settings window shows the pending choice.
+        try check(!coordinator.status.locked, "A pending first-merge choice locked edits outside the settings window")
+        let localID = settings.commands[0].id, wasPinned = settings.commands[0].isPinned
+        settings.togglePin(localID)
+        try check(settings.commands[0].isPinned != wasPinned, "Overlay edit was blocked while settings were closed")
+        settings.togglePin(localID)
+        coordinator.status.setSettingsVisible?(true)
+        try check(coordinator.status.locked, "Reopened settings did not keep the pending choice locked")
+        coordinator.status.setSettingsVisible?(false)
+        try check(!coordinator.status.locked && coordinator.outgoingRecords(session: transport.id).isEmpty,
+                  "Closing settings kept the lock or opened the upload gate")
         coordinator.finishInitial(preferLocal: false)
         try check(settings.theme == .glass && settings.commands.count == 2, "Initial choice did not preserve both menus")
         let outgoing = coordinator.outgoingRecords(session: transport.id)
         try check(!outgoing.isEmpty && outgoing[future.name] == nil, "Outbox omitted valid data or sent quarantine")
+        try check(outgoing["menu-remote-menu"] == nil, "An unchanged record already in the account was queued again")
+        // A newer peer value replaces the local one and clears its outbox entry.
+        let newer = SettingsSyncStamp(date: Date().addingTimeInterval(60), device: "validation-peer", sequence: 2)
+        coordinator.receive(try record(.init(preference: "theme", value: .init(.text("classic"), stamp: newer))), account: account)
+        try check(!coordinator.disk.accounts[account]!.dirty.contains("pref-theme"), "Adopted peer value stayed in the outbox")
+        try check(coordinator.disk.accounts[account]!.dirty.contains("menu-" + coordinator.disk.replica.localIDs[localID]!),
+                  "A single-record receive cleared another record's outbox entry")
         try check(coordinator.outgoingRecords(session: UUID()).isEmpty, "An obsolete transport could obtain account records")
         coordinator.status.initialConflicts = ["pref:theme"]
         coordinator.accountChanged()
@@ -715,7 +756,7 @@ extension SettingsSyncCoordinator {
         try check(cleaned.engine == nil && cleaned.serverRecords.isEmpty && cleaned.remote == SettingsSyncSnapshot()
                   && cleaned.dirty.isEmpty && cleaned.quarantined.isEmpty, "Purge left server caches or pending uploads")
         try check(coordinator.outgoingRecords(session: transport.id).isEmpty, "Purge could resend old data")
-        print("Offline coordinator: per-record quarantine, initial-choice upload gate, account isolation and purge preservation passed without a CloudKit engine.")
+        print("Offline coordinator: per-record quarantine, initial-choice upload gate, settings-only lock, single-record receive, account isolation and purge preservation passed without a CloudKit engine.")
     }
 }
 #endif

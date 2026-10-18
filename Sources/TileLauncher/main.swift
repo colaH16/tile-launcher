@@ -909,6 +909,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsNavigation.open(destination, app: context)
         if let preferences {
             preferencesEditor?.activate()
+            // A reused window may not appear again in SwiftUI; the agreed lock
+            // still covers this opening's initial read and any pending choice.
+            settings.syncStatus.setSettingsVisible?(true)
+            settings.syncStatus.refresh?()
             if !preferences.isVisible {
                 sizeSettingsWindow(preferences)
                 preferences.center()
@@ -940,6 +944,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = notification.object as? NSWindow, window === preferences else { return }
         preferencesEditor?.registered.cancelDockImport()
         preferencesEditor?.pause()
+        // Closing releases the settings-only edit lock; drafts are kept.
+        settings.syncStatus.setSettingsVisible?(false)
     }
     private func sizeSettingsWindow(_ window: NSWindow) {
         MainActor.assumeIsolated {

@@ -50,8 +50,10 @@ public enum SettingsSyncLifecycle {
         let menus: [Menu]
         init(_ projection: SettingsSyncProjection, managed: Set<UUID>) {
             preferences = projection.preferences.filter { SettingsSyncPreference(rawValue: $0.key) != nil }
+            // Same eligibility as capture: path-based app IDs never sync, so
+            // they are never journaled and must not count as an outside edit.
             menus = projection.commands.filter {
-                managed.contains($0.id) || !$0.isAutomatic || $0.isPinned || $0.symbol != nil
+                !$0.appID.hasPrefix("/") && (managed.contains($0.id) || !$0.isAutomatic || $0.isPinned || $0.symbol != nil)
             }.map { .init(id: $0.id, appID: $0.appID, path: $0.path, pinned: $0.isPinned, symbol: $0.symbol) }
         }
     }
