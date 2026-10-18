@@ -784,3 +784,10 @@ open "$HOME/Library/Developer/TileLauncher/build/Tile Launcher.app"
 - 깨끗한 로컬 커밋 `0f5fed7d6567`에서 공식 prepare/sign/verify를 실행했다. 1.9.6(57)/arm64/Developer ID/hardened runtime/서명/Focus 메타데이터/ZIP 재추출 검사가 통과했다. 공증은 하지 않았다.
 - 시험 ZIP 2,600,317바이트/SHA256 `7f89cf6eb781a9f11668363dd2c58aeda4cedc677c540012fd75fbc3232cb6a2`를 iCloud 동기화 폴더 `Tile-Launcher-1.9.6-build57-test`에 복사해 원본 해시 일치를 확인했다. 실행 안내·배포 메타데이터·체크섬을 함께 전달했으며 서버 동기화 완료는 미확인이다.
 - 내부 리뷰 문서까지 동기화 폴더에 복사하는 요청은 자동 승인 검토에서 별도 문서 전송 승인 부족으로 거부됐다. 해당 문서를 제외하고 승인된 시험 산출물만 전송해 성공했다. 제품 설치·기존 앱 종료·GitHub 푸시/공개는 하지 않았다. 사용자 최종 확인이 남아 있다.
+
+## 2026-10-18 · R288 빌드57 공증·정식 공개
+
+- 집 Mac 반환 JSON은 제출ID49527657-dc6f-4f49-8717-f3ee6dbf51fd/Accepted다. 원본 미공증 ZIP SHA256 7f89cf6... 일치와 실제 Apple 티켓을 별도로 검증했다. 기존 모든 파일 해시 동일, Contents/CodeResources 티켓만 추가다. 코드를 재빌드하거나 재서명하지 않았다.
+- stapler staple/validate, codesign deep strict, Gatekeeper, 공식 release verify의 ZIP 재추출 검사 통과. 최종 ZIP은2,601,968바이트/SHA256 147214b944aa5138fe8e70f0b48af89dfaa6dcf2cf6a3cdb94595071ddf52f45다.
+- v1.9.6 태그는 빌드 소스0f5fed7d6567b240fc3841bc0286687466e5b226이다. 공개전3자산재다운로드 해시·노트·태그를 확인해 정식/최신으로 공개했다. 공개후 비로그인3자산 해시가 일치했다. 익명latest API는요청한도403으로실패했고 인증조회에서v1.9.6/draft=false/prerelease=false를확인했다.
+- iCloud의Tile-Launcher-1.9.6-notarized에동일공개자산과노트를복사해해시확인했다. 서버동기화완료는미확인이며 개발Mac설치/실행은변경하지않았다.
