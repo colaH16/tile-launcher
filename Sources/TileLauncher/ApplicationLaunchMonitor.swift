@@ -197,8 +197,19 @@ final class ApplicationLaunchMonitor: ObservableObject {
         // This headless preview may never call NSApp.run / finishLaunching.
         // Verify that the monitor respects its real state, not callback success alone.
         completions[2](NSRunningApplication.current, nil); drain()
-        guard monitor.isBlocked(url) == !NSRunningApplication.current.isFinishedLaunching,
-              errors == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 94) }
+        // System observation is intentionally disabled in this fixture. The
+        // headless process may finish launching during drain(), so sample its
+        // latest state explicitly before comparing it with the monitor.
+        monitor.refresh()
+        let blocked = monitor.isBlocked(url), finished = NSRunningApplication.current.isFinishedLaunching
+        // A native terminated state also releases the gate; callback success
+        // alone never proves that a headless process finished launching.
+        let terminated = NSRunningApplication.current.isTerminated
+        guard blocked == (!finished && !terminated), errors == 1 else {
+            let attached = monitor.requests[Self.key(url)]?.app != nil
+            throw NSError(domain: "TileLauncher.Preview", code: 94, userInfo: [NSLocalizedDescriptionKey:
+                "Native launch fixture: blocked=\(blocked), finished=\(finished), terminated=\(terminated), attached=\(attached), errors=\(errors), completions=\(completions.count)"])
+        }
         print("Launch monitor: duplicate suppression, unrelated app access, start timeout, stale callback, error retry and native launch state passed without launching apps.")
     }
     #endif

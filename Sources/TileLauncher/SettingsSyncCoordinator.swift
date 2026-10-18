@@ -498,9 +498,7 @@ final class SettingsSyncCoordinator {
         case .fetchedRecordZoneChanges(let changes):
             for change in changes.modifications { receive(change.record, account: key) }
             for deletion in changes.deletions where deletion.recordID.zoneID == SettingsCloudTransport.zone {
-                let name = deletion.recordID.recordName
-                disk.accounts[key]!.serverRecords.removeValue(forKey: name)
-                disk.accounts[key]!.dirty.insert(name)
+                recordDeleted(deletion.recordID.recordName, account: key)
             }
         case .fetchedDatabaseChanges(let changes):
             for deletion in changes.deletions where deletion.zoneID == SettingsCloudTransport.zone {
@@ -620,22 +618,51 @@ final class SettingsSyncCoordinator {
             guard record.recordType == "TileSettings", let data = record["payload"] as? Data else { throw CocoaError(.coderReadCorrupt) }
             let payload = try SettingsSyncRecord.decodeVerified(data)
             guard payload.name == record.recordID.recordName else { throw CocoaError(.coderReadCorrupt) }
-            try disk.accounts[account]!.remote.merge(record: payload)
-            disk.accounts[account]!.quarantined.removeValue(forKey: record.recordID.recordName)
-            if disk.accounts[account]!.initialMergeDone {
-                // A single-record merge changes only that record: compare it
-                // alone instead of copying and re-encoding the whole snapshot.
-                let name = payload.name
-                let before = disk.replica.snapshot.record(named: name)
-                try disk.replica.snapshot.merge(record: payload)
-                let after = disk.replica.snapshot.record(named: name)
-                if after == payload { disk.accounts[account]!.dirty.remove(name) }
-                else if after != before { disk.accounts[account]!.dirty.insert(name) }
+            if !disk.accounts[account]!.initialMergeDone, let incoming = payload.menu,
+               let own = disk.replica.snapshot.menus[incoming.id],
+               !SettingsSyncSnapshot.consistent([own, incoming]) {
+                // The initial snapshot is staged before it is applied, but an
+                // impossible shared identity must not poison that first merge.
+                throw SettingsSyncSnapshot.MergeError.inconsistentIdentity
             }
+            let stagedBefore = disk.accounts[account]!.remote.record(named: payload.name)
+            try disk.accounts[account]!.remote.merge(record: payload)
+            do {
+                if disk.accounts[account]!.initialMergeDone {
+                    // Compare only this record; keep the staged and live
+                    // snapshots atomic even for a local identity conflict.
+                    let name = payload.name
+                    let before = disk.replica.snapshot.record(named: name)
+                    try disk.replica.snapshot.merge(record: payload)
+                    let after = disk.replica.snapshot.record(named: name)
+                    if after == payload { disk.accounts[account]!.dirty.remove(name) }
+                    else if after != before { disk.accounts[account]!.dirty.insert(name) }
+                }
+            } catch {
+                restoreRemote(stagedBefore, replacing: payload, account: account)
+                throw error
+            }
+            disk.accounts[account]!.quarantined.removeValue(forKey: record.recordID.recordName)
         } catch {
             disk.accounts[account]!.quarantined[record.recordID.recordName] = record["payload"] as? Data ?? Data()
             status.error = "일부 동기화 기록을 읽지 못해 보존했습니다. 나머지 기록은 계속 처리합니다."
         }
+    }
+    /// Restore only the affected entry, retaining constant-size rollback rather
+    /// than copying a complete account snapshot for each incoming record.
+    private func restoreRemote(_ previous: SettingsSyncRecord?, replacing record: SettingsSyncRecord, account: String) {
+        if let menu = record.menu { disk.accounts[account]!.remote.menus[menu.id] = previous?.menu }
+        else if let key = record.preference { disk.accounts[account]!.remote.preferences[key] = previous?.value }
+        else if let key = record.appOrder { disk.accounts[account]!.remote.orders[key] = previous?.order }
+    }
+    private func recordDeleted(_ name: String, account: String) {
+        disk.accounts[account]!.serverRecords.removeValue(forKey: name)
+        disk.accounts[account]!.quarantined.removeValue(forKey: name)
+        if let record = disk.accounts[account]!.remote.record(named: name) {
+            restoreRemote(nil, replacing: record, account: account)
+        }
+        if disk.replica.snapshot.record(named: name) != nil { disk.accounts[account]!.dirty.insert(name) }
+        else { disk.accounts[account]!.dirty.remove(name) }
     }
     private func storeServer(_ record: CKRecord, account: String) {
         if let data = try? NSKeyedArchiver.archivedData(withRootObject: record, requiringSecureCoding: true) {
@@ -718,6 +745,15 @@ extension SettingsSyncCoordinator {
         coordinator.receive(try record(future), account: account)
         try check(coordinator.disk.accounts[account]!.quarantined.count == 1, "Invalid record was not quarantined")
         try check(coordinator.disk.accounts[account]!.remote.menus.count == 1, "Invalid record blocked a valid peer record")
+        let initialID = coordinator.disk.replica.localIDs[settings.commands[0].id]!
+        let initialConflict = SettingsSyncMenu(id: initialID, appID: "different.validation.app", appName: "Different",
+            path: ["File", "Different"], presence: .init(true, stamp: stamp), pinned: .init(true, stamp: stamp),
+            icon: .init([.init(symbol: nil, stamp: stamp)]))
+        coordinator.receive(try record(.init(menu: initialConflict)), account: account)
+        try check(coordinator.disk.accounts[account]!.quarantined["menu-" + initialID] != nil
+                  && coordinator.disk.accounts[account]!.remote.record(named: "menu-" + initialID) == nil,
+                  "Conflicting identity poisoned the first staged merge")
+        coordinator.recordDeleted("menu-" + initialID, account: account)
         coordinator.fetchCompleted()
         try check(coordinator.status.initialConflicts == ["pref:theme"], "Initial legacy choice was bypassed")
         try check(coordinator.outgoingRecords(session: transport.id).isEmpty, "Uploaded before the initial choice")
@@ -743,6 +779,30 @@ extension SettingsSyncCoordinator {
         try check(!coordinator.disk.accounts[account]!.dirty.contains("pref-theme"), "Adopted peer value stayed in the outbox")
         try check(coordinator.disk.accounts[account]!.dirty.contains("menu-" + coordinator.disk.replica.localIDs[localID]!),
                   "A single-record receive cleared another record's outbox entry")
+        // A valid peer record can still conflict with this Mac's identity.
+        // It must not poison the staged snapshot and block unrelated records.
+        let localShared = coordinator.disk.replica.localIDs[localID]!
+        let conflicting = SettingsSyncMenu(id: localShared, appID: "different.validation.app", appName: "Different",
+            path: ["File", "Different"], presence: .init(true, stamp: newer), pinned: .init(true, stamp: newer),
+            icon: .init([.init(symbol: nil, stamp: newer)]))
+        coordinator.receive(try record(.init(menu: conflicting)), account: account)
+        try check(coordinator.disk.accounts[account]!.quarantined["menu-" + localShared] != nil,
+                  "Conflicting peer identity was not quarantined")
+        try check(coordinator.disk.accounts[account]!.remote.record(named: "menu-" + localShared) == nil,
+                  "Rejected peer identity poisoned the staged snapshot")
+        coordinator.fetchCompleted()
+        try check(settings.theme == .classic, "One conflicting identity blocked an unrelated preference")
+        coordinator.recordDeleted("menu-" + localShared, account: account)
+        try check(coordinator.disk.accounts[account]!.quarantined["menu-" + localShared] == nil
+                  && coordinator.disk.accounts[account]!.dirty.contains("menu-" + localShared),
+                  "Deleted peer record left quarantine blocking valid local data")
+        coordinator.recordDeleted("menu-remote-menu", account: account)
+        try check(coordinator.disk.accounts[account]!.remote.menus["remote-menu"] == nil
+                  && coordinator.disk.accounts[account]!.dirty.contains("menu-remote-menu"),
+                  "Deleted server record stayed in the initial-merge comparison")
+        coordinator.recordDeleted("unknown-without-local-data", account: account)
+        try check(!coordinator.disk.accounts[account]!.dirty.contains("unknown-without-local-data"),
+                  "Unknown deleted server record created a permanent empty outbox entry")
         try check(coordinator.outgoingRecords(session: UUID()).isEmpty, "An obsolete transport could obtain account records")
         coordinator.status.initialConflicts = ["pref:theme"]
         coordinator.accountChanged()
