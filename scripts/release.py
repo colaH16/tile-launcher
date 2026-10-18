@@ -158,13 +158,18 @@ def cloud_entitlements(profile, team_id, identity=None):
     }
     for key, value in expected.items():
         if key == 'com.apple.security.automation.apple-events': continue
+        choices = allowed.get(key)
         if isinstance(value, list):
-            choices = allowed.get(key, [])
             require(isinstance(choices, list) and all(any(fnmatch.fnmatchcase(v, pattern) for pattern in choices) for v in value),
                     'Provisioning profile does not allow ' + key)
+        elif isinstance(choices, list):
+            # Profiles list the permitted values (e.g. Development and Production).
+            require(value in choices, 'Provisioning profile does not allow ' + key)
         else:
-            require(allowed.get(key) == value, 'Provisioning profile does not allow ' + key)
+            require(choices == value, 'Provisioning profile does not allow ' + key)
     if identity is not None:
+        require(re.fullmatch(r'[0-9A-Fa-f]{40}', identity) is not None,
+                'Pass the signing identity as its SHA-1 hash so it can be matched to the provisioning profile.')
         require(any(hashlib.sha1(cert).hexdigest().lower() == identity.lower()
                     for cert in profile.get('DeveloperCertificates', [])), 'Signing certificate is not included in provisioning profile.')
     return expected

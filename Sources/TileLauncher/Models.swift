@@ -268,8 +268,10 @@ final class SettingsStore: ObservableObject {
         menuCapture.excludedMenus.formUnion(MenuPathMatch.paths(command).map { MenuIdentity(appID: command.appID, path: $0) })
         commands.removeAll { $0.id == command.id }
     }
+    /// Clears local collection history only. A collected menu the user edited
+    /// (shared through iCloud) is deleted only by its own delete button.
     func clearCapturedMenus(appID: String) {
-        commands.removeAll { $0.appID == appID && $0.isAutomatic && !$0.isPinned }
+        commands.removeAll { $0.appID == appID && $0.isAutomatic && !$0.isPinned && !sharedMenus.contains($0.id) }
     }
     func togglePin(_ id: UUID) {
         guard !syncStatus.locked else { return }

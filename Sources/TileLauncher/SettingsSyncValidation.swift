@@ -32,6 +32,17 @@ enum SettingsSyncValidation {
         let changed = try Data(contentsOf: file)
         try check(changed != saved, "User icon edit did not persist")
         source.syncStatus.clearIconEdits?()
+        var edited = MenuCommand(appID: "validation.app", appName: "Validation", path: ["File", "Edited"], isPinned: false)
+        edited.isAutomatic = true
+        var collected = MenuCommand(appID: "validation.app", appName: "Validation", path: ["File", "Collected"], isPinned: false)
+        collected.isAutomatic = true
+        source.commands += [edited, collected]
+        source.setSymbol("star", for: edited.id)
+        source.syncStatus.clearIconEdits?()
+        try check(source.sharedMenus.contains(edited.id) && !source.sharedMenus.contains(collected.id), "Edited collected menu was not shared")
+        source.clearCapturedMenus(appID: "validation.app")
+        try check(source.commands.contains { $0.id == edited.id } && !source.commands.contains { $0.id == collected.id },
+                  "Clearing collection history deleted a shared edited menu or kept local history")
         coordinator.shutdown()
         let reopened = SettingsSyncCoordinator(settings: source, file: file)
         try check(source.commands.first?.symbol == "gear" && source.profiles == profiles, "Restore lost editable data or modified profiles")

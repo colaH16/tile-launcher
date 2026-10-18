@@ -5,7 +5,14 @@ import DeckCore
 /// A local settings-list annotation, never a deletion or synchronized field.
 enum MenuAvailabilityReader {
     @MainActor static func missing(_ commands: [MenuCommand]) async -> Set<UUID> {
-        guard let appID = commands.first?.appID, AXIsProcessTrusted(),
+        guard let appID = commands.first?.appID else { return [] }
+        // An app that is not installed on this Mac has none of its menus.
+        let installed = appID.hasPrefix("/") ? FileManager.default.fileExists(atPath: appID)
+            : NSWorkspace.shared.urlForApplication(withBundleIdentifier: appID) != nil
+        if !installed { return Set(commands.map(\.id)) }
+        // Otherwise only a complete accessibility read of the running app can
+        // prove a menu is missing; any error or a closed app stays unknown.
+        guard AXIsProcessTrusted(),
               let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == appID }) else { return [] }
         let pid = app.processIdentifier
         return await Task.detached(priority: .utility) {

@@ -12,6 +12,8 @@ private struct CloudAccountState: Codable {
     var quarantined: [String: Data] = [:]
     var initialMergeDone = false
     var localReplica: SettingsSyncReplica?
+    /// Known to exist on the server; avoids a zone save with every edit.
+    var zoneReady: Bool?
 }
 private struct SettingsSyncDisk: Codable {
     var schema = 1
@@ -42,6 +44,9 @@ final class SettingsSyncCoordinator {
     private var manualRequest: UUID?
     private var zoneFetchFailed = false
     private var zoneFetchSucceeded = false
+    /// Records rejected for a non-transient reason are not re-queued until the
+    /// next explicit refresh, so a permanent error cannot become a send loop.
+    private var rejected: Set<String> = []
 
     init(settings: SettingsStore, file: URL? = nil) {
         self.settings = settings; status = settings.syncStatus
@@ -130,12 +135,13 @@ final class SettingsSyncCoordinator {
         let value = disk.replica.applying(to: settings.syncProjection)
         let retained = Set(value.commands.map(\.id))
         let canonical = disk.replica.snapshot.canonicalMenuIDs
+        // A deletion from another Mac removes the shared menu only; this Mac's
+        // collection exclusions are local settings and stay unchanged.
         for command in oldCommands where !retained.contains(command.id) {
             guard let shared = disk.replica.localIDs[command.id],
                   let menu = disk.replica.snapshot.combinedMenus.first(where: { $0.id == (canonical[shared] ?? shared) }) else { continue }
             var shadow = command; shadow.isPinned = menu.pinned.value; shadow.symbol = menu.icon.displayed
             status.deletedMenus[command.id] = shadow
-            settings.menuCapture.excludedMenus.formUnion(MenuPathMatch.paths(command).map { .init(appID: command.appID, path: $0) })
         }
         disk.observed = value
         persist() // records and cursor are authoritative before UI/defaults
@@ -158,7 +164,7 @@ final class SettingsSyncCoordinator {
         }
     }
     private func stopTransport() {
-        generation = UUID(); work?.cancel(); work = nil; manualRequest = nil
+        generation = UUID(); work?.cancel(); work = nil; manualRequest = nil; rejected = []
         fetchDeadline?.cancel(); fetchDeadline = nil
         let old = transport; transport = nil
         Task { await old?.stop() }
@@ -171,21 +177,26 @@ final class SettingsSyncCoordinator {
               services.contains("CloudKit") else { return false }
         return true
     }
-    func refresh() {
+    /// `lock` is for the settings window's initial read. A background retry
+    /// never locks controls the user may already be editing.
+    func refresh(lock: Bool = true) {
         guard writable, disk.enabled, !disk.awaitingAccount else { return }
         guard Self.configured else {
             status.locked = false; status.error = "이 실행본에는 iCloud 서명 권한이 없습니다. 오프라인으로 편집할 수 있습니다."
             return
         }
         if !status.initialConflicts.isEmpty { return }
-        status.locked = true; status.error = nil; status.message = "iCloud의 최신 변경사항을 확인하고 있습니다…"
-        fetchDeadline?.cancel()
+        if lock { rejected = [] }
         let revision = generation
-        fetchDeadline = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(15))
-            guard !Task.isCancelled, let self, self.generation == revision else { return }
-            self.status.locked = false
-            self.status.error = "iCloud 응답을 기다리고 있습니다. 오프라인 편집을 허용하며 연결되면 다시 합칩니다."
+        if lock {
+            status.locked = true; status.error = nil; status.message = "iCloud의 최신 변경사항을 확인하고 있습니다…"
+            fetchDeadline?.cancel()
+            fetchDeadline = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, let self, self.generation == revision else { return }
+                self.status.locked = false
+                self.status.error = "iCloud 응답을 기다리고 있습니다. 오프라인 편집을 허용하며 연결되면 다시 합칩니다."
+            }
         }
         work?.cancel()
         let request = UUID(); manualRequest = request
@@ -200,8 +211,13 @@ final class SettingsSyncCoordinator {
                 if let old = self.disk.account, old != key {
                     self.accountChanged(); return
                 }
-                if self.disk.account == nil, let previous = self.disk.accounts[key]?.localReplica {
-                    self.disk.replica.snapshot = try previous.snapshot.merged(with: self.disk.replica.snapshot)
+                if self.disk.account == nil, self.disk.accounts[key] != nil {
+                    // Joining (or returning to) an account after "합치기": run the
+                    // initial merge again so records only this Mac has are uploaded.
+                    if let previous = self.disk.accounts[key]?.localReplica {
+                        self.disk.replica.snapshot = try previous.snapshot.merged(with: self.disk.replica.snapshot)
+                    }
+                    self.disk.accounts[key]!.initialMergeDone = false
                 }
                 self.disk.account = key
                 if self.disk.accounts[key] == nil { self.disk.accounts[key] = .init() }
@@ -212,7 +228,7 @@ final class SettingsSyncCoordinator {
                 }
                 guard let transport = self.transport else { return }
                 try await transport.fetch()
-                guard self.transport?.id == transport.id, self.generation == revision else { return }
+                guard !Task.isCancelled, self.transport?.id == transport.id, self.generation == revision else { return }
                 guard !self.zoneFetchFailed else { throw CocoaError(.fileReadUnknown) }
                 self.fetchCompleted()
             } catch {
@@ -226,11 +242,18 @@ final class SettingsSyncCoordinator {
         SHA256.hash(data: Data(name.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     private func refreshAccount() {
-        guard disk.enabled, Self.configured else { return }
+        guard disk.enabled, !disk.awaitingAccount, Self.configured else { return }
         Task { [weak self] in
             guard let self else { return }
-            if let id = try? await CKContainer(identifier: Self.containerID).userRecordID().recordName,
-               let previous = self.disk.account, previous == Self.accountKey(id) { return }
+            let id = try? await CKContainer(identifier: Self.containerID).userRecordID().recordName
+            guard self.disk.enabled, !self.disk.awaitingAccount else { return }
+            // Never connected (e.g. enabled while signed out): a first sign-in
+            // is not an account change; connect without asking.
+            guard let previous = self.disk.account else {
+                if id != nil { self.refresh(lock: false) }
+                return
+            }
+            if let id, previous == Self.accountKey(id) { return }
             self.accountChanged()
         }
     }
@@ -309,9 +332,10 @@ final class SettingsSyncCoordinator {
     private func queueDirty() {
         guard writable, disk.enabled, !disk.awaitingAccount, let key = disk.account,
               let account = disk.accounts[key], account.initialMergeDone, let transport else { return }
-        let names = account.dirty.filter { account.quarantined[$0] == nil }
+        let names = account.dirty.filter { account.quarantined[$0] == nil && !rejected.contains($0) }
         guard !names.isEmpty else { return }
-        Task { await transport.enqueue(Array(names), createZone: true) }
+        let createZone = account.zoneReady != true
+        Task { await transport.enqueue(Array(names), createZone: createZone) }
     }
     private func chooseIcon(_ id: String, _ symbol: String?) {
         let old = disk.replica.snapshot
@@ -331,7 +355,7 @@ final class SettingsSyncCoordinator {
             }
         case .fetchedRecordZoneChanges(let changes):
             for change in changes.modifications { receive(change.record, account: key) }
-            for deletion in changes.deletions {
+            for deletion in changes.deletions where deletion.recordID.zoneID == SettingsCloudTransport.zone {
                 let name = deletion.recordID.recordName
                 disk.accounts[key]!.serverRecords.removeValue(forKey: name)
                 disk.accounts[key]!.dirty.insert(name)
@@ -340,7 +364,15 @@ final class SettingsSyncCoordinator {
             if changes.deletions.contains(where: { $0.zoneID == SettingsCloudTransport.zone }) {
                 disk.accounts[key]!.serverRecords = [:]
                 disk.accounts[key]!.initialMergeDone = false
+                disk.accounts[key]!.zoneReady = false
                 await transport.enqueue([], createZone: true)
+            }
+        case .sentDatabaseChanges(let changes):
+            if changes.savedZones.contains(where: { $0.zoneID == SettingsCloudTransport.zone }) {
+                disk.accounts[key]!.zoneReady = true
+            }
+            if changes.failedZoneSaves.contains(where: { $0.zone.zoneID == SettingsCloudTransport.zone }) {
+                status.error = "iCloud 저장 공간을 준비하지 못했습니다. 변경사항은 이 Mac에 보존합니다."
             }
         case .sentRecordZoneChanges(let changes):
             for record in changes.savedRecords {
@@ -353,30 +385,49 @@ final class SettingsSyncCoordinator {
                 let name = failure.record.recordID.recordName
                 switch failure.error.code {
                 case .serverRecordChanged:
-                    if let record = failure.error.serverRecord { receive(record, account: key) }
+                    // Merge, then resend only if the merged value still differs.
+                    if let record = failure.error.serverRecord {
+                        receive(record, account: key)
+                        if disk.accounts[key]!.quarantined[name] == nil, decode(record) != outgoingPayloads()[name] {
+                            disk.accounts[key]!.dirty.insert(name)
+                        }
+                    } else { disk.accounts[key]!.dirty.insert(name) }
+                case .zoneNotFound:
+                    disk.accounts[key]!.zoneReady = false
+                    disk.accounts[key]!.serverRecords.removeValue(forKey: name)
                     disk.accounts[key]!.dirty.insert(name)
-                case .zoneNotFound, .unknownItem:
+                case .unknownItem:
                     disk.accounts[key]!.serverRecords.removeValue(forKey: name)
                     disk.accounts[key]!.dirty.insert(name)
                 case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable, .notAuthenticated, .requestRateLimited, .accountTemporarilyUnavailable, .operationCancelled: break
-                default: status.error = "iCloud 전송을 완료하지 못했습니다. 변경사항은 이 Mac에 보존합니다."
+                case .quotaExceeded:
+                    rejected.insert(name)
+                    status.error = "iCloud 저장 공간이 부족해 전송하지 못했습니다. 변경사항은 이 Mac에 보존합니다."
+                default:
+                    rejected.insert(name)
+                    status.error = "iCloud 전송을 완료하지 못했습니다. 변경사항은 이 Mac에 보존합니다."
                 }
             }
-                    if disk.accounts[key]!.initialMergeDone { applyReplica() }
+            if disk.accounts[key]!.initialMergeDone { applyReplica() }
             queueDirty()
         case .willFetchChanges:
             zoneFetchFailed = false; zoneFetchSucceeded = false
         case .didFetchRecordZoneChanges(let result):
             if result.zoneID == SettingsCloudTransport.zone {
-                if result.error != nil { zoneFetchFailed = true }
-                else { zoneFetchSucceeded = true }
+                // A zone that does not exist (yet) is an empty, successful read.
+                if let error = result.error, error.code != .zoneNotFound, error.code != .userDeletedZone {
+                    zoneFetchFailed = true
+                } else {
+                    zoneFetchSucceeded = true
+                    disk.accounts[key]!.zoneReady = result.error == nil
+                }
             }
         case .didFetchChanges:
             // didFetchChanges itself has no success/error property. Never use
             // it alone as proof that the initial cloud read succeeded.
             if manualRequest == nil, !zoneFetchFailed {
                 if zoneFetchSucceeded { fetchCompleted() }
-                else if !disk.accounts[key]!.initialMergeDone { refresh() }
+                else if !disk.accounts[key]!.initialMergeDone { refresh(lock: false) }
             }
         default: break
         }
@@ -386,9 +437,9 @@ final class SettingsSyncCoordinator {
         guard record.recordID.zoneID == SettingsCloudTransport.zone else { return }
         storeServer(record, account: account)
         do {
-            guard record.recordType == "TileSettings", let payload = decode(record), payload.name == record.recordID.recordName else {
-                throw CocoaError(.coderReadCorrupt)
-            }
+            guard record.recordType == "TileSettings", let data = record["payload"] as? Data else { throw CocoaError(.coderReadCorrupt) }
+            let payload = try SettingsSyncRecord.decodeVerified(data)
+            guard payload.name == record.recordID.recordName else { throw CocoaError(.coderReadCorrupt) }
             try disk.accounts[account]!.remote.merge(record: payload)
             disk.accounts[account]!.quarantined.removeValue(forKey: record.recordID.recordName)
             if disk.accounts[account]!.initialMergeDone {
@@ -419,7 +470,7 @@ final class SettingsSyncCoordinator {
         guard writable, disk.enabled, !disk.awaitingAccount, transport?.id == session,
               let key = disk.account, let account = disk.accounts[key], account.initialMergeDone else { return [:] }
         var result: [String: CKRecord] = [:]
-        for (name, value) in outgoingPayloads() where account.dirty.contains(name) && account.quarantined[name] == nil {
+        for (name, value) in outgoingPayloads() where account.dirty.contains(name) && account.quarantined[name] == nil && !rejected.contains(name) {
             let previous = account.serverRecords[name].flatMap { try? NSKeyedUnarchiver.unarchivedObject(ofClass: CKRecord.self, from: $0) }
             let record = previous ?? CKRecord(recordType: "TileSettings", recordID: .init(recordName: name, zoneID: SettingsCloudTransport.zone))
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]

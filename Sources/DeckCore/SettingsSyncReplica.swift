@@ -32,6 +32,54 @@ public struct SettingsSyncRecord: Codable, Equatable {
         try result.validate()
         return result
     }
+    /// A record from another Mac. Re-encoding drops keys this version does not
+    /// know, so a payload with unknown keys is rejected (and kept quarantined)
+    /// instead of being decoded and later overwritten without them.
+    public static func decodeVerified(_ data: Data) throws -> Self {
+        guard let root = try? JSONSerialization.jsonObject(with: data), PayloadSchema.record(root) else {
+            throw SettingsSyncSnapshot.MergeError.unsupportedSchema
+        }
+        return try JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+private enum PayloadSchema {
+    static func only(_ value: Any, _ keys: Set<String>) -> [String: Any]? {
+        guard let object = value as? [String: Any], Set(object.keys).isSubset(of: keys) else { return nil }
+        return object
+    }
+    static func record(_ value: Any) -> Bool {
+        guard let object = only(value, ["version", "menu", "preference", "value", "appOrder", "order"]) else { return false }
+        if let menu = object["menu"], !self.menu(menu) { return false }
+        if let field = object["value"], !self.field(field, inner: { setting($0) }) { return false }
+        if let field = object["order"], !self.field(field, inner: { $0 is [Any] }) { return false }
+        return true
+    }
+    static func field(_ value: Any, inner: (Any) -> Bool) -> Bool {
+        guard let object = only(value, ["value", "stamp"]) else { return false }
+        return (object["value"].map(inner) ?? true) && (object["stamp"].map(stamp) ?? true)
+    }
+    static func stamp(_ value: Any) -> Bool { only(value, ["date", "device", "sequence"]) != nil }
+    static func setting(_ value: Any) -> Bool {
+        guard let object = only(value, ["bool", "integer", "seconds", "text", "color"]) else { return false }
+        return object.values.allSatisfy { only($0, ["_0"]) != nil }
+    }
+    static func menu(_ value: Any) -> Bool {
+        guard let object = only(value, ["id", "appID", "appName", "path", "resourceIdentity", "presence",
+                                        "pinned", "icon", "aliases", "origins"]) else { return false }
+        if let identity = object["resourceIdentity"], only(identity, ["appID", "archive", "keys"]) == nil { return false }
+        for key in ["presence", "pinned"] {
+            if let value = object[key], !field(value, inner: { _ in true }) { return false }
+        }
+        if let icon = object["icon"] {
+            guard let edits = only(icon, ["edits"])?["edits"] as? [Any] else { return false }
+            for edit in edits {
+                guard let edit = only(edit, ["symbol", "stamp", "observed"]) else { return false }
+                if let value = edit["stamp"], !stamp(value) { return false }
+            }
+        }
+        return true
+    }
 }
 
 public extension SettingsSyncSnapshot {
@@ -53,24 +101,34 @@ public extension SettingsSyncSnapshot {
             let matches = groups.indices.filter { index in
                 groups[index].contains { !ids.isDisjoint(with: Set(($0.aliases ?? []) + [$0.id])) }
             }
+            // Aliases decided on different Macs must not chain two distinct
+            // commands of one Mac (or two apps) into a single menu.
+            guard Self.consistent([menu] + matches.flatMap { groups[$0] }) else {
+                groups.append([menu]); continue
+            }
             var group = [menu]
             for index in matches.reversed() { group += groups.remove(at: index) }
             groups.append(group.sorted { $0.id < $1.id })
         }
         return groups.sorted { $0[0].id < $1[0].id }
     }
+    static func consistent(_ menus: [SettingsSyncMenu]) -> Bool {
+        guard Set(menus.map(\.appID)).count <= 1 else { return false }
+        var origins: [String: String] = [:]
+        for menu in menus {
+            for (device, id) in menu.origins ?? [:] {
+                if let previous = origins[device], previous != id { return false }
+                origins[device] = id
+            }
+        }
+        return true
+    }
     /// Called after a complete fetch, when uniqueness can be checked against
     /// all peers. Explicit aliases keep the decision stable on later fetches.
     mutating func reconcileMenuIdentities() throws {
         let groups = menuGroups
         func compatible(_ a: [SettingsSyncMenu], _ b: [SettingsSyncMenu]) -> Bool {
-            var origins: [String: String] = [:]
-            for menu in a + b {
-                for (device, id) in menu.origins ?? [:] {
-                    if let previous = origins[device], previous != id { return false }
-                    origins[device] = id
-                }
-            }
+            guard Self.consistent(a + b) else { return false }
             return a.allSatisfy { left in b.allSatisfy { right in
                 guard left.appID == right.appID else { return false }
                 if let x = left.resourceIdentity, let y = right.resourceIdentity { return x == y }
@@ -141,30 +199,42 @@ public struct SettingsSyncReplica: Codable {
     public mutating func capture(before: SettingsSyncProjection?, after: SettingsSyncProjection,
                                  at date: Date, iconBases: [UUID: [String: UInt64]] = [:]) {
         let oldPreferences = before?.preferences ?? [:]
-        for (key, value) in after.preferences where snapshot.preferences[key] == nil || oldPreferences[key] != value {
+        for (key, value) in after.preferences {
             guard let keyType = SettingsSyncPreference(rawValue: key), keyType.accepts(value) else { continue }
-            let initial = before == nil && snapshot.preferences[key] == nil
-            snapshot.preferences[key] = .init(value, stamp: stamp(at: initial ? nil : date))
+            // Only a change from the previously observed value is a user edit;
+            // a newly tracked key keeps an unknown (legacy) time.
+            let edited = oldPreferences[key].map { $0 != value } ?? false
+            guard edited || snapshot.preferences[key] == nil else { continue }
+            snapshot.preferences[key] = .init(value, stamp: stamp(at: edited ? date : nil))
         }
         let oldCommands = Dictionary((before?.commands ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let existingIDs = Set(after.commands.map(\.id))
         let canonical = snapshot.canonicalMenuIDs
-        var appIDs = Set<String>()
+        var combined = Dictionary(snapshot.combinedMenus.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // One shared record belongs to at most one local command on this Mac.
+        var claimed: [String: UUID] = [:]
+        for command in after.commands {
+            if let shared = localIDs[command.id] { claimed[canonical[shared] ?? shared] = command.id }
+        }
+        var touchedApps = Set<String>()
         for command in after.commands {
             guard !command.appID.hasPrefix("/"),
                   !command.isAutomatic || command.isPinned || command.symbol != nil || localIDs[command.id] != nil else { continue }
-            let mapped = localIDs[command.id].flatMap { canonical[$0] ?? $0 }
-            let group = snapshot.combinedMenus.filter { menu in
-                guard menu.appID == command.appID else { return false }
-                if let local = menu.origins?[device], local != command.id.uuidString, menu.isPresent { return false }
-                if let a = menu.resourceIdentity, let b = command.resourceBinding?.identity { return a == b }
-                return menu.path == command.path
+            let syncID: String
+            if let mapped = localIDs[command.id] { syncID = canonical[mapped] ?? mapped }
+            else {
+                let group = combined.values.filter { menu in
+                    guard menu.appID == command.appID, claimed[menu.id] == nil else { return false }
+                    if let local = menu.origins?[device], local != command.id.uuidString, menu.isPresent { return false }
+                    if let a = menu.resourceIdentity, let b = command.resourceBinding?.identity { return a == b }
+                    return menu.path == command.path
+                }
+                syncID = group.count == 1 ? group[0].id : UUID().uuidString
             }
-            let syncID = mapped ?? (group.count == 1 ? group[0].id : UUID().uuidString)
-            localIDs[command.id] = syncID
-            appIDs.insert(command.appID)
-            var record = snapshot.combinedMenus.first { $0.id == syncID }
+            localIDs[command.id] = syncID; claimed[syncID] = command.id
+            var record = combined[syncID]
             let old = oldCommands[command.id]
+            if old == nil && before != nil { touchedApps.insert(command.appID) }
             if record == nil {
                 let time = stamp(at: before == nil ? nil : date)
                 record = .init(id: syncID, appID: command.appID, appName: command.appName, path: command.path,
@@ -186,32 +256,37 @@ public struct SettingsSyncReplica: Codable {
                     record!.icon = record!.icon.merged(with: .init([edit]))
                 }
             }
-            if let record { snapshot.menus[syncID] = record }
+            if let record { snapshot.menus[syncID] = record; combined[syncID] = record }
         }
         for command in before?.commands ?? [] where !existingIDs.contains(command.id) {
             guard let shared = localIDs[command.id] else { continue }
             let id = canonical[shared] ?? shared
-            guard var menu = snapshot.combinedMenus.first(where: { $0.id == id }) else { continue }
-            menu.presence = .init(false, stamp: stamp(at: date)); snapshot.menus[id] = menu
-            appIDs.insert(menu.appID)
+            guard var menu = combined[id] else { continue }
+            menu.presence = .init(false, stamp: stamp(at: date)); snapshot.menus[id] = menu; combined[id] = menu
+            touchedApps.insert(menu.appID)
         }
-        for appID in appIDs {
+        let managed = after.commands.filter { localIDs[$0.id] != nil }
+        for appID in Set(managed.map(\.appID)).union(touchedApps) {
             let current = after.commands.filter { $0.appID == appID }.compactMap { localIDs[$0.id] }
             let old = (before?.commands ?? []).filter { $0.appID == appID }.compactMap { localIDs[$0.id] }
-            let previous = snapshot.orders[appID]?.value ?? []
+            var seen = Set<String>()
+            let previous = (snapshot.orders[appID]?.value ?? []).map { canonical[$0] ?? $0 }.filter { seen.insert($0).inserted }
+            guard before != nil else {
+                if snapshot.orders[appID] == nil { snapshot.orders[appID] = .init(current, stamp: stamp(at: nil)) }
+                continue
+            }
             let shared = Set(current).intersection(old)
             let reordered = current.filter(shared.contains) != old.filter(shared.contains)
-            let added = current.filter { !previous.contains($0) }
-            if snapshot.orders[appID] == nil || reordered || !added.isEmpty {
-                var order = previous
-                if reordered {
-                    var desired = current.filter(Set(previous).contains).makeIterator()
-                    let present = Set(current)
-                    order = previous.map { present.contains($0) ? (desired.next() ?? $0) : $0 }
-                }
-                order += added
-                snapshot.orders[appID] = .init(order, stamp: stamp(at: before == nil ? nil : date))
-            }
+            // Only a command added by this edit claims a new slot. Remote menus
+            // missing from the list are ordered on apply without a new stamp.
+            let oldIDs = Set(old)
+            let added = current.filter { !oldIDs.contains($0) && !seen.contains($0) }
+            guard reordered || !added.isEmpty else { continue }
+            let present = Set(current)
+            var desired = current.makeIterator()
+            var order = previous.map { present.contains($0) ? (desired.next() ?? $0) : $0 }
+            while let next = desired.next() { order.append(next) }
+            snapshot.orders[appID] = .init(order, stamp: stamp(at: date))
         }
     }
     public mutating func applying(to projection: SettingsSyncProjection) -> SettingsSyncProjection {
@@ -223,21 +298,27 @@ public struct SettingsSyncReplica: Codable {
         for menu in groups {
             let matches = result.commands.indices.filter { index in
                 let command = result.commands[index]
-                if localIDs[command.id] == menu.id { return true }
-                guard command.appID == menu.appID else { return false }
+                // A command linked to another shared record is never re-linked
+                // by path, and a deletion only removes the command linked to it.
+                if let linked = localIDs[command.id] { return linked == menu.id }
+                guard menu.isPresent, command.appID == menu.appID else { return false }
                 if let a = menu.resourceIdentity, let b = command.resourceBinding?.identity { return a == b }
                 return command.path == menu.path
             }
             guard matches.count <= 1 else { continue } // ambiguous identity remains untouched
             if !menu.isPresent {
-                if let index = matches.first { localIDs[result.commands[index].id] = menu.id; result.commands.remove(at: index) }
+                if let index = matches.first { result.commands.remove(at: index) }
                 continue
             }
             if let index = matches.first {
                 localIDs[result.commands[index].id] = menu.id
                 result.commands[index].isPinned = menu.pinned.value
                 result.commands[index].symbol = menu.icon.displayed
-                result.commands[index].syncResourceIdentity = menu.resourceIdentity
+                // A command that already ran on this Mac keeps its own binding;
+                // only a menu first created from iCloud waits for verification.
+                if result.commands[index].syncResourceIdentity != nil {
+                    result.commands[index].syncResourceIdentity = menu.resourceIdentity
+                }
             } else {
                 var command = MenuCommand(appID: menu.appID, appName: menu.appName, path: menu.path, isPinned: menu.pinned.value)
                 // Shared resource hints are not execution bindings on this Mac.
@@ -293,13 +374,10 @@ public extension SettingsSyncReplica {
                 if a.filter(shared.contains) != b.filter(shared.contains) { result.append("order:" + key) }
             }
         }
+        // Same pairing as mergeInitial: only menus the reconciliation joined.
         for own in snapshot.combinedMenus {
-            let matches = remote.combinedMenus.filter { other in
-                guard own.appID == other.appID else { return false }
-                if own.id == other.id { return true }
-                if let a = own.resourceIdentity, let b = other.resourceIdentity { return a == b }
-                return own.path == other.path
-            }
+            let id = ids[own.id] ?? own.id
+            let matches = remote.combinedMenus.filter { (ids[$0.id] ?? $0.id) == id }
             if matches.count == 1, let other = matches.first,
                own.pinned.stamp.date == nil, other.pinned.stamp.date == nil, own.pinned.value != other.pinned.value {
                 result.append("pin:" + own.id)

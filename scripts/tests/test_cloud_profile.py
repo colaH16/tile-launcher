@@ -53,3 +53,17 @@ class CloudProfileTests(unittest.TestCase):
     def test_certificate_not_in_profile_is_rejected(self):
         with self.assertRaises(r.ReleaseError):
             r.cloud_entitlements(self.profile(), 'ABCDEFGHIJ', '0' * 40)
+
+    def test_profile_listing_allowed_container_environments_is_accepted(self):
+        # Apple profiles list permitted environments; signing still uses Production only.
+        profile = self.profile()
+        profile['Entitlements']['com.apple.developer.icloud-container-environment'] = ['Development', 'Production']
+        value = r.cloud_entitlements(profile, 'ABCDEFGHIJ')
+        self.assertEqual(value['com.apple.developer.icloud-container-environment'], 'Production')
+        profile['Entitlements']['com.apple.developer.icloud-container-environment'] = ['Development']
+        with self.assertRaises(r.ReleaseError):
+            r.cloud_entitlements(profile, 'ABCDEFGHIJ')
+
+    def test_signing_identity_must_be_a_certificate_hash(self):
+        with self.assertRaises(r.ReleaseError):
+            r.cloud_entitlements(self.profile(), 'ABCDEFGHIJ', 'Developer ID Application: Example (ABCDEFGHIJ)')

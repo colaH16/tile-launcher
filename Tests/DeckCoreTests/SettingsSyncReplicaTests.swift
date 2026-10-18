@@ -137,4 +137,111 @@ final class SettingsSyncReplicaTests: XCTestCase {
         XCTAssertTrue(replica.snapshot.combinedMenus[0].isPresent)
     }
 
+    private func remoteMenu(_ id: String, path: [String] = ["File", "Open"], present: Bool = true,
+                            device: String = "remote", identity: MenuResourceIdentity? = nil) -> SettingsSyncMenu {
+        let stamp = SettingsSyncStamp(date: .init(timeIntervalSince1970: 5), device: device, sequence: 1)
+        return .init(id: id, appID: "test.app", appName: "Test", path: path, resourceIdentity: identity,
+                     presence: .init(present, stamp: stamp), pinned: .init(true, stamp: stamp),
+                     icon: .init([.init(symbol: nil, stamp: stamp)]))
+    }
+
+    func testUnrelatedEditDoesNotRestampAnOrderMissingARemoteMenu() throws {
+        let local = command()
+        var replica = SettingsSyncReplica()
+        let before = projection([local])
+        replica.capture(before: nil, after: before, at: .init(timeIntervalSince1970: 1))
+        replica.snapshot.menus["R"] = remoteMenu("R", path: ["File", "Remote"])
+        let applied = replica.applying(to: before)
+        XCTAssertEqual(applied.commands.count, 2)
+        let order = replica.snapshot.orders["test.app"]
+        replica.capture(before: applied, after: projection(applied.commands, theme: "glass"), at: .init(timeIntervalSince1970: 50))
+        XCTAssertEqual(replica.snapshot.orders["test.app"], order)
+        XCTAssertEqual(replica.snapshot.preferences["theme"]?.stamp.date, .init(timeIntervalSince1970: 50))
+    }
+
+    func testNewlyTrackedPreferenceKeepsAnUnknownTime() {
+        var replica = SettingsSyncReplica()
+        let before = SettingsSyncProjection(preferences: ["theme": .text("classic")], commands: [])
+        replica.capture(before: nil, after: before, at: Date())
+        var after = before; after.preferences["showAppSettings"] = .bool(false)
+        replica.capture(before: before, after: after, at: .init(timeIntervalSince1970: 60))
+        XCTAssertNil(replica.snapshot.preferences["showAppSettings"]?.stamp.date)
+    }
+
+    func testRemoteDeletionRemovesOnlyTheLinkedCommand() throws {
+        var collected = command(); collected.isAutomatic = true; collected.isPinned = false
+        collected.recordUse(at: .init(timeIntervalSince1970: 3), observed: true)
+        var replica = SettingsSyncReplica()
+        replica.capture(before: nil, after: projection([collected]), at: Date())
+        replica.snapshot.menus["R"] = remoteMenu("R", present: false)
+        let applied = replica.applying(to: projection([collected]))
+        XCTAssertEqual(applied.commands.map(\.id), [collected.id], "Local usage history must survive a same-path tombstone")
+    }
+
+    func testLinkedCommandIsNeverRelinkedToAnotherRecordWithTheSamePath() throws {
+        let local = command()
+        var replica = SettingsSyncReplica()
+        replica.capture(before: nil, after: projection([local]), at: Date())
+        let shared = replica.localIDs[local.id]!
+        replica.snapshot.menus["Z-other"] = remoteMenu("Z-other", present: false, device: "other")
+        let applied = replica.applying(to: projection([local]))
+        XCTAssertEqual(applied.commands.map(\.id), [local.id])
+        XCTAssertEqual(replica.localIDs[local.id], shared)
+    }
+
+    func testExistingCommandKeepsExecutingWhenTheSharedRecordHasAHint() throws {
+        let local = command()
+        var replica = SettingsSyncReplica()
+        replica.capture(before: nil, after: projection([local]), at: Date())
+        let shared = replica.localIDs[local.id]!
+        replica.snapshot.menus[shared]!.resourceIdentity = .init(appID: "test.app", archive: "Main", keys: ["root", "open"])
+        let applied = replica.applying(to: projection([local]))
+        XCTAssertNil(applied.commands[0].syncResourceIdentity)
+        XCTAssertEqual(MenuPathMatch.paths(applied.commands[0]), [local.path])
+        // A menu first created from iCloud still waits for a verified binding.
+        replica.snapshot.menus["N"] = remoteMenu("N", path: ["File", "New"],
+                                                 identity: .init(appID: "test.app", archive: "Main", keys: ["root", "new"]))
+        let created = replica.applying(to: applied).commands.first { $0.path == ["File", "New"] }!
+        XCTAssertTrue(MenuPathMatch.paths(created).isEmpty)
+    }
+
+    func testAliasesFromDifferentMacsCannotChainTwoCommandsOfOneMac() {
+        var snapshot = SettingsSyncSnapshot()
+        var x = remoteMenu("X"); x.origins = ["mac": "local-1"]
+        var y = remoteMenu("Y", device: "peer"); y.aliases = ["X", "Y"]
+        var z = remoteMenu("Z"); z.origins = ["mac": "local-2"]; z.aliases = ["Y", "Z"]
+        snapshot.menus = ["X": x, "Y": y, "Z": z]
+        let groups = snapshot.menuGroups
+        XCTAssertFalse(groups.contains { group in group.contains { $0.id == "X" } && group.contains { $0.id == "Z" } })
+        XCTAssertEqual(snapshot.combinedMenus.count, groups.count)
+    }
+
+    func testOneSharedRecordIsClaimedByOnlyOneLocalCommand() {
+        let first = command()
+        var replica = SettingsSyncReplica()
+        replica.snapshot.menus["R"] = remoteMenu("R")
+        replica.capture(before: nil, after: projection([first]), at: Date())
+        XCTAssertEqual(replica.localIDs[first.id], "R")
+        let second = command()
+        replica.capture(before: projection([first]), after: projection([first, second]), at: .init(timeIntervalSince1970: 9))
+        XCTAssertNotEqual(replica.localIDs[second.id], "R")
+    }
+
+    func testPayloadWithUnknownKeysIsRejectedButKnownPayloadsDecode() throws {
+        let stamp = SettingsSyncStamp(date: Date(timeIntervalSince1970: 7), device: "a", sequence: 1)
+        let records = [SettingsSyncRecord(menu: remoteMenu("R")),
+                       SettingsSyncRecord(preference: "menuColor", value: .init(.color(nil), stamp: stamp)),
+                       SettingsSyncRecord(preference: "theme", value: .init(.text("glass"), stamp: stamp)),
+                       SettingsSyncRecord(appOrder: "test.app", order: .init(["R"], stamp: stamp))]
+        for record in records {
+            XCTAssertEqual(try SettingsSyncRecord.decodeVerified(JSONEncoder().encode(record)), record)
+        }
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(records[0])) as! [String: Any]
+        var menu = object["menu"] as! [String: Any]; menu["futureField"] = 1; object["menu"] = menu
+        XCTAssertThrowsError(try SettingsSyncRecord.decodeVerified(JSONSerialization.data(withJSONObject: object)))
+        object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(records[0])) as! [String: Any]
+        object["extra"] = true
+        XCTAssertThrowsError(try SettingsSyncRecord.decodeVerified(JSONSerialization.data(withJSONObject: object)))
+    }
+
 }
