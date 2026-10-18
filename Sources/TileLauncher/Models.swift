@@ -170,6 +170,9 @@ final class SettingsStore: ObservableObject {
     @Published var unavailableMenus: Set<UUID> = []
     @Published var sharedMenus: Set<UUID> = []
     var onPersistentChange: (() -> Void)?
+    /// Runs after all source defaults keys have been updated. Editing copies
+    /// never persist and therefore never call this completion hook.
+    var onPersistentWrite: (() -> Void)?
     @Published private(set) var importingDock = false
     @Published private var dockImportMessages: [String: String] = [:]
     var dockImportMessage: String? { dockImportMessages[activeProfile.id] }
@@ -378,6 +381,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(theme.rawValue, forKey: "appearanceTheme")
         if let data = try? JSONEncoder().encode(tileColors) { defaults.set(data, forKey: "tileColors") }
         defaults.set(manualCount, forKey: "manualWindowCount")
+        onPersistentWrite?()
     }
     func addApplications() {
         let panel = NSOpenPanel()

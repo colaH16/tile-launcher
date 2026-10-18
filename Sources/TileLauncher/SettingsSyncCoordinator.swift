@@ -77,6 +77,15 @@ final class SettingsSyncCoordinator {
                 // must never reach `disk`, where it could rewrite defaults.
                 let candidate = try JSONDecoder().decode(SettingsSyncDisk.self, from: Data(contentsOf: self.file))
                 guard candidate.schema == 1 else { throw CocoaError(.coderReadCorrupt) }
+                guard !candidate.replica.device.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+                try candidate.replica.snapshot.validate()
+                for account in candidate.accounts.values {
+                    try account.remote.validate()
+                    if let replica = account.localReplica {
+                        guard !replica.device.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+                        try replica.snapshot.validate()
+                    }
+                }
                 disk = candidate
             } catch {
                 readOnly = true; status.error = "동기화 저장 파일을 읽지 못했습니다. 기존 파일을 보존했습니다."
@@ -102,6 +111,7 @@ final class SettingsSyncCoordinator {
             disk.observed = settings.syncProjection
         }
         settings.onPersistentChange = { [weak self] in self?.capture() }
+        settings.onPersistentWrite = { [weak self] in self?.checkpoint() }
         status.enabled = disk.enabled; status.awaitingAccount = disk.awaitingAccount
         status.setEnabled = { [weak self] value in Task { @MainActor in self?.setEnabled(value) } }
         status.refresh = { [weak self] in Task { @MainActor in self?.refresh() } }
@@ -136,6 +146,7 @@ final class SettingsSyncCoordinator {
         if let accountObserver { NotificationCenter.default.removeObserver(accountObserver) }
         accountObserver = nil
         settings.onPersistentChange = nil
+        settings.onPersistentWrite = nil
     }
     private func capture() {
         guard !applying, !readOnly else { return }
@@ -145,8 +156,9 @@ final class SettingsSyncCoordinator {
         disk.observed = projection
         guard old != disk.replica.snapshot else { return }
         markChanged(from: old)
-        // Called before the store writes its defaults; mark them afterwards.
-        if commit() { DispatchQueue.main.async { [weak self] in self?.checkpoint() } }
+        // The store's completion hook checkpoints this commit synchronously
+        // after all defaults keys, without a queued callback surviving shutdown.
+        _ = commit()
         publish(); queueDirty()
     }
     /// Journals a change that UserDefaults will receive next. Returns whether
@@ -157,6 +169,7 @@ final class SettingsSyncCoordinator {
     }
     private func checkpoint() {
         guard !readOnly, !writeFailed, let commit = disk.commit else { return }
+        guard defaults.string(forKey: Self.checkpointKey) != commit else { return }
         defaults.set(commit, forKey: Self.checkpointKey)
     }
     private func markChanged(from old: SettingsSyncSnapshot) {
@@ -494,9 +507,12 @@ final class SettingsSyncCoordinator {
             if changes.failedRecordSaves.contains(where: { $0.error.code == .userDeletedZone }) {
                 iCloudDataRemoved(account: key); return
             }
+            // Saved acknowledgements only change server metadata and dirty
+            // flags. The payload map is unchanged throughout this loop.
+            let acknowledgedPayloads = outgoingPayloads()
             for record in changes.savedRecords {
                 storeServer(record, account: key)
-                if let value = decode(record), outgoingPayloads()[record.recordID.recordName] == value {
+                if let value = decode(record), acknowledgedPayloads[record.recordID.recordName] == value {
                     disk.accounts[key]!.dirty.remove(record.recordID.recordName)
                 }
             }
@@ -567,7 +583,7 @@ final class SettingsSyncCoordinator {
         let current = settings.syncProjection
         fresh.capture(before: nil, after: current, at: Date())
         disk.replica = fresh; disk.observed = current; lastApplied = nil
-        disk.enabled = false
+        disk.enabled = false; disk.awaitingAccount = false
         status.enabled = false; status.locked = false; status.initialConflicts = []; status.deletedMenus = [:]
         status.message = "이 Mac의 동기화를 껐습니다."
         status.error = "iCloud에서 Tile Launcher 동기화 데이터가 삭제되었습니다(설정 앱의 데이터 삭제 또는 암호화 데이터 재설정). 이 Mac의 설정은 그대로 두었고, 삭제된 데이터를 다시 올리지 않도록 동기화를 껐습니다."
@@ -633,3 +649,73 @@ final class SettingsSyncCoordinator {
         }
     }
 }
+
+#if TILE_LAUNCHER_DIAGNOSTICS
+extension SettingsSyncCoordinator {
+    /// Exercises the real coordinator with in-memory CKRecord values. The
+    /// transport is never started: no CKContainer, engine or network is created.
+    @MainActor static func verifyOfflineCoordinator(root: URL) throws {
+        let suite = "TileLauncher.SyncValidation.coordinator." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.theme = .classic
+        settings.addCommand(.init(appID: "validation.app", appName: "Validation", path: ["File", "Local"]))
+        let coordinator = SettingsSyncCoordinator(settings: settings, defaults: defaults,
+                                                   file: root.appendingPathComponent("offline-coordinator.json"))
+        defer { coordinator.shutdown() }
+        coordinator.path?.cancel(); coordinator.path = nil
+        if let observer = coordinator.accountObserver { NotificationCenter.default.removeObserver(observer) }
+        coordinator.accountObserver = nil
+        let account = "isolated-validation-account"
+        coordinator.disk.account = account
+        coordinator.disk.accounts[account] = .init()
+        coordinator.disk.enabled = true
+        let transport = SettingsCloudTransport(owner: coordinator)
+        coordinator.transport = transport // no call to start()
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { throw NSError(domain: "OfflineSyncCoordinator", code: 1,
+                                           userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        func record(_ value: SettingsSyncRecord) throws -> CKRecord {
+            let record = CKRecord(recordType: "TileSettings", recordID: .init(recordName: value.name, zoneID: SettingsCloudTransport.zone))
+            record["payload"] = try JSONEncoder().encode(value) as CKRecordValue
+            return record
+        }
+        let stamp = SettingsSyncStamp(date: nil, device: "validation-peer", sequence: 1)
+        let remoteTheme = SettingsSyncRecord(preference: "theme", value: .init(.text("glass"), stamp: stamp))
+        coordinator.receive(try record(remoteTheme), account: account)
+        let remoteMenu = SettingsSyncMenu(id: "remote-menu", appID: "validation.app", appName: "Validation",
+            path: ["File", "Remote"], presence: .init(true, stamp: stamp), pinned: .init(true, stamp: stamp),
+            icon: .init([.init(symbol: "gear", stamp: stamp)]))
+        coordinator.receive(try record(.init(menu: remoteMenu)), account: account)
+        var future = SettingsSyncRecord(preference: "showAppSettings", value: .init(.bool(false), stamp: stamp))
+        future.version = 99
+        coordinator.receive(try record(future), account: account)
+        try check(coordinator.disk.accounts[account]!.quarantined.count == 1, "Invalid record was not quarantined")
+        try check(coordinator.disk.accounts[account]!.remote.menus.count == 1, "Invalid record blocked a valid peer record")
+        coordinator.fetchCompleted()
+        try check(coordinator.status.initialConflicts == ["pref:theme"] && coordinator.status.locked,
+                  "Initial legacy choice was bypassed")
+        try check(coordinator.outgoingRecords(session: transport.id).isEmpty, "Uploaded before the initial choice")
+        coordinator.finishInitial(preferLocal: false)
+        try check(settings.theme == .glass && settings.commands.count == 2, "Initial choice did not preserve both menus")
+        let outgoing = coordinator.outgoingRecords(session: transport.id)
+        try check(!outgoing.isEmpty && outgoing[future.name] == nil, "Outbox omitted valid data or sent quarantine")
+        try check(coordinator.outgoingRecords(session: UUID()).isEmpty, "An obsolete transport could obtain account records")
+        coordinator.status.initialConflicts = ["pref:theme"]
+        coordinator.accountChanged()
+        try check(coordinator.disk.awaitingAccount && coordinator.status.initialConflicts.isEmpty,
+                  "Account pause retained previous-account initial choices")
+        try check(coordinator.outgoingRecords(session: transport.id).isEmpty, "Account change leaked the old outbox")
+        let local = settings.syncProjection
+        coordinator.iCloudDataRemoved(account: account)
+        let cleaned = coordinator.disk.accounts[account]!
+        try check(settings.syncProjection == local && !coordinator.disk.enabled, "Purge changed this Mac's settings or left sync running")
+        try check(cleaned.engine == nil && cleaned.serverRecords.isEmpty && cleaned.remote == SettingsSyncSnapshot()
+                  && cleaned.dirty.isEmpty && cleaned.quarantined.isEmpty, "Purge left server caches or pending uploads")
+        try check(coordinator.outgoingRecords(session: transport.id).isEmpty, "Purge could resend old data")
+        print("Offline coordinator: per-record quarantine, initial-choice upload gate, account isolation and purge preservation passed without a CloudKit engine.")
+    }
+}
+#endif

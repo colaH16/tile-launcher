@@ -170,6 +170,7 @@ public struct SettingsSyncSnapshot: Codable, Equatable {
         return result
     }
     public func validate() throws {
+        guard schema == Self.currentSchema else { throw MergeError.unsupportedSchema }
         for (key, field) in preferences {
             guard let preference = SettingsSyncPreference(rawValue: key), preference.accepts(field.value), field.stamp.isValid else {
                 throw MergeError.invalidPreference

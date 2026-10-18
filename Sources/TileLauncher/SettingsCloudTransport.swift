@@ -33,6 +33,7 @@ actor SettingsCloudTransport: CKSyncEngineDelegate {
     func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
         guard engine === syncEngine, !stopped, let owner else { return nil }
         let records = await owner.outgoingRecords(session: id)
+        guard engine === syncEngine, !stopped else { return nil }
         let changes = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
         // As in Apple's sample, a pending save that cannot be provided now
         // (before the first merge, quarantined, rejected or paused) is removed
@@ -45,6 +46,10 @@ actor SettingsCloudTransport: CKSyncEngineDelegate {
         }
         if !unavailable.isEmpty { syncEngine.state.remove(pendingRecordZoneChanges: unavailable) }
         guard !available.isEmpty else { return nil }
-        return await .init(pendingChanges: available) { recordID in records[recordID.recordName] }
+        let batch = await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: available) { recordID in records[recordID.recordName] }
+        // Both cross-actor access and batch construction can suspend. A stop
+        // that arrived during either await must also veto the old batch.
+        guard engine === syncEngine, !stopped else { return nil }
+        return batch
     }
 }

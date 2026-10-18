@@ -58,8 +58,9 @@ enum SettingsSyncValidation {
         corrupt.shutdown()
         try verifyStartupAndDisk(root: root, check: check)
         try verifyUnchangedApplyAndColors(check: check)
+        try SettingsSyncCoordinator.verifyOfflineCoordinator(root: root)
     }
-    /// Lets the checkpoint written after the defaults save run.
+    /// Allows ordinary editor/run-loop updates; checkpoints are synchronous.
     @MainActor private static func drain() { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     private static func journal(_ url: URL) throws -> [String: Any] {
         try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
@@ -79,7 +80,11 @@ enum SettingsSyncValidation {
         var store = SettingsStore(defaults: defaults)
         store.theme = .glass
         var sync = SettingsSyncCoordinator(settings: store, defaults: defaults, file: file)
-        store.theme = .classic; drain(); sync.shutdown()
+        store.theme = .classic
+        let savedCommit = try journal(file)["commit"] as? String
+        try check(savedCommit != nil && defaults.string(forKey: "settingsSyncCheckpoint") == savedCommit,
+                  "Defaults completion checkpoint waited for another run-loop turn")
+        sync.shutdown()
         defaults.set(DeckTheme.glass.rawValue, forKey: "appearanceTheme") // old app: classic → glass
         store = SettingsStore(defaults: defaults)
         sync = SettingsSyncCoordinator(settings: store, defaults: defaults, file: file)
@@ -141,6 +146,27 @@ enum SettingsSyncValidation {
         store.numberShortcuts = store.numberShortcuts == .registeredFirst ? .windowsFirst : .registeredFirst
         let preserved = try Data(contentsOf: file)
         try check(store.theme == .glass && preserved == future, "Future journal changed defaults or was overwritten")
+        sync.shutdown(); defaults.removePersistentDomain(forName: suite)
+
+        // Valid JSON with a malformed local snapshot is a local read error,
+        // never a reason to quarantine every valid incoming cloud record.
+        (defaults, file, suite) = fresh("semantic-corruption")
+        store = SettingsStore(defaults: defaults); store.theme = .glass
+        sync = SettingsSyncCoordinator(settings: store, defaults: defaults, file: file)
+        sync.shutdown()
+        var malformed = try JSONDecoder().decode(SettingsSyncReplica.self, from:
+            JSONSerialization.data(withJSONObject: try journal(file)["replica"]!))
+        malformed.snapshot.orders["validation.app"] = .init(["duplicate", "duplicate"],
+            stamp: .init(date: nil, device: "validation", sequence: 1))
+        var corruptObject = try journal(file)
+        corruptObject["replica"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(malformed))
+        let corruptData = try JSONSerialization.data(withJSONObject: corruptObject)
+        try corruptData.write(to: file)
+        store = SettingsStore(defaults: defaults)
+        sync = SettingsSyncCoordinator(settings: store, defaults: defaults, file: file)
+        let unchanged = try Data(contentsOf: file)
+        try check(store.theme == .glass && store.syncStatus.error != nil && unchanged == corruptData,
+                  "Invalid local snapshot was applied or overwritten")
         sync.shutdown(); defaults.removePersistentDomain(forName: suite)
     }
     @MainActor private static func verifyUnchangedApplyAndColors(check: (@autoclosure () -> Bool, String) throws -> Void) throws {
