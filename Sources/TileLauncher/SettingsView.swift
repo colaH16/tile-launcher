@@ -368,8 +368,9 @@ struct MenuSettingsView: View {
     }
     private func savedMenuRow(_ command: MenuCommand, moves: MenuCommand.MoveTargets?) -> some View {
         HStack {
-            MenuGlyphButton(command: command, choose: { settings.setSymbol($0, for: command.id) },
-                            beginEditing: { settings.syncStatus.beginIconEdit?(command.id) })
+            // The icon basis is taken by the first actual choice (setSymbol),
+            // not by opening the picker.
+            MenuGlyphButton(command: command) { settings.setSymbol($0, for: command.id) }
             VStack(alignment: .leading, spacing: 3) {
                 MenuCommandDetails(command: command, history: settings.menuHistory)
                     .strikethrough(settings.unavailableMenus.contains(command.id))

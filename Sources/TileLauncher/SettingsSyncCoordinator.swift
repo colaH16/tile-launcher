@@ -2,6 +2,7 @@ import AppKit
 import CloudKit
 import CryptoKit
 import DeckCore
+import Network
 import Security
 
 private struct CloudAccountState: Codable {
@@ -22,18 +23,33 @@ private struct SettingsSyncDisk: Codable {
     var awaitingAccount = false
     var replica = SettingsSyncReplica()
     var observed: SettingsSyncProjection?
+    /// Nonce of the last journaled change; copied to UserDefaults after its keys are written.
+    var commit: String?
     var accounts: [String: CloudAccountState] = [:]
 }
 
 @MainActor
 final class SettingsSyncCoordinator {
     private static let containerID = "iCloud.dev.cola16.TileLauncher"
+    private static let checkpointKey = "settingsSyncCheckpoint"
     let status: SettingsSyncStatus
     private let settings: SettingsStore
+    private let defaults: UserDefaults
     private let file: URL
+    private let write: (Data, URL) throws -> Void
     private var disk = SettingsSyncDisk()
-    private var writable = true
+    /// An unreadable journal is preserved: never written, never applied.
+    private var readOnly = false
+    /// The last journal write failed: edits are kept in memory, the network
+    /// stops, and the next change retries the write.
+    private var writeFailed = false
     private var applying = false
+    private var lastApplied: SettingsSyncSnapshot?
+    private var accountCheck = 0
+    private var retry: Task<Void, Never>?
+    private var retryDelay = Duration.seconds(30)
+    private var path: NWPathMonitor?
+    private var online = true
     private var transport: SettingsCloudTransport?
     private var work: Task<Void, Never>?
     private var fetchDeadline: Task<Void, Never>?
@@ -48,25 +64,42 @@ final class SettingsSyncCoordinator {
     /// next explicit refresh, so a permanent error cannot become a send loop.
     private var rejected: Set<String> = []
 
-    init(settings: SettingsStore, file: URL? = nil) {
-        self.settings = settings; status = settings.syncStatus
+    /// `defaults` must be the store's UserDefaults; `write` is replaced only by
+    /// isolated validation to simulate a failing disk.
+    init(settings: SettingsStore, defaults: UserDefaults = .standard, file: URL? = nil,
+         write: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) {
+        self.settings = settings; self.defaults = defaults; self.write = write; status = settings.syncStatus
         self.file = file ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("TileLauncher/CloudSync/state.json")
         if FileManager.default.fileExists(atPath: self.file.path) {
             do {
-                disk = try JSONDecoder().decode(SettingsSyncDisk.self, from: Data(contentsOf: self.file))
-                guard disk.schema == 1 else { throw CocoaError(.coderReadCorrupt) }
+                // Validate a local candidate first: a future or partial journal
+                // must never reach `disk`, where it could rewrite defaults.
+                let candidate = try JSONDecoder().decode(SettingsSyncDisk.self, from: Data(contentsOf: self.file))
+                guard candidate.schema == 1 else { throw CocoaError(.coderReadCorrupt) }
+                disk = candidate
             } catch {
-                writable = false; status.error = "동기화 저장 파일을 읽지 못했습니다. 기존 파일을 보존했습니다."
+                readOnly = true; status.error = "동기화 저장 파일을 읽지 못했습니다. 기존 파일을 보존했습니다."
             }
         }
-        if disk.observed == nil {
+        if let observed = disk.observed {
+            let current = settings.syncProjection
+            let startup = SettingsSyncLifecycle.startup(current: current, observed: observed, journalCommit: disk.commit,
+                                                        defaultsCheckpoint: defaults.string(forKey: Self.checkpointKey),
+                                                        managed: Set(disk.replica.localIDs.keys))
+            if startup == .externalEdit {
+                // Keep changes made outside the journal, without an edit time.
+                let old = disk.replica.snapshot
+                disk.replica.importExternal(before: observed, after: current)
+                disk.observed = current
+                markChanged(from: old)
+            }
+            // Replays an interrupted defaults write, and applies merged remote
+            // records that were journaled but not yet shown.
+            applyReplica()
+        } else {
             disk.replica.capture(before: nil, after: settings.syncProjection, at: Date())
             disk.observed = settings.syncProjection
-        } else {
-            // The journal is committed before UserDefaults, so replay a write
-            // interrupted between the two stores without inventing edit times.
-            applyReplica()
         }
         settings.onPersistentChange = { [weak self] in self?.capture() }
         status.enabled = disk.enabled; status.awaitingAccount = disk.awaitingAccount
@@ -84,24 +117,47 @@ final class SettingsSyncCoordinator {
         accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.refreshAccount() }
         }
+        // Network recovery retries only a connection that never started; a
+        // running engine schedules its own work.
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = path.status == .satisfied
+            Task { @MainActor in self?.networkChanged(satisfied) }
+        }
+        monitor.start(queue: .main)
+        path = monitor
         publish(); persist()
-        if disk.enabled && !disk.awaitingAccount { refresh() }
+        // Launch never locks; only the settings window's read does.
+        if disk.enabled && !disk.awaitingAccount { refresh(lock: false) }
     }
     func shutdown() {
         stopTransport()
+        path?.cancel(); path = nil
         if let accountObserver { NotificationCenter.default.removeObserver(accountObserver) }
         accountObserver = nil
         settings.onPersistentChange = nil
     }
     private func capture() {
-        guard !applying, writable else { return }
+        guard !applying, !readOnly else { return }
         let old = disk.replica.snapshot
         let projection = settings.syncProjection
         disk.replica.capture(before: disk.observed, after: projection, at: Date(), iconBases: iconBases)
         disk.observed = projection
         guard old != disk.replica.snapshot else { return }
         markChanged(from: old)
-        persist(); publish(); queueDirty()
+        // Called before the store writes its defaults; mark them afterwards.
+        if commit() { DispatchQueue.main.async { [weak self] in self?.checkpoint() } }
+        publish(); queueDirty()
+    }
+    /// Journals a change that UserDefaults will receive next. Returns whether
+    /// the journal write succeeded, i.e. whether the checkpoint may follow.
+    private func commit() -> Bool {
+        disk.commit = UUID().uuidString
+        return persist()
+    }
+    private func checkpoint() {
+        guard !readOnly, !writeFailed, let commit = disk.commit else { return }
+        defaults.set(commit, forKey: Self.checkpointKey)
     }
     private func markChanged(from old: SettingsSyncSnapshot) {
         guard let account = disk.account else { return }
@@ -110,17 +166,25 @@ final class SettingsSyncCoordinator {
             disk.accounts[account, default: .init()].dirty.insert(record.name)
         }
     }
-    private func persist() {
-        guard writable else { return }
+    @discardableResult private func persist() -> Bool {
+        guard !readOnly else { return false }
         if let account = disk.account { disk.accounts[account, default: .init()].localReplica = disk.replica }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-            try encoder.encode(disk).write(to: file, options: .atomic)
+            try write(encoder.encode(disk), file)
+            if writeFailed {
+                writeFailed = false; status.error = nil
+                if disk.enabled && !disk.awaitingAccount { refresh(lock: false) }
+            }
+            return true
         } catch {
-            status.error = "동기화 변경사항을 저장하지 못했습니다. 이 Mac의 설정은 유지되며 전송을 중단합니다."
-            writable = false
-            stopTransport()
+            if !writeFailed {
+                writeFailed = true
+                status.error = "동기화 변경사항을 저장하지 못했습니다. 이 Mac의 설정은 유지되며, 다시 저장될 때까지 전송을 멈춥니다."
+                stopTransport()
+            }
+            return false
         }
     }
     private func publish() {
@@ -128,6 +192,10 @@ final class SettingsSyncCoordinator {
         if settings.sharedMenus != shared { settings.sharedMenus = shared }
         status.iconConflicts = disk.replica.snapshot.combinedMenus.filter { $0.isPresent && $0.icon.needsChoice }
         status.awaitingAccount = disk.awaitingAccount
+    }
+    /// Skips work when nothing changed since the last apply (e.g. a send echo).
+    private func applyReplicaIfNeeded() {
+        if disk.replica.snapshot != lastApplied { applyReplica() }
     }
     private func applyReplica() {
         applying = true
@@ -144,8 +212,10 @@ final class SettingsSyncCoordinator {
             status.deletedMenus[command.id] = shadow
         }
         disk.observed = value
-        persist() // records and cursor are authoritative before UI/defaults
+        let committed = commit() // records and cursor are authoritative before UI/defaults
         settings.applySyncProjection(value)
+        if committed { checkpoint() }
+        lastApplied = disk.replica.snapshot
         let oldIDs = Set(oldCommands.map(\.id))
         for command in value.commands where !oldIDs.contains(command.id) {
             settings.menuCapture.excludedMenus.subtract(MenuPathMatch.paths(command).map { .init(appID: command.appID, path: $0) })
@@ -155,7 +225,7 @@ final class SettingsSyncCoordinator {
         publish()
     }
     func setEnabled(_ value: Bool) {
-        guard writable else { return }
+        guard !readOnly else { return }
         disk.enabled = value; status.enabled = value; persist()
         if value { refresh() }
         else {
@@ -166,6 +236,7 @@ final class SettingsSyncCoordinator {
     private func stopTransport() {
         generation = UUID(); work?.cancel(); work = nil; manualRequest = nil; rejected = []
         fetchDeadline?.cancel(); fetchDeadline = nil
+        retry?.cancel(); retry = nil
         let old = transport; transport = nil
         Task { await old?.stop() }
     }
@@ -180,7 +251,7 @@ final class SettingsSyncCoordinator {
     /// `lock` is for the settings window's initial read. A background retry
     /// never locks controls the user may already be editing.
     func refresh(lock: Bool = true) {
-        guard writable, disk.enabled, !disk.awaitingAccount else { return }
+        guard !readOnly, !writeFailed, disk.enabled, !disk.awaitingAccount else { return }
         guard Self.configured else {
             status.locked = false; status.error = "이 실행본에는 iCloud 서명 권한이 없습니다. 오프라인으로 편집할 수 있습니다."
             return
@@ -230,36 +301,68 @@ final class SettingsSyncCoordinator {
                 try await transport.fetch()
                 guard !Task.isCancelled, self.transport?.id == transport.id, self.generation == revision else { return }
                 guard !self.zoneFetchFailed else { throw CocoaError(.fileReadUnknown) }
+                self.retryDelay = .seconds(30)
                 self.fetchCompleted()
             } catch {
                 guard !Task.isCancelled, self.generation == revision else { return }
                 self.status.locked = false; self.fetchDeadline?.cancel()
                 self.status.error = "iCloud 동기화에 실패했습니다. 오프라인으로 편집할 수 있습니다. \(error.localizedDescription)"
+                // Without an engine nothing else would retry (e.g. launched offline).
+                if self.transport == nil { self.scheduleRetry() }
             }
         }
     }
     private static func accountKey(_ name: String) -> String {
         SHA256.hash(data: Data(name.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+    /// Bounded backoff (30 s doubling to 15 min) while no engine exists.
+    private func scheduleRetry() {
+        guard retry == nil, transport == nil, disk.enabled, !disk.awaitingAccount, !readOnly else { return }
+        let delay = retryDelay, revision = generation
+        retryDelay = min(retryDelay * 2, .seconds(900))
+        retry = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.generation == revision else { return }
+            self.retry = nil
+            if self.transport == nil { self.refresh(lock: false) }
+        }
+    }
+    private func networkChanged(_ satisfied: Bool) {
+        defer { online = satisfied }
+        guard satisfied, !online, transport == nil, disk.enabled, !disk.awaitingAccount else { return }
+        retry?.cancel(); retry = nil
+        refresh(lock: false)
+    }
     private func refreshAccount() {
-        guard disk.enabled, !disk.awaitingAccount, Self.configured else { return }
+        guard disk.enabled, !disk.awaitingAccount, !readOnly, Self.configured else { return }
+        accountCheck += 1
+        let check = accountCheck, revision = generation
         Task { [weak self] in
-            guard let self else { return }
-            let id = try? await CKContainer(identifier: Self.containerID).userRecordID().recordName
-            guard self.disk.enabled, !self.disk.awaitingAccount else { return }
-            // Never connected (e.g. enabled while signed out): a first sign-in
-            // is not an account change; connect without asking.
-            guard let previous = self.disk.account else {
-                if id != nil { self.refresh(lock: false) }
-                return
+            let container = CKContainer(identifier: Self.containerID)
+            let status: SettingsSyncLifecycle.AccountStatus
+            switch try? await container.accountStatus() {
+            case .available?:
+                status = .available((try? await container.userRecordID().recordName).map(Self.accountKey))
+            case .noAccount?: status = .noAccount
+            case .restricted?: status = .restricted
+            case .temporarilyUnavailable?: status = .temporarilyUnavailable
+            default: status = .couldNotDetermine
             }
-            if let id, previous == Self.accountKey(id) { return }
-            self.accountChanged()
+            // Only the newest check of the current session may act.
+            guard let self, self.accountCheck == check, self.generation == revision,
+                  self.disk.enabled, !self.disk.awaitingAccount else { return }
+            switch SettingsSyncLifecycle.accountDecision(previous: self.disk.account, status: status) {
+            case .changed: self.accountChanged()
+            case .connect: if self.transport == nil { self.refresh(lock: false) }
+            case .none: break
+            }
         }
     }
     private func accountChanged() {
         guard disk.enabled else { return }
         stopTransport(); disk.awaitingAccount = true; status.locked = false
+        // Choices for the previous account's first merge no longer apply.
+        status.initialConflicts = []
         status.message = "iCloud 계정이 변경되었습니다. 다음 오버레이에서 동기화 방법을 선택해 주세요."
         persist(); publish()
     }
@@ -310,7 +413,7 @@ final class SettingsSyncCoordinator {
                 let before = disk.replica.snapshot
                 try disk.replica.mergeInitial(account.remote, preferLocal: nil, at: Date())
                 markChanged(from: before)
-                applyReplica(); status.locked = false
+                applyReplicaIfNeeded(); status.locked = false
                 if account.quarantined.isEmpty { status.error = nil }
                 status.message = "iCloud의 최신 설정을 반영했습니다."
                 queueDirty()
@@ -330,7 +433,7 @@ final class SettingsSyncCoordinator {
         } catch { status.locked = false; status.error = "초기 동기화를 완료하지 못했습니다. 기존 데이터는 보존했습니다." }
     }
     private func queueDirty() {
-        guard writable, disk.enabled, !disk.awaitingAccount, let key = disk.account,
+        guard !readOnly, !writeFailed, disk.enabled, !disk.awaitingAccount, let key = disk.account,
               let account = disk.accounts[key], account.initialMergeDone, let transport else { return }
         let names = account.dirty.filter { account.quarantined[$0] == nil && !rejected.contains($0) }
         guard !names.isEmpty else { return }
@@ -361,8 +464,20 @@ final class SettingsSyncCoordinator {
                 disk.accounts[key]!.dirty.insert(name)
             }
         case .fetchedDatabaseChanges(let changes):
-            if changes.deletions.contains(where: { $0.zoneID == SettingsCloudTransport.zone }) {
+            for deletion in changes.deletions where deletion.zoneID == SettingsCloudTransport.zone {
+                let reason: SettingsSyncLifecycle.ZoneDeletion
+                switch deletion.reason {
+                case .deleted: reason = .deletedByApp
+                case .purged: reason = .purgedByUser
+                case .encryptedDataReset: reason = .encryptedDataReset
+                @unknown default: reason = .unknown
+                }
+                guard SettingsSyncLifecycle.action(for: reason) == .recreate else { iCloudDataRemoved(account: key); return }
+                // Deleted by this app (another Mac): the server is empty, so
+                // nothing cached for that zone may hold back the re-creation.
                 disk.accounts[key]!.serverRecords = [:]
+                disk.accounts[key]!.remote = SettingsSyncSnapshot()
+                disk.accounts[key]!.quarantined = [:]
                 disk.accounts[key]!.initialMergeDone = false
                 disk.accounts[key]!.zoneReady = false
                 await transport.enqueue([], createZone: true)
@@ -371,10 +486,14 @@ final class SettingsSyncCoordinator {
             if changes.savedZones.contains(where: { $0.zoneID == SettingsCloudTransport.zone }) {
                 disk.accounts[key]!.zoneReady = true
             }
-            if changes.failedZoneSaves.contains(where: { $0.zone.zoneID == SettingsCloudTransport.zone }) {
+            if let failure = changes.failedZoneSaves.first(where: { $0.zone.zoneID == SettingsCloudTransport.zone }) {
+                if failure.error.code == .userDeletedZone { iCloudDataRemoved(account: key); return }
                 status.error = "iCloud 저장 공간을 준비하지 못했습니다. 변경사항은 이 Mac에 보존합니다."
             }
         case .sentRecordZoneChanges(let changes):
+            if changes.failedRecordSaves.contains(where: { $0.error.code == .userDeletedZone }) {
+                iCloudDataRemoved(account: key); return
+            }
             for record in changes.savedRecords {
                 storeServer(record, account: key)
                 if let value = decode(record), outgoingPayloads()[record.recordID.recordName] == value {
@@ -408,14 +527,16 @@ final class SettingsSyncCoordinator {
                     status.error = "iCloud 전송을 완료하지 못했습니다. 변경사항은 이 Mac에 보존합니다."
                 }
             }
-            if disk.accounts[key]!.initialMergeDone { applyReplica() }
+            if disk.accounts[key]!.initialMergeDone { applyReplicaIfNeeded() }
             queueDirty()
         case .willFetchChanges:
             zoneFetchFailed = false; zoneFetchSucceeded = false
         case .didFetchRecordZoneChanges(let result):
             if result.zoneID == SettingsCloudTransport.zone {
-                // A zone that does not exist (yet) is an empty, successful read.
-                if let error = result.error, error.code != .zoneNotFound, error.code != .userDeletedZone {
+                // The user deleted the data in Settings: never resend it.
+                if result.error?.code == .userDeletedZone { iCloudDataRemoved(account: key); return }
+                // A zone that does not exist yet (first connection) is an empty read.
+                if let error = result.error, error.code != .zoneNotFound {
                     zoneFetchFailed = true
                 } else {
                     zoneFetchSucceeded = true
@@ -432,6 +553,25 @@ final class SettingsSyncCoordinator {
         default: break
         }
         persist()
+    }
+    /// `purged` / `encryptedDataReset` / `userDeletedZone`: Apple requires
+    /// deleting locally cached data and not resending it. This Mac's own
+    /// settings (UserDefaults) stay; the account's cached records, outbox,
+    /// cursor and quarantine are dropped, the journal restarts from the current
+    /// settings as legacy values (no new edit time), and this Mac stops
+    /// syncing until the user turns it on again.
+    private func iCloudDataRemoved(account key: String) {
+        stopTransport()
+        disk.accounts[key] = CloudAccountState()
+        var fresh = SettingsSyncReplica()
+        let current = settings.syncProjection
+        fresh.capture(before: nil, after: current, at: Date())
+        disk.replica = fresh; disk.observed = current; lastApplied = nil
+        disk.enabled = false
+        status.enabled = false; status.locked = false; status.initialConflicts = []; status.deletedMenus = [:]
+        status.message = "이 Mac의 동기화를 껐습니다."
+        status.error = "iCloud에서 Tile Launcher 동기화 데이터가 삭제되었습니다(설정 앱의 데이터 삭제 또는 암호화 데이터 재설정). 이 Mac의 설정은 그대로 두었고, 삭제된 데이터를 다시 올리지 않도록 동기화를 껐습니다."
+        persist(); publish()
     }
     private func receive(_ record: CKRecord, account: String) {
         guard record.recordID.zoneID == SettingsCloudTransport.zone else { return }
@@ -467,7 +607,7 @@ final class SettingsSyncCoordinator {
         Dictionary(disk.replica.snapshot.records.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
     }
     func outgoingRecords(session: UUID) -> [String: CKRecord] {
-        guard writable, disk.enabled, !disk.awaitingAccount, transport?.id == session,
+        guard !readOnly, !writeFailed, disk.enabled, !disk.awaitingAccount, transport?.id == session,
               let key = disk.account, let account = disk.accounts[key], account.initialMergeDone else { return [:] }
         var result: [String: CKRecord] = [:]
         for (name, value) in outgoingPayloads() where account.dirty.contains(name) && account.quarantined[name] == nil && !rejected.contains(name) {
