@@ -7,9 +7,10 @@ import DeckCore
 struct MenuGlyphButton: View {
     let command: MenuCommand
     let choose: (String?) -> Void
+    var beginEditing: (() -> Void)? = nil
     @State private var editing = false
     var body: some View {
-        Button { editing = true } label: { MenuGlyphPreview(glyph: command.glyph).frame(width: 34, height: 26) }
+        Button { beginEditing?(); editing = true } label: { MenuGlyphPreview(glyph: command.glyph).frame(width: 34, height: 26) }
             .buttonStyle(.bordered).controlSize(.small)
             .help("메뉴 아이콘 선택 · 직접 지정 → 저장한 앱 리소스 → 기본 아이콘 → 단축키 → 메뉴 이름")
             .accessibilityLabel("\(command.title) 아이콘 선택")

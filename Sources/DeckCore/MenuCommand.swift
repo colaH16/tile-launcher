@@ -24,6 +24,8 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     public var pathAliases: [[String]]?
     public var resourceBinding: MenuResourceBinding?
     public var resourceIdentityVersion: Int?
+    /// Shared matching hint; execution still requires a binding verified on this Mac.
+    public var syncResourceIdentity: MenuResourceIdentity?
     public var title: String { path.last ?? "" }
     public var totalUseCount: Int {
         let (total, overflow) = useCount.addingReportingOverflow(observedCount)
@@ -50,7 +52,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = false; observedCount = 0; recentUses = []
     }
     private enum CodingKeys: String, CodingKey {
-        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol, resourceIcon, pathAliases, resourceBinding, resourceIdentityVersion
+        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol, resourceIcon, pathAliases, resourceBinding, resourceIdentityVersion, syncResourceIdentity
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -63,6 +65,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         pathAliases = try? c.decodeIfPresent([[String]].self, forKey: .pathAliases)
         resourceBinding = try? c.decodeIfPresent(MenuResourceBinding.self, forKey: .resourceBinding)
         resourceIdentityVersion = try? c.decodeIfPresent(Int.self, forKey: .resourceIdentityVersion)
+        syncResourceIdentity = try? c.decodeIfPresent(MenuResourceIdentity.self, forKey: .syncResourceIdentity)
         path = try c.decode([String].self, forKey: .path)
         isPinned = try c.decode(Bool.self, forKey: .isPinned)
         useCount = max(0, try c.decode(Int.self, forKey: .useCount))

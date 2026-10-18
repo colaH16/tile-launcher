@@ -8,6 +8,7 @@ Credentials stay in Keychain/gh; this tool never accepts passwords or private ke
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import fnmatch
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -133,6 +134,42 @@ def app_path(output):
     return output / 'products' / APP
 
 
+def cloud_entitlements(profile, team_id, identity=None):
+    """Validate a Developer ID profile without exporting credentials or keys."""
+    expiry = profile.get('ExpirationDate')
+    require(isinstance(expiry, datetime), 'Provisioning profile has no expiration date.')
+    require(expiry.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc), 'Provisioning profile expired.')
+    require(profile.get('ProvisionsAllDevices') is True and not profile.get('ProvisionedDevices'),
+            'Use a Developer ID distribution profile, not a device-limited development profile.')
+    require(profile.get('TeamIdentifier') == [team_id], 'Provisioning profile team mismatch.')
+    allowed = profile.get('Entitlements', {})
+    require(not allowed.get('com.apple.security.get-task-allow', False) and not allowed.get('get-task-allow', False),
+            'Debugging entitlement is forbidden in a release profile.')
+    identifier = team_id + '.' + BUNDLE_ID
+    require(allowed.get('com.apple.application-identifier') == identifier, 'Provisioning profile App ID mismatch.')
+    expected = {
+        'com.apple.security.automation.apple-events': True,
+        'com.apple.application-identifier': identifier,
+        'com.apple.developer.team-identifier': team_id,
+        'com.apple.developer.icloud-container-identifiers': ['iCloud.' + BUNDLE_ID],
+        'com.apple.developer.icloud-services': ['CloudKit'],
+        'com.apple.developer.icloud-container-environment': 'Production',
+        'com.apple.developer.aps-environment': 'production',
+    }
+    for key, value in expected.items():
+        if key == 'com.apple.security.automation.apple-events': continue
+        if isinstance(value, list):
+            choices = allowed.get(key, [])
+            require(isinstance(choices, list) and all(any(fnmatch.fnmatchcase(v, pattern) for pattern in choices) for v in value),
+                    'Provisioning profile does not allow ' + key)
+        else:
+            require(allowed.get(key) == value, 'Provisioning profile does not allow ' + key)
+    if identity is not None:
+        require(any(hashlib.sha1(cert).hexdigest().lower() == identity.lower()
+                    for cert in profile.get('DeveloperCertificates', [])), 'Signing certificate is not included in provisioning profile.')
+    return expected
+
+
 def check_bundle(bundle, manifest, developer_id=False):
     cfg = manifest['config']
     require(manifest['signing'] in ['adhoc', 'developer-id', 'notarized'], 'Unknown signing state.')
@@ -157,7 +194,14 @@ def check_bundle(bundle, manifest, developer_id=False):
         require('(runtime)' in text and 'Timestamp=' in text, 'Hardened runtime or secure timestamp missing.')
         entitlements = run(['/usr/bin/codesign', '-d', '--entitlements', ':-', bundle])
         parsed = plistlib.loads(entitlements.encode()) if entitlements else {}
-        require(parsed == {'com.apple.security.automation.apple-events': True}, 'Unexpected release entitlements.')
+        if manifest.get('cloud_profile_sha256'):
+            profile_path = bundle / 'Contents/embedded.provisionprofile'
+            require(profile_path.is_file() and digest(profile_path) == manifest['cloud_profile_sha256'], 'Cloud provisioning profile missing or changed.')
+            profile = plistlib.loads(run(['/usr/bin/security', 'cms', '-D', '-i', profile_path]).encode())
+            require(parsed == cloud_entitlements(profile, manifest['team_id']), 'Unexpected cloud release entitlements.')
+        else:
+            require(version_tuple(cfg['version']) < (2, 0, 0), '2.0 requires an embedded CloudKit Developer ID profile.')
+            require(parsed == {'com.apple.security.automation.apple-events': True}, 'Unexpected release entitlements.')
     else:
         require('Signature=adhoc' in details.stderr, 'Expected development ad-hoc signing.')
     return info
@@ -291,11 +335,24 @@ def sign(args):
     manifest['team_id'] = args.team_id
     entitlements = plistlib.loads((args.output / 'entitlements.plist').read_bytes())
     require(entitlements == {'com.apple.security.automation.apple-events': True}, 'Unexpected signing entitlements.')
+    cloud_profile = getattr(args, 'cloud_profile', None)
+    require(version_tuple(manifest['config']['version']) < (2, 0, 0) or cloud_profile is not None,
+            '2.0 CloudKit signing requires --cloud-profile with a matching Developer ID profile.')
+    signing_entitlements = args.output / 'entitlements.plist'
+    if cloud_profile is not None:
+        cloud_profile = cloud_profile.expanduser().resolve()
+        profile = plistlib.loads(run(['/usr/bin/security', 'cms', '-D', '-i', cloud_profile]).encode())
+        entitlements = cloud_entitlements(profile, args.team_id, args.identity)
+        manifest['cloud_profile_sha256'] = digest(cloud_profile)
     with tempfile.TemporaryDirectory(prefix='tile-sign-') as temporary:
         staged = Path(temporary) / APP
         shutil.copytree(app_path(args.output), staged)
+        if cloud_profile is not None:
+            shutil.copy2(cloud_profile, staged / 'Contents/embedded.provisionprofile')
+            signing_entitlements = Path(temporary) / 'entitlements.plist'
+            signing_entitlements.write_bytes(plistlib.dumps(entitlements))
         run(['/usr/bin/codesign', '--force', '--sign', args.identity, '--options', 'runtime', '--timestamp',
-             '--entitlements', args.output / 'entitlements.plist', staged])
+             '--entitlements', signing_entitlements, staged])
         check_bundle(staged, manifest, developer_id=True)
         previous = args.output / 'pre-sign.app'
         require(not previous.exists(), 'An interrupted signing backup exists; inspect it first.')
@@ -486,6 +543,7 @@ def main():
         if name == 'sign':
             command.add_argument('--identity', required=True)
             command.add_argument('--team-id', required=True)
+            command.add_argument('--cloud-profile', type=Path, help='Developer ID profile enabling CloudKit and macOS push notifications.')
         if name == 'notarize':
             command.add_argument('--keychain-profile', required=True)
             command.add_argument('--submission-id', help='Recover a submission whose result was interrupted.')

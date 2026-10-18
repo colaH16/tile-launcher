@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private lazy var menuUsage = MenuUsageMonitor(settings: settings)
     private var menuIcons: MenuIconService?
     private var iconReadAhead: IconReadAhead?
+    private var settingsSync: SettingsSyncCoordinator?
     private var visibleContent: OverlayContent?
     private var visibleSnapshot: OverlaySnapshot? { visibleContent?.snapshot }
     private var overlayRefresh: DispatchWorkItem?
@@ -62,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var profileChangeRevision = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        settingsSync = SettingsSyncCoordinator(settings: settings)
         iconReadAhead = IconReadAhead(settings: settings)
         menuIcons = MenuIconService(settings: settings)
         menuIcons?.onImagesUpdated = { [weak self] appID in self?.iconReadAhead?.prepareMenus(appID: appID) }
@@ -368,6 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         prepared = nil
     }
     private func show(held: Bool, restoring previousLayout: PanelLayout? = nil) {
+        if MainActor.assumeIsolated({ settingsSync?.presentAccountChangeIfNeeded() == true }) { return }
         guard panel?.isVisible != true else { return }
         optionReopen.cancel()
         checkPermission()
@@ -997,6 +1000,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return false
     }
     func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { settingsSync?.shutdown() }
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         dockHandoff.stopMonitoring()
         appSettingsMenu.cancel()

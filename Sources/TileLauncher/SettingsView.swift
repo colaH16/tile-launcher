@@ -27,7 +27,10 @@ struct SettingsView: View {
                                     requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
                     .tabItem { Label("일반", systemImage: "gearshape") }.tag(SettingsTab.general)
                 SettingsEditorPane(session: editor, draft: editor.appearance, tab: .appearance) { draft in
-                    AppearanceView(settings: draft)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Label("iCloud 동기화 대상", systemImage: "icloud").font(.caption).foregroundStyle(.secondary).padding(.horizontal, SettingsSpacing.paneInset)
+                        AppearanceView(settings: draft)
+                    }
                 }.tabItem { Label("모양", systemImage: "paintpalette") }.tag(SettingsTab.appearance)
                 SettingsEditorPane(session: editor, draft: editor.menus, tab: .menus) { draft in
                     MenuSettingsView(settings: draft, preferredApp: navigation.preferredApp, additionRequest: navigation.menuAddition,
@@ -40,7 +43,7 @@ struct SettingsView: View {
             }.padding(SettingsWindowLayout.outerPadding)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         }
-        .onAppear { editor.activate() }
+        .onAppear { editor.activate(); settings.syncStatus.refresh?() }
         .sheet(item: Binding(get: { editor.registered.dockImportPreview }, set: { editor.registered.dockImportPreview = $0 }),
                onDismiss: editor.registered.cancelDockImport) { change in
             DockImportPreview(change: change, apply: { editor.registered.applyDockImport(change) },
@@ -50,6 +53,7 @@ struct SettingsView: View {
     }
     private func registeredPane(settings: SettingsStore) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            Label("이 Mac에만 저장 · iCloud 동기화 안 함", systemImage: "desktopcomputer").font(.caption).foregroundStyle(.secondary)
             GroupBox("프로필") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -214,7 +218,7 @@ struct MenuSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
                     HStack {
-                        Button("메뉴 추가…") { beginAddition(app: nil) }
+                        SyncEditingGate(status: settings.syncStatus) { Button("메뉴 추가…") { beginAddition(app: nil) } }
                         Spacer()
                     }
                 }.fixedSize(horizontal: false, vertical: true)
@@ -228,6 +232,7 @@ struct MenuSettingsView: View {
             refreshApps()
             handleAdditionRequest()
         }
+        .onChange(of: selectedID) { _, value in settings.syncStatus.checkMenus?(value) }
         .onChange(of: additionRequest?.id) { _, _ in handleAdditionRequest() }
         .onChange(of: settings.menuRecentDaysInput) { _, _ in settings.updateMenuHistoryInput() }
         .onChange(of: settings.menuFrequentDaysInput) { _, _ in settings.updateMenuHistoryInput() }
@@ -249,7 +254,7 @@ struct MenuSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox("공통 메뉴") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Toggle("앱 설정 타일 표시", isOn: $settings.showAppSettingsTile)
+                    SyncEditingGate(status: settings.syncStatus) { Toggle("앱 설정 타일 표시", isOn: $settings.showAppSettingsTile) }
                     Text("자동 수집과 별개로, 설정 메뉴를 지원하는 앱에 타일을 표시합니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
@@ -363,8 +368,18 @@ struct MenuSettingsView: View {
     }
     private func savedMenuRow(_ command: MenuCommand, moves: MenuCommand.MoveTargets?) -> some View {
         HStack {
-            MenuGlyphButton(command: command) { settings.setSymbol($0, for: command.id) }
-            MenuCommandDetails(command: command, history: settings.menuHistory)
+            MenuGlyphButton(command: command, choose: { settings.setSymbol($0, for: command.id) },
+                            beginEditing: { settings.syncStatus.beginIconEdit?(command.id) })
+            VStack(alignment: .leading, spacing: 3) {
+                MenuCommandDetails(command: command, history: settings.menuHistory)
+                    .strikethrough(settings.unavailableMenus.contains(command.id))
+                if settings.unavailableMenus.contains(command.id) {
+                    Text("이 Mac의 앱에 없는 메뉴 · 데이터는 보존됩니다").font(.caption).foregroundStyle(.secondary)
+                }
+                if settings.sharedMenus.contains(command.id) {
+                    Label("iCloud 동기화 대상", systemImage: "icloud").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
             Spacer()
             Button { settings.togglePin(command.id) } label: {
                 Image(systemName: command.isPinned ? "pin.fill" : "pin")
@@ -381,6 +396,7 @@ struct MenuSettingsView: View {
             Button { settings.removeCommand(command) } label: { Image(systemName: "minus.circle") }
                 .help("목록에서 삭제하고 자동 수집에서도 제외")
         }.buttonStyle(.borderless)
+        .modifier(SyncMenuRowLock(status: settings.syncStatus))
     }
     private func beginAddition(app: AppItem?) {
         refreshApps()
@@ -399,6 +415,7 @@ struct MenuSettingsView: View {
         beginAddition(app: request.app)
     }
     private func refreshApps() {
+        settings.syncStatus.checkMenus?(selectedID)
         applications = applicationProvider?() ?? NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
             .compactMap { app in
                 guard let id = app.bundleIdentifier ?? app.bundleURL?.path else { return nil }

@@ -26,6 +26,7 @@ struct GeneralSettingsContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsSpacing.footerGap) {
             VStack(alignment: .leading, spacing: SettingsSpacing.sectionGap) {
+                SettingsSyncControls(status: settings.syncStatus)
                 Text("Option을 0.25초 누르면 커서 근처에 열립니다.").font(.callout).foregroundStyle(.secondary)
                 GroupBox("시작") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -37,8 +38,8 @@ struct GeneralSettingsContent: View {
                         if let error = loginItem.error { Text(error).font(.caption).foregroundStyle(.red) }
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
-                OptionReopenSettings(settings: settings)
-                GroupBox("숫자 단축키") {
+                SyncEditingGate(status: settings.syncStatus) { OptionReopenSettings(settings: settings) }
+                SyncEditingGate(status: settings.syncStatus) { GroupBox("숫자 단축키") {
                     VStack(alignment: .leading, spacing: 10) {
                         Picker("기본 조합", selection: $settings.numberShortcuts) {
                             ForEach(NumberShortcutAssignment.allCases) { Text($0.title).tag($0) }
@@ -49,7 +50,8 @@ struct GeneralSettingsContent: View {
                         Text("⌥A 또는 ⌥S: 이전 프로필 · ⌥D 또는 ⌥F: 다음 프로필").font(.caption)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
-                GroupBox("최근 창") {
+                }
+                SyncEditingGate(status: settings.syncStatus) { GroupBox("최근 창") {
                     VStack(alignment: .leading, spacing: 10) {
                         Toggle("패널 크기에 맞춰 자동 배치 · 전체 창 포함", isOn: $settings.automatic)
                         HStack {
@@ -63,11 +65,13 @@ struct GeneralSettingsContent: View {
                         RecentWindowExplanation()
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
+                }
                 PermissionsSettingsSection(requestPermission: requestPermission, openAppManagementSettings: openAppManagementSettings)
             }
             Text(AppIdentity.versionLabel).font(.caption).foregroundStyle(.secondary)
         }.modifier(SettingsPaneInsets()).fixedSize(horizontal: false, vertical: true)
         .onAppear { countText = String(settings.manualCount); loginItem.refresh() }
+        .onChange(of: settings.manualCount) { _, value in countText = String(value) }
     }
     private func saveCount() {
         guard let value = Int(countText.trimmingCharacters(in: .whitespaces)), value >= 6 else { invalidCount = true; return }

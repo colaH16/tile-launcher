@@ -16,7 +16,7 @@ public enum SettingsDraftMerge {
         var replacements = edited.filter(Set(latest).contains).makeIterator()
         return latest.map { wanted.contains($0) ? replacements.next()! : $0 }
     }
-    public static func commands(before: [MenuCommand], edited: [MenuCommand], latest: [MenuCommand]) -> [MenuCommand] {
+    public static func commands(before: [MenuCommand], edited: [MenuCommand], latest: [MenuCommand], tombstones: [UUID: MenuCommand] = [:]) -> [MenuCommand] {
         let old = Dictionary(before.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let retained = Set(edited.map(\.id))
         var result = latest.filter { old[$0.id] == nil || retained.contains($0.id) }
@@ -25,6 +25,13 @@ public enum SettingsDraftMerge {
         var mappedIDs: [UUID: UUID] = [:]
         for change in edited {
             if let base = old[change.id] {
+                if positions[change.id] == nil {
+                    guard base.isPinned != change.isPinned || base.symbol != change.symbol else { continue }
+                    var restored = tombstones[change.id] ?? base
+                    restored.isPinned = field(base.isPinned, change.isPinned, restored.isPinned)
+                    restored.symbol = field(base.symbol, change.symbol, restored.symbol)
+                    positions[change.id] = result.count; result.append(restored)
+                }
                 guard let index = positions[change.id] else { continue }
                 var current = result[index]
                 current.isPinned = field(base.isPinned, change.isPinned, current.isPinned)
@@ -81,7 +88,7 @@ public struct MenuSettingsDraft: Equatable {
         lhs.showsAppSettings == rhs.showsAppSettings && lhs.capture == rhs.capture && lhs.history == rhs.history
             && lhs.commands.map(EditableMenu.init) == rhs.commands.map(EditableMenu.init)
     }
-    public func rebased(from before: Self, onto latest: Self) -> Self {
+    public func rebased(from before: Self, onto latest: Self, tombstones: [UUID: MenuCommand] = [:]) -> Self {
         var capture = latest.capture
         capture.enabled = SettingsDraftMerge.field(before.capture.enabled, self.capture.enabled, capture.enabled)
         capture.excludedApps = SettingsDraftMerge.set(before.capture.excludedApps, self.capture.excludedApps, capture.excludedApps)
@@ -90,7 +97,7 @@ public struct MenuSettingsDraft: Equatable {
                     capture: capture,
                     history: .init(recentDays: SettingsDraftMerge.field(before.history.recentDays, history.recentDays, latest.history.recentDays),
                                    frequentDays: SettingsDraftMerge.field(before.history.frequentDays, history.frequentDays, latest.history.frequentDays)),
-                    commands: SettingsDraftMerge.commands(before: before.commands, edited: commands, latest: latest.commands))
+                    commands: SettingsDraftMerge.commands(before: before.commands, edited: commands, latest: latest.commands, tombstones: tombstones))
     }
     private struct EditableMenu: Equatable {
         let id: UUID

@@ -487,6 +487,13 @@ struct FittedSettingsPreview: View {
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if ProcessInfo.processInfo.environment["TILE_PREVIEW_SYNC_ONLY"] == "1" {
+            try SettingsSyncValidation.verify()
+            let fixture = PreviewFixture(theme: .classic), login = LoginItemManager()
+            let size = SettingsWindowLayout.fittedContentSize(settings: fixture.settings, loginItem: login)
+            try verifySettingsWindowLayout(contentSize: size, settings: fixture.settings, loginItem: login, directory: directory)
+            return
+        }
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_MENU_ORDER_PROPOSAL"] == "1" {
             let collected = MenuOrderProposal.automaticallyOrdered
             precondition(collected.map(\.totalUseCount) == [4, 3, 1])
@@ -520,6 +527,24 @@ enum PreviewExport {
                  to: directory.appendingPathComponent("settings-dock-import-undo.png"))
         // Target only this fixture when checking small sheet-layout refinements.
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_DOCK_ONLY"] == "1" { return }
+        try SettingsSyncValidation.verify()
+        let syncPreview = SettingsSyncStatus()
+        syncPreview.enabled = true
+        syncPreview.locked = true
+        syncPreview.message = "iCloud의 최신 변경사항을 확인하고 있습니다…"
+        try save(SettingsSyncControls(status: syncPreview).padding(16).frame(width: 580)
+            .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
+            to: directory.appendingPathComponent("settings-sync-fetching.png"))
+        syncPreview.initialConflicts = ["pref:theme", "pref:manualWindowCount"]
+        syncPreview.message = "2.0 이전 설정의 충돌을 선택해 주세요. 충돌 없는 항목은 합칩니다."
+        try save(SettingsSyncControls(status: syncPreview).padding(16).frame(width: 580)
+            .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
+            to: directory.appendingPathComponent("settings-sync-initial-choice.png"))
+        syncPreview.initialConflicts = []; syncPreview.locked = false
+        syncPreview.error = "연결을 확인하지 못했습니다. 오프라인 편집을 허용하며 연결되면 다시 합칩니다."
+        try save(SettingsSyncControls(status: syncPreview).padding(16).frame(width: 580)
+            .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark),
+            to: directory.appendingPathComponent("settings-sync-offline.png"))
         let (editingSource, editing) = try SettingsEditingValidation.verify()
         try save(SettingsEditorPane(session: editing, draft: editing.appearance, tab: .appearance) {
             AppearanceView(settings: $0)
@@ -937,8 +962,13 @@ enum PreviewExport {
             navigation: navigation, requestPermission: {}, openAppManagementSettings: {}, applicationProvider: { [] }))
         let largeScreen = CGRect(x: 0, y: 0, width: 1920, height: 1400)
         SettingsWindowLayout.apply(to: window, contentSize: contentSize, visibleFrame: largeScreen)
-        guard window.contentLayoutRect.size == contentSize, contentSize.height < 1000,
-              window.styleMask.contains(.resizable) else { throw NSError(domain: "TileLauncher.Preview", code: 76) }
+        // The 2.0 participation row increases the natural general pane to 1001pt.
+        // Keep a bounded default and retain the smaller-screen clamp below.
+        guard window.contentLayoutRect.size == contentSize, contentSize.height <= 1040,
+              window.styleMask.contains(.resizable) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 76,
+                userInfo: [NSLocalizedDescriptionKey: "Settings size expected=\(contentSize), actual=\(window.contentLayoutRect.size), resizable=\(window.styleMask.contains(.resizable))"])
+        }
         window.contentView?.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         window.contentView?.layoutSubtreeIfNeeded()

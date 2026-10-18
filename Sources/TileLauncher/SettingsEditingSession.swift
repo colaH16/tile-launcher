@@ -18,6 +18,7 @@ final class SettingsEditingSession: ObservableObject {
     private var syncScheduled = false
     private var observationRevision = 0
     private var menuIcons: MenuIconService?
+    var syncStatus: SettingsSyncStatus { source.syncStatus }
 
     init(source: SettingsStore) {
         self.source = source
@@ -69,7 +70,7 @@ final class SettingsEditingSession: ObservableObject {
         }
     }
     func canSave(_ tab: SettingsTab) -> Bool {
-        hasChanges(tab) && (tab != .menus || (menus.validMenuHistoryInput != nil && menus.refreshingMenuIcons.isEmpty))
+        !(syncStatus.locked && (tab == .appearance || tab == .menus)) && hasChanges(tab) && (tab != .menus || (menus.validMenuHistoryInput != nil && menus.refreshingMenuIcons.isEmpty))
             && (tab != .registered || (!registered.importingDock && registered.dockImportPreview == nil))
     }
     func synchronize() {
@@ -79,11 +80,13 @@ final class SettingsEditingSession: ObservableObject {
         let menuNow = Self.menuState(source, usingInputs: false)
         let keepRecent = menus.menuRecentDaysInput != String(menuBase.history.recentDays)
         let keepFrequent = menus.menuFrequentDaysInput != String(menuBase.history.frequentDays)
-        let nextMenu = Self.menuState(menus).rebased(from: menuBase, onto: menuNow)
+        let nextMenu = Self.menuState(menus).rebased(from: menuBase, onto: menuNow, tombstones: source.syncStatus.deletedMenus)
         apply(nextMenu, to: menus, resetInputs: false)
         if !keepRecent { menus.menuRecentDaysInput = String(nextMenu.history.recentDays) }
         if !keepFrequent { menus.menuFrequentDaysInput = String(nextMenu.history.frequentDays) }
         menuBase = menuNow
+        if menus.unavailableMenus != source.unavailableMenus { menus.unavailableMenus = source.unavailableMenus }
+        if menus.sharedMenus != source.sharedMenus { menus.sharedMenus = source.sharedMenus }
         if menus.menuCaptureStatus != source.menuCaptureStatus { menus.menuCaptureStatus = source.menuCaptureStatus }
         let registeredNow = Self.registeredState(source)
         do {
@@ -133,6 +136,7 @@ final class SettingsEditingSession: ObservableObject {
                 return
             }
         }
+        if tab == .menus { source.syncStatus.clearIconEdits?() }
         setError(nil, for: tab)
         objectWillChange.send()
     }
@@ -143,6 +147,7 @@ final class SettingsEditingSession: ObservableObject {
             appearanceBase = Self.appearanceState(source)
             apply(appearanceBase, to: appearance)
         case .menus:
+            source.syncStatus.clearIconEdits?()
             // Pending resource scans remain tied to the discarded service.
             menuIcons?.invalidatePending()
             menuIcons = nil
@@ -157,6 +162,7 @@ final class SettingsEditingSession: ObservableObject {
             registeredBase = Self.registeredState(source)
             apply(registeredBase, to: registered)
         }
+        if tab == .menus { source.syncStatus.clearIconEdits?() }
         setError(nil, for: tab)
         objectWillChange.send()
     }

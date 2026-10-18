@@ -166,6 +166,10 @@ final class OverlayContent: ObservableObject {
     }
 }
 final class SettingsStore: ObservableObject {
+    var syncStatus = SettingsSyncStatus()
+    @Published var unavailableMenus: Set<UUID> = []
+    @Published var sharedMenus: Set<UUID> = []
+    var onPersistentChange: (() -> Void)?
     @Published private(set) var importingDock = false
     @Published private var dockImportMessages: [String: String] = [:]
     var dockImportMessage: String? { dockImportMessages[activeProfile.id] }
@@ -246,6 +250,7 @@ final class SettingsStore: ObservableObject {
         profiles.swapAt(index, index + offset)
     }
     func addCommand(_ command: MenuCommand) {
+        guard !syncStatus.locked else { return }
         let restored = Set(MenuPathMatch.paths(command).map { MenuIdentity(appID: command.appID, path: $0) })
         menuCapture.excludedMenus.subtract(restored)
         guard MenuCaptureHistory.index(of: MenuIdentity(appID: command.appID, path: command.path), in: commands) == nil else { return }
@@ -259,6 +264,7 @@ final class SettingsStore: ObservableObject {
         if isNew, let added = commands.first(where: { $0.appID == menu.identity.appID && $0.path == menu.identity.path }) { onMenuAdded?(added) }
     }
     func removeCommand(_ command: MenuCommand) {
+        guard !syncStatus.locked else { return }
         menuCapture.excludedMenus.formUnion(MenuPathMatch.paths(command).map { MenuIdentity(appID: command.appID, path: $0) })
         commands.removeAll { $0.id == command.id }
     }
@@ -266,13 +272,18 @@ final class SettingsStore: ObservableObject {
         commands.removeAll { $0.appID == appID && $0.isAutomatic && !$0.isPinned }
     }
     func togglePin(_ id: UUID) {
+        guard !syncStatus.locked else { return }
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
         commands[i].isPinned.toggle()
     }
     func setSymbol(_ name: String?, for id: UUID) {
+        guard !syncStatus.locked else { return }
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }
         let symbol = MenuSymbolName.stored(name)
-        if commands[i].symbol != symbol { commands[i].symbol = symbol }
+        if commands[i].symbol != symbol {
+            syncStatus.beginIconEdit?(id)
+            commands[i].symbol = symbol
+        }
     }
     /// The app's current keyboard equivalent; nil clears a removed shortcut.
     func updateShortcut(_ shortcut: MenuShortcut?, for id: UUID) {
@@ -284,6 +295,7 @@ final class SettingsStore: ObservableObject {
         commands[i].recordUse(at: Date())
     }
     func moveCommand(_ id: UUID, by offset: Int) {
+        guard !syncStatus.locked else { return }
         guard let target = MenuCommand.pinnedMoveTarget(for: id, by: offset, in: commands),
               let from = commands.firstIndex(where: { $0.id == id }),
               let to = commands.firstIndex(where: { $0.id == target }) else { return }
@@ -324,6 +336,8 @@ final class SettingsStore: ObservableObject {
     }
     func makeEditingCopy() -> SettingsStore {
         let copy = SettingsStore(defaults: defaults, persistsChanges: false)
+        copy.syncStatus = syncStatus
+        copy.unavailableMenus = unavailableMenus; copy.sharedMenus = sharedMenus
         copy.profiles = profiles; copy.manualProfileID = manualProfileID; copy.followFocus = followFocus
         copy.focusProfileID = focusProfileID; copy.numberShortcuts = numberShortcuts
         copy.commands = commands; copy.menuHistory = menuHistory; copy.menuCapture = menuCapture
@@ -344,6 +358,7 @@ final class SettingsStore: ObservableObject {
     private func save() {
         guard persistsChanges else { return }
         guard saveDepth == 0 else { pendingSave = true; return }
+        onPersistentChange?()
         if let data = try? JSONEncoder().encode(profiles) { defaults.set(data, forKey: "launcherProfiles") }
         if let data = try? JSONEncoder().encode(profiles.first { $0.id == "default" }?.items ?? profiles[0].items) {
             defaults.set(data, forKey: "pinnedItems")

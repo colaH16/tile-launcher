@@ -65,6 +65,8 @@ public enum MenuPathMatch {
         return paths.filter { seen.insert(key($0)).inserted }
     }
     public static func paths(_ command: MenuCommand) -> [[String]] {
+        if let shared = command.syncResourceIdentity,
+           command.resourceBinding?.identity != shared { return [] }
         guard let binding = command.resourceBinding, binding.identity.appID == command.appID,
               !binding.identity.archive.isEmpty, (2...12).contains(binding.identity.keys.count),
               binding.paths.count <= 128,

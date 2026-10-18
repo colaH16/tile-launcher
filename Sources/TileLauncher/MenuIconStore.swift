@@ -41,10 +41,13 @@ final class MenuIconRepository {
     }
     func binding(for command: MenuCommand) -> MenuResourceBinding? {
         guard let catalog = catalogs[command.appID] else { return nil }
-        return MenuResourceMatch.binding(appID: command.appID, path: command.path, entries: catalog.entries)
+        let binding = MenuResourceMatch.binding(appID: command.appID, path: command.path, entries: catalog.entries)
+        if let hint = command.syncResourceIdentity, binding?.identity != hint { return nil }
+        return binding
     }
     func resolve(_ command: MenuCommand) -> MenuResourceIcon? {
         let binding = binding(for: command)
+        if command.syncResourceIdentity != nil && binding == nil { return nil }
         if binding == nil, catalogs[command.appID]?.entries.contains(where: { $0.paths.contains { MenuPathMatch.same($0, command.path) } }) == true {
             return nil // Known ambiguous own-app path; a borrowed icon must not mask it.
         }

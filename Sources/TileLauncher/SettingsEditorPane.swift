@@ -8,7 +8,9 @@ struct SettingsEditorPane<Content: View>: View {
     @ViewBuilder let content: (SettingsStore) -> Content
     var body: some View {
         VStack(spacing: 0) {
-            content(draft).frame(maxWidth: .infinity, maxHeight: .infinity)
+            SyncEditingGate(status: session.syncStatus, gated: tab == .appearance) {
+                content(draft).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             VStack(spacing: 10) {
                 Divider()
                 HStack {
@@ -18,8 +20,9 @@ struct SettingsEditorPane<Content: View>: View {
                     Spacer(minLength: 8)
                     Button("변경 취소") { session.cancel(tab); onCancel() }
                         .disabled(!session.hasChanges(tab))
-                    Button("저장") { session.save(tab) }
-                        .disabled(!session.canSave(tab))
+                    SyncEditingGate(status: session.syncStatus, gated: tab == .appearance || tab == .menus) {
+                        Button("저장") { session.save(tab) }.disabled(!session.canSave(tab))
+                    }
                         .buttonStyle(.borderedProminent)
                 }
             }.padding(.horizontal, SettingsSpacing.paneInset).padding(.vertical, 10)
