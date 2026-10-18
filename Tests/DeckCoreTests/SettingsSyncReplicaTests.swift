@@ -311,4 +311,39 @@ final class SettingsSyncReplicaTests: XCTestCase {
         XCTAssertEqual(all.combinedMenus.first?.origins?.count, 3)
     }
 
+    func testSingleRecordLookupMatchesTheOutgoingMap() throws {
+        var replica = SettingsSyncReplica()
+        replica.capture(before: nil, after: projection([command(), command(["File", "Save"])]), at: Date())
+        for record in replica.snapshot.records {
+            XCTAssertEqual(replica.snapshot.record(named: record.name), record)
+        }
+        for missing in ["menu-absent", "pref-absent", "order-!", "unknown"] {
+            XCTAssertNil(replica.snapshot.record(named: missing))
+        }
+    }
+
+    func testInPlaceRecordMergeMatchesFullMergeAndKeepsFailureAtomic() throws {
+        var replica = SettingsSyncReplica()
+        replica.capture(before: nil, after: projection([command(), command(["File", "Save"])]), at: Date())
+        let original = replica.snapshot
+        let remoteStamp = SettingsSyncStamp(date: .init(timeIntervalSince1970: 30), device: "peer", sequence: 1)
+        var menu = original.menus.values.first!
+        menu.pinned = .init(false, stamp: remoteStamp)
+        let edits = [SettingsSyncRecord(menu: menu),
+                     .init(preference: "theme", value: .init(.text("glass"), stamp: remoteStamp)),
+                     .init(appOrder: "test.app", order: .init(Array(original.menus.keys.sorted().reversed()), stamp: remoteStamp))]
+        var actual = original, expected = original
+        for record in edits {
+            expected = try expected.merged(with: record.fragment())
+            try actual.merge(record: record)
+            XCTAssertEqual(actual, expected)
+        }
+        var incompatible = menu
+        incompatible = .init(id: menu.id, appID: "other.app", appName: "Other", path: ["File", "Open"],
+            presence: menu.presence, pinned: menu.pinned, icon: menu.icon)
+        let saved = actual
+        XCTAssertThrowsError(try actual.merge(record: .init(menu: incompatible)))
+        XCTAssertEqual(actual, saved)
+    }
+
 }

@@ -93,8 +93,48 @@ public extension SettingsSyncSnapshot {
         + preferences.map { .init(preference: $0.key, value: $0.value) }
         + orders.map { .init(appOrder: $0.key, order: $0.value) }
     }
+    /// Look up one raw record without rebuilding the complete outgoing map.
+    func record(named name: String) -> SettingsSyncRecord? {
+        if name.hasPrefix("menu-"), let menu = menus[String(name.dropFirst(5))] {
+            return .init(menu: menu)
+        }
+        if name.hasPrefix("pref-") {
+            let key = String(name.dropFirst(5))
+            if let field = preferences[key] { return .init(preference: key, value: field) }
+        }
+        if name.hasPrefix("order-") {
+            let encoded = String(name.dropFirst(6)).replacingOccurrences(of: "_", with: "/")
+                .replacingOccurrences(of: "-", with: "+")
+            if let data = Data(base64Encoded: encoded), let key = String(data: data, encoding: .utf8),
+               let field = orders[key] {
+                let record = SettingsSyncRecord(appOrder: key, order: field)
+                return record.name == name ? record : nil
+            }
+        }
+        return nil
+    }
     mutating func merge(record: SettingsSyncRecord) throws {
-        self = try merged(with: record.fragment())
+        guard schema == Self.currentSchema else { throw MergeError.unsupportedSchema }
+        let fragment = try record.fragment()
+        // Validate the incoming and affected local record before mutation.
+        // Full snapshots are validated on load/bulk merge; copying/scanning all
+        // other records for every fetched item makes a batch quadratic.
+        if let (key, value) = fragment.menus.first {
+            if let own = menus[key] {
+                _ = try SettingsSyncRecord(menu: own).fragment()
+                menus[key] = try own.merged(with: value)
+            } else { menus[key] = value }
+        } else if let (key, value) = fragment.preferences.first {
+            if let own = preferences[key] {
+                _ = try SettingsSyncRecord(preference: key, value: own).fragment()
+                preferences[key] = own.merged(with: value)
+            } else { preferences[key] = value }
+        } else if let (key, value) = fragment.orders.first {
+            if let own = orders[key] {
+                _ = try SettingsSyncRecord(appOrder: key, order: own).fragment()
+                orders[key] = own.merged(with: value)
+            } else { orders[key] = value }
+        }
     }
     /// Two Macs may have created the same command before meeting each other.
     /// Keep every original shared record and combine only verified identity or
