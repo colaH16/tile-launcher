@@ -16,3 +16,6 @@ release.local.*
 # Local runtime evidence and diagnostic binaries are not published source.
 docs/reviews/evidence/
 docs/reviews/diagnostics/
+
+# Machine-local collaboration permissions.
+.claude/settings.local.json

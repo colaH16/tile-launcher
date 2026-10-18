@@ -244,4 +244,71 @@ final class SettingsSyncReplicaTests: XCTestCase {
         XCTAssertThrowsError(try SettingsSyncRecord.decodeVerified(JSONSerialization.data(withJSONObject: object)))
     }
 
+    func testClaimingRemoteMenuRecordsLocalOriginBeforeReconciliation() throws {
+        let first = command(), second = command()
+        var replica = SettingsSyncReplica()
+        replica.snapshot.menus["R"] = remoteMenu("R")
+        replica.capture(before: nil, after: projection([first]), at: Date())
+        replica.capture(before: projection([first]), after: projection([first, second]), at: Date())
+        try replica.snapshot.reconcileMenuIdentities()
+        XCTAssertEqual(replica.snapshot.combinedMenus.count, 2,
+                       "A remote record adopted by this Mac must not alias its two distinct local menus")
+        XCTAssertNotEqual(replica.snapshot.canonicalMenuIDs[replica.localIDs[first.id]!],
+                          replica.snapshot.canonicalMenuIDs[replica.localIDs[second.id]!])
+    }
+
+    func testMalformedMenuRecordCannotChangeAnExistingReplica() throws {
+        var original = SettingsSyncSnapshot()
+        try original.merge(record: .init(menu: remoteMenu("safe")))
+        var wrongApp = remoteMenu("bad")
+        wrongApp.resourceIdentity = .init(appID: "other.app", archive: "Main", keys: ["open"])
+        var emptyPath = remoteMenu("empty"); emptyPath.path = []
+        var invalidStamp = remoteMenu("stamp")
+        invalidStamp.presence.stamp = .init(date: Date(), device: "", sequence: 0)
+        var noIcons = remoteMenu("icons"); noIcons.icon = .init([])
+        for invalid in [wrongApp, emptyPath, invalidStamp, noIcons] {
+            var snapshot = original
+            XCTAssertThrowsError(try snapshot.merge(record: .init(menu: invalid)))
+            XCTAssertEqual(snapshot, original)
+        }
+    }
+
+    func testMixedRecordPayloadAndInvalidOrderAreRejected() {
+        let stamp = SettingsSyncStamp(date: Date(), device: "a", sequence: 1)
+        var mixed = SettingsSyncRecord(menu: remoteMenu("R"))
+        mixed.value = .init(.text("glass"), stamp: stamp)
+        XCTAssertThrowsError(try mixed.fragment())
+        XCTAssertThrowsError(try SettingsSyncRecord(appOrder: "test.app", order: .init(["R", "R"], stamp: stamp)).fragment())
+        let invalid = SettingsSyncStamp(date: nil, device: "", sequence: 0)
+        XCTAssertThrowsError(try SettingsSyncRecord(preference: "theme", value: .init(.text("glass"), stamp: invalid)).fragment())
+    }
+
+    func testManyIndependentMenusStaySeparateAndGroupingIsStable() throws {
+        let records = (0..<200).map { remoteMenu("menu-\($0)", path: ["File", "Command \($0)"]) }
+        var a = SettingsSyncSnapshot(), b = SettingsSyncSnapshot()
+        for record in records { a.menus[record.id] = record }
+        for record in records.reversed() { b.menus[record.id] = record }
+        XCTAssertEqual(a.combinedMenus.count, 200)
+        XCTAssertEqual(a.combinedMenus, b.combinedMenus)
+        // One explicit alias joins only its two records, regardless of arrival.
+        a.menus["menu-1"]!.aliases = ["menu-1", "menu-2"]
+        b.menus["menu-1"]!.aliases = ["menu-1", "menu-2"]
+        XCTAssertEqual(a.combinedMenus.count, 199)
+        XCTAssertEqual(a.combinedMenus, b.combinedMenus)
+    }
+
+    func testThreeMacsWithOneUnambiguousMenuEachConvergeToOneMenu() throws {
+        var replicas = [SettingsSyncReplica(), SettingsSyncReplica(), SettingsSyncReplica()]
+        for index in replicas.indices {
+            replicas[index].capture(before: nil, after: projection([command()]), at: Date())
+        }
+        var all = try replicas[0].snapshot.merged(with: replicas[1].snapshot).merged(with: replicas[2].snapshot)
+        try all.reconcileMenuIdentities()
+        XCTAssertEqual(all.combinedMenus.count, 1)
+        var reversed = try replicas[2].snapshot.merged(with: replicas[1].snapshot).merged(with: replicas[0].snapshot)
+        try reversed.reconcileMenuIdentities()
+        XCTAssertEqual(all, reversed)
+        XCTAssertEqual(all.combinedMenus.first?.origins?.count, 3)
+    }
+
 }

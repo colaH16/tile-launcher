@@ -25,9 +25,9 @@ public struct SettingsSyncRecord: Codable, Equatable {
         var result = SettingsSyncSnapshot()
         let branches = (menu == nil ? 0 : 1) + (preference == nil ? 0 : 1) + (appOrder == nil ? 0 : 1)
         guard branches == 1 else { throw SettingsSyncSnapshot.MergeError.inconsistentIdentity }
-        if let menu { result.menus[menu.id] = menu }
-        else if let preference, let value { result.preferences[preference] = value }
-        else if let appOrder, !appOrder.isEmpty, let order { result.orders[appOrder] = order }
+        if let menu, value == nil, order == nil { result.menus[menu.id] = menu }
+        else if let preference, let value, order == nil { result.preferences[preference] = value }
+        else if let appOrder, !appOrder.isEmpty, let order, value == nil { result.orders[appOrder] = order }
         else { throw SettingsSyncSnapshot.MergeError.inconsistentIdentity }
         try result.validate()
         return result
@@ -82,6 +82,11 @@ private enum PayloadSchema {
     }
 }
 
+private struct SettingsSyncPathKey: Hashable {
+    let appID: String
+    let path: [String]
+}
+
 public extension SettingsSyncSnapshot {
     var records: [SettingsSyncRecord] {
         menus.values.map(SettingsSyncRecord.init(menu:))
@@ -95,22 +100,34 @@ public extension SettingsSyncSnapshot {
     /// Keep every original shared record and combine only verified identity or
     /// a unique exact full path in the same app. Never match a leaf title.
     var menuGroups: [[SettingsSyncMenu]] {
-        var groups: [[SettingsSyncMenu]] = []
-        for menu in menus.values.sorted(by: { $0.id < $1.id }) {
+        // Index aliases once rather than rebuilding/scanning every existing
+        // group for each menu. Group IDs stay stable while groups are joined.
+        var groups: [Int: [SettingsSyncMenu]] = [:]
+        var owners: [String: Set<Int>] = [:]
+        for (index, menu) in menus.values.sorted(by: { $0.id < $1.id }).enumerated() {
             let ids = Set((menu.aliases ?? []) + [menu.id])
-            let matches = groups.indices.filter { index in
-                groups[index].contains { !ids.isDisjoint(with: Set(($0.aliases ?? []) + [$0.id])) }
-            }
-            // Aliases decided on different Macs must not chain two distinct
-            // commands of one Mac (or two apps) into a single menu.
-            guard Self.consistent([menu] + matches.flatMap { groups[$0] }) else {
-                groups.append([menu]); continue
-            }
+            let matches = ids.reduce(into: Set<Int>()) { $0.formUnion(owners[$1] ?? []) }.sorted()
+            let candidates = [menu] + matches.flatMap { groups[$0] ?? [] }
             var group = [menu]
-            for index in matches.reversed() { group += groups.remove(at: index) }
-            groups.append(group.sorted { $0.id < $1.id })
+            // Conflicting aliases must not chain distinct commands of one Mac.
+            if Self.consistent(candidates) {
+                for owner in matches {
+                    for member in groups.removeValue(forKey: owner) ?? [] {
+                        for alias in Set((member.aliases ?? []) + [member.id]) {
+                            owners[alias]?.remove(owner)
+                        }
+                        group.append(member)
+                    }
+                }
+            }
+            groups[index] = group.sorted { $0.id < $1.id }
+            for member in group {
+                for alias in Set((member.aliases ?? []) + [member.id]) {
+                    owners[alias, default: []].insert(index)
+                }
+            }
         }
-        return groups.sorted { $0[0].id < $1[0].id }
+        return groups.values.sorted { $0[0].id < $1[0].id }
     }
     static func consistent(_ menus: [SettingsSyncMenu]) -> Bool {
         guard Set(menus.map(\.appID)).count <= 1 else { return false }
@@ -135,20 +152,40 @@ public extension SettingsSyncSnapshot {
                 return left.path == right.path
             } }
         }
-        var candidates: [Int: [Int]] = [:]
+        var paths: [SettingsSyncPathKey: Set<Int>] = [:]
+        var resources: [MenuResourceIdentity: Set<Int>] = [:]
         for i in groups.indices {
-            candidates[i] = groups.indices.filter { i != $0 && compatible(groups[i], groups[$0]) }
+            for menu in groups[i] {
+                paths[.init(appID: menu.appID, path: menu.path), default: []].insert(i)
+                if let identity = menu.resourceIdentity { resources[identity, default: []].insert(i) }
+            }
         }
+        var candidates: [Int: Set<Int>] = [:]
         for i in groups.indices {
-            guard let peers = candidates[i], peers.count == 1, let j = peers.first,
-                  i < j, candidates[j] == [i] else { continue }
-            let all = (groups[i] + groups[j]).sorted { $0.id < $1.id }
+            var possible = Set<Int>()
+            for menu in groups[i] {
+                possible.formUnion(paths[.init(appID: menu.appID, path: menu.path)] ?? [])
+                if let identity = menu.resourceIdentity { possible.formUnion(resources[identity] ?? []) }
+            }
+            candidates[i] = Set(possible.filter { i != $0 && compatible(groups[i], groups[$0]) })
+        }
+        var joined = Set<Int>()
+        for i in groups.indices where !joined.contains(i) {
+            let peers = (candidates[i] ?? []).union([i])
+            // Every peer must agree on exactly the same complete group. This
+            // supports three or more Macs without accepting weak bridges or
+            // ambiguous duplicates from any one Mac.
+            guard peers.count > 1,
+                  peers.allSatisfy({ candidates[$0] == peers.subtracting([$0]) }) else { continue }
+            let all = peers.sorted().flatMap { groups[$0] }.sorted { $0.id < $1.id }
+            guard Self.consistent(all) else { continue }
             guard var merged = all.first else { continue }
             for other in all.dropFirst() {
                 merged = try merged.merged(with: other.withID(merged.id))
             }
             merged.aliases = Array(Set(all.flatMap { ($0.aliases ?? []) + [$0.id] })).sorted()
             menus[merged.id] = merged
+            joined.formUnion(peers)
         }
     }
     var combinedMenus: [SettingsSyncMenu] {
@@ -198,6 +235,15 @@ public struct SettingsSyncReplica: Codable {
     }
     public mutating func capture(before: SettingsSyncProjection?, after: SettingsSyncProjection,
                                  at date: Date, iconBases: [UUID: [String: UInt64]] = [:]) {
+        // Menu execution and icon-resource cache updates save local defaults
+        // frequently. They cannot change the shared editable values, so do not
+        // rebuild identity groups or serialize a journal for those events.
+        if let before, before.preferences == after.preferences,
+           before.commands.count == after.commands.count,
+           zip(before.commands, after.commands).allSatisfy({ a, b in
+               a.id == b.id && a.appID == b.appID && a.isAutomatic == b.isAutomatic
+                   && a.isPinned == b.isPinned && a.symbol == b.symbol
+           }) { return }
         let oldPreferences = before?.preferences ?? [:]
         for (key, value) in after.preferences {
             guard let keyType = SettingsSyncPreference(rawValue: key), keyType.accepts(value) else { continue }
@@ -256,7 +302,18 @@ public struct SettingsSyncReplica: Codable {
                     record!.icon = record!.icon.merged(with: .init([edit]))
                 }
             }
-            if let record { snapshot.menus[syncID] = record; combined[syncID] = record }
+            if var record {
+                // Adopting a remote record must also establish this Mac's
+                // distinct identity before any later alias reconciliation.
+                // Keep the original origin on re-addition: replacing it would
+                // conflict with already-synced copies of the same record.
+                if record.origins?[device] == nil {
+                    var origins = record.origins ?? [:]
+                    origins[device] = command.id.uuidString
+                    record.origins = origins
+                }
+                snapshot.menus[syncID] = record; combined[syncID] = record
+            }
         }
         for command in before?.commands ?? [] where !existingIDs.contains(command.id) {
             guard let shared = localIDs[command.id] else { continue }

@@ -9,6 +9,9 @@ public struct SettingsSyncStamp: Codable, Equatable, Comparable {
     public init(date: Date?, device: String, sequence: UInt64) {
         self.date = date; self.device = device; self.sequence = sequence
     }
+    var isValid: Bool {
+        !device.isEmpty && sequence > 0 && (date?.timeIntervalSinceReferenceDate.isFinite ?? true)
+    }
     public static func < (a: Self, b: Self) -> Bool {
         if a.date == nil && b.date != nil { return true }
         if a.date != nil && b.date == nil { return false }
@@ -51,7 +54,7 @@ public struct SettingsSyncIcon: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let values = try container.decode([SettingsSyncIconEdit].self, forKey: .edits)
         for edit in values {
-            guard !edit.stamp.device.isEmpty, edit.stamp.sequence > 0,
+            guard edit.stamp.isValid,
                   (edit.observed[edit.stamp.device] ?? 0) < edit.stamp.sequence else {
                 throw DecodingError.dataCorruptedError(forKey: .edits, in: container, debugDescription: "Invalid icon edit identity")
             }
@@ -168,12 +171,29 @@ public struct SettingsSyncSnapshot: Codable, Equatable {
     }
     public func validate() throws {
         for (key, field) in preferences {
-            guard let preference = SettingsSyncPreference(rawValue: key), preference.accepts(field.value) else {
+            guard let preference = SettingsSyncPreference(rawValue: key), preference.accepts(field.value), field.stamp.isValid else {
                 throw MergeError.invalidPreference
             }
         }
         for (key, menu) in menus {
-            guard key == menu.id && !key.isEmpty && !menu.appID.isEmpty else { throw MergeError.inconsistentIdentity }
+            guard key == menu.id && !key.isEmpty && !menu.appID.isEmpty && !menu.appID.hasPrefix("/"),
+                  menu.path.count >= 2, menu.path.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+                  menu.presence.stamp.isValid, menu.pinned.stamp.isValid,
+                  !menu.icon.edits.isEmpty, menu.icon.edits.allSatisfy({ $0.stamp.isValid }),
+                  menu.aliases?.allSatisfy({ !$0.isEmpty }) ?? true,
+                  menu.origins?.allSatisfy({ !$0.key.isEmpty && !$0.value.isEmpty }) ?? true else {
+                throw MergeError.inconsistentIdentity
+            }
+            if let identity = menu.resourceIdentity {
+                guard identity.appID == menu.appID, !identity.archive.isEmpty,
+                      !identity.keys.isEmpty, identity.keys.allSatisfy({ !$0.isEmpty }) else { throw MergeError.inconsistentIdentity }
+            }
+        }
+        for (appID, field) in orders {
+            guard !appID.isEmpty, !appID.hasPrefix("/"), field.stamp.isValid,
+                  field.value.allSatisfy({ !$0.isEmpty }), Set(field.value).count == field.value.count else {
+                throw MergeError.inconsistentIdentity
+            }
         }
     }
     public func orderedIDs(appID: String, includingDeleted: Bool = false) -> [String] {
