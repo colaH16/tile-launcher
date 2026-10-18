@@ -233,6 +233,108 @@ enum AppSettingsProductionValidation {
             vanished.cancel()
         }
 
+        // A lost foreground process must not cancel an unrelated launch read
+        // or drop apps queued behind it, even if didTerminate was not delivered.
+        let waitingApp = AppItem(id: "preview.queued", pid: 123804, name: "Queued", url: nil)
+        let isolatedCalls = Counts()
+        let launchEntered = DispatchSemaphore(value: 0), finishLaunch = DispatchSemaphore(value: 0)
+        var foregroundAlive = true, foregroundRetryReady = false, foregroundStopNotified = false
+        let isolated = ApplicationSettingsMenu(reader: { item, _, _ in
+            _ = isolatedCalls.next(item.pid)
+            if item == app {
+                launchEntered.signal(); _ = finishLaunch.wait(timeout: .now() + 3)
+                return found(item)
+            }
+            if item == other { throw ApplicationSettingsMenu.ReadError.ax(.cannotComplete) }
+            return found(item)
+        }, trusted: { true }, retryDelays: [0.08], finishedLaunching: { _ in true },
+           processIdentity: { pid in pid == other.pid && !foregroundAlive ? nil : identity(pid) })
+        defer { finishLaunch.signal(); isolated.cancel(); isolated.onChange = nil }
+        isolated.onChange = {
+            if !foregroundRetryReady && isolatedCalls.count(other.pid) == 1 && isolated.isSearching(in: other)
+                && isolated.showsPendingTile(in: other) {
+                foregroundRetryReady = true
+                foregroundAlive = false // Completion published; disappear before the retry, without invalidate.
+            }
+            if foregroundRetryReady && !isolated.isSearching(in: other) { foregroundStopNotified = true }
+        }
+        isolated.preloadLaunchedApp(app)
+        try require(launchEntered.wait(timeout: .now() + 1) == .success, "Isolation fixture did not enter launch read")
+        isolated.preloadLaunchedApp(waitingApp)
+        isolated.refresh(app: other)
+        try wait { foregroundRetryReady }
+        try wait { !isolated.isSearching(in: other) }
+        try require(foregroundStopNotified && isolated.pendingTileSearchStopped(in: other),
+                    "Stopped foreground retry did not publish its disabled failure state")
+        try require(isolated.isSearching(in: app) && isolated.isSearching(in: waitingApp),
+                    "Foreground retry cancellation discarded unrelated launch work")
+        finishLaunch.signal()
+        try wait { isolated.hasSettings(in: app) && isolated.hasSettings(in: waitingApp) }
+        try require(isolatedCalls.count(other.pid) == 1 && isolatedCalls.count(app.pid) == 1
+                    && isolatedCalls.count(waitingApp.pid) == 1,
+                    "Cancelled foreground retried or launch work duplicated")
+        isolated.cancel(); isolated.onChange = nil
+
+        // A launch child stopping at its retry guard must publish completion
+        // so its parent starts the next queued app rather than getting stuck.
+        let childCalls = Counts()
+        var childAlive = true, childRetryReady = false
+        let childStop = ApplicationSettingsMenu(reader: { item, _, _ in
+            _ = childCalls.next(item.pid)
+            return item == app ? nil : found(item)
+        }, trusted: { true }, retryDelays: [0.08], finishedLaunching: { _ in true },
+           processIdentity: { pid in pid == app.pid && !childAlive ? nil : identity(pid) })
+        childStop.onChange = {
+            if !childRetryReady && childCalls.count(app.pid) == 1 && childStop.isSearching(in: app)
+                && !childStop.showsPendingTile(in: app) {
+                childRetryReady = true; childAlive = false
+            }
+        }
+        defer { childStop.cancel(); childStop.onChange = nil }
+        childStop.preloadLaunchedApp(app); childStop.preloadLaunchedApp(waitingApp)
+        try wait { childRetryReady }
+        try wait { childStop.hasSettings(in: waitingApp) && !childStop.isSearching(in: app) }
+        try require(childCalls.count(app.pid) == 1 && childCalls.count(waitingApp.pid) == 1,
+                    "Stopped launch child blocked its queue or retried a vanished process")
+        childStop.cancel(); childStop.onChange = nil
+
+        // Losing accessibility permission still cancels all app discovery.
+        let permissionCalls = Counts()
+        let permissionEntered = DispatchSemaphore(value: 0), finishPermissionRead = DispatchSemaphore(value: 0)
+        let permissionReaderDone = DispatchSemaphore(value: 0)
+        var permissionGranted = true, permissionRetryReady = false
+        let permission = ApplicationSettingsMenu(reader: { item, _, _ in
+            _ = permissionCalls.next(item.pid)
+            if item == app {
+                permissionEntered.signal()
+                _ = finishPermissionRead.wait(timeout: .now() + 3)
+                permissionReaderDone.signal()
+                return found(item)
+            }
+            return nil
+        }, trusted: { permissionGranted }, retryDelays: [0.08],
+           finishedLaunching: { _ in true }, processIdentity: identity)
+        permission.onChange = {
+            if !permissionRetryReady && permissionCalls.count(other.pid) == 1 && permission.isSearching(in: other)
+                && !permission.showsPendingTile(in: other) {
+                permissionRetryReady = true; permissionGranted = false
+            }
+        }
+        defer { finishPermissionRead.signal(); permission.cancel(); permission.onChange = nil }
+        permission.preloadLaunchedApp(app)
+        try require(permissionEntered.wait(timeout: .now() + 1) == .success, "Permission fixture did not start")
+        permission.preloadLaunchedApp(waitingApp); permission.refresh(app: other)
+        try wait { permissionRetryReady }
+        try wait { !permission.isSearching(in: other) }
+        try require(!permission.isSearching(in: app) && !permission.isSearching(in: waitingApp),
+                    "Permission loss left unrelated discovery running")
+        finishPermissionRead.signal()
+        try require(permissionReaderDone.wait(timeout: .now() + 1) == .success, "Permission reader did not finish")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+        try require(!permission.hasSettings(in: app) && permissionCalls.count(waitingApp.pid) == 0,
+                    "Permission loss published a late result or started queued discovery")
+        permission.cancel(); permission.onChange = nil
+
         let fixture = PreviewFixture(theme: .classic)
         var snapshot = fixture.content.snapshot
         snapshot.hasAppSettings = false; snapshot.appSettingsPending = true
@@ -241,7 +343,7 @@ enum AppSettingsProductionValidation {
         try require(!snapshot.menuEntries().contains { if case .appSettings = $0 { return true }; return false }, "Failed round retained pending tile")
         snapshot.hasAppSettings = true
         try require(snapshot.menuEntries().contains { if case .appSettings = $0 { return true }; return false }, "Recovered tile missing")
-        print("Product settings: unknown/error vs normal miss, mixed-route errors, stopped disabled tile, three concurrent routes, first winner/loser stop, launch prewarm independent of focus, dedup, hidden retry/reappearance, five normal-miss retries, known restart and termination passed; synthetic only.")
+        print("Product settings: scoped foreground cancellation, stopped-child queue advancement, global permission cancellation, unknown/error vs normal miss, mixed-route errors, stopped disabled tile, three concurrent routes, first winner/loser stop, launch prewarm independent of focus, dedup, hidden retry/reappearance, five normal-miss retries, known restart and termination passed; synthetic only.")
     }
 }
 #endif

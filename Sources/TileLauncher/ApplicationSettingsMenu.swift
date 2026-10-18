@@ -318,11 +318,18 @@ final class ApplicationSettingsMenu {
                 self.cancel()
                 self.cache.removeAll(); self.onChange?(); return
             }
+            // These guards retire only this request. Unrelated launch reads
+            // and queued apps must survive; children also notify their parent
+            // so it can advance the launch queue when this request stops.
             guard self.processIdentity(next.app.pid) == next.process else {
-                self.cancel(); return
+                self.cancelActive(); self.onChange?(); return
             }
-            guard !self.supportedAppIDs.contains(next.app.id) else { self.cancel(); return }
-            if let stored = self.cache[next.app.pid], case .unavailable = stored.state { self.cancel(); return }
+            guard !self.supportedAppIDs.contains(next.app.id) else {
+                self.cancelActive(); self.onChange?(); return
+            }
+            if let stored = self.cache[next.app.pid], case .unavailable = stored.state {
+                self.cancelActive(); self.onChange?(); return
+            }
 
             if !self.reading { self.read(next) }
         }
