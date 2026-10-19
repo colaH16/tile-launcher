@@ -1,5 +1,9 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
+## 현재 공개 상태 · 2026-10-19
+
+[v2.0.0](https://github.com/colaH16/tile-launcher/releases/tag/v2.0.0)을 Developer ID/CloudKit 서명·Apple 공증·티켓·Gatekeeper·ZIP 검증 후 최신 정식으로 공개했다. 앱 소스는32874b833eb9이며 원격 main에는 배포 도구와 최종 문서도 반영했다. 공개 자산3개 익명 다운로드 해시 검증, 사용자 응용 프로그램 폴더 설치·실행 지문 일치, 기존iCloud공유폴더 최종ZIP 해시 일치를 확인했다. 실제 CloudKit 프로파일/schema 준비와 첫 전송 실패 회복은 [CloudKit 서명 준비 기록](../tools/cloud-signing/README.md), 상세 배포 결과는 [버전 이력](../CHANGELOG.md)을 따른다. 아래 버전별 ‘현재’ 문구는 당시 기록이다.
+
 확인일: 2026-10-15, Asia/Seoul. [v1.9.1](https://github.com/colaH16/tile-launcher/releases/tag/v1.9.1)을 2026-10-15 19:40:57 KST에 공개하고 개발 Mac 업데이트까지 완료했다. 공증 제출은 사용자의 다른 Mac에서 진행했으며, 이 Mac에서는 동일한 서명 앱에 Apple 티켓을 받아 검증하고 최종 ZIP을 만들었다. 공개 ZIP 재검증 기록은 [1.9.1 검증](reviews/1.9.1-app-settings-visibility.md)에 있다.
 
 이전 기록: [v1.9.0 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v1.9.0)를 Developer ID 서명·Apple 공증·티켓·Gatekeeper 및 공개 후 재다운로드 검증을 거쳐 2026-10-15 17:39:04 KST에 공개했다. 이전 공개 자산은 보존한다.
