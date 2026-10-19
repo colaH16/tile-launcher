@@ -22,6 +22,6 @@ CloudKit Console에서 Development에 `TileSettings`를 만들고 `payload`를 *
 
 운영 배포 버튼은 자동 승인 검토에서 되돌릴 수 없는 Production 변경의 명시 승인이 부족하다고 차단돼 사용자 확인을 요청했다. 사용자가 **‘허용 · Production 스키마 배포’**로 승인한 뒤 배포했고, Console의 `Schema promoted to production` 알림을 확인했다. 변경 목록과 스크린샷은 ignored evidence에 보존한다. 반영 후 기존 진단 query는 타입 미존재 대신 인덱스 없음 오류를 반환했다. 이는 앱에서 사용하지 않는 질의용 인덱스 문제이므로 추가하지 않았다.
 
-기존 앱의 ‘지금 동기화’가 거부 기록의 보존된 전송 대기를 다시 등록하므로 재빌드 없이 회복을 확인한다. 앱의 native 조작 연결이 응답하지 않아 사용자에게 버튼 한 번 실행을 요청했다. 실행 전 알려진 설정4개의 서버 메타데이터 조회는0/4였으며 아직 업로드 성공으로 해석하지 않는다. 설정 필드값은 조회하지 않는다.
+기존 앱의 ‘지금 동기화’가 거부 기록의 보존된 전송 대기를 다시 등록하므로 재빌드 없이 회복했다. 앱의 native 조작 연결이 응답하지 않아 사용자가 버튼을 한 번 실행했고 빨간 오류 해제와 최신 설정 반영 화면을 확인했다. 실행 전 알려진 설정4개의 서버 메타데이터 조회는0/4였고, 실행 후 동일 조회는 **4/4 성공**했다. 설정 필드값은 요청하지 않았으며, 이 Mac의 실제 업로드 회복은 확인됐지만 전체 값의 정확성·두 Mac 간 병합·백그라운드 수신 검증은 별도다.
 
 근거: [Apple의 schema 배포 절차](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema), [private DB와 public DB 권한 구분](https://developer.apple.com/icloud/cloudkit/designing/). 운영에 배포한 타입/필드 삭제·형식 변경은 불가능하므로 배포 전에 현재 코드의 이름/형식을 대조한다.
