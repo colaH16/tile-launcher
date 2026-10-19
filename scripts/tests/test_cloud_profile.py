@@ -54,6 +54,15 @@ class CloudProfileTests(unittest.TestCase):
         with self.assertRaises(r.ReleaseError):
             r.cloud_entitlements(self.profile(), 'ABCDEFGHIJ', '0' * 40)
 
+    def test_xcode_managed_service_wildcard_signs_only_cloudkit(self):
+        profile = self.profile()
+        profile['Entitlements']['com.apple.developer.icloud-services'] = '*'
+        value = r.cloud_entitlements(profile, 'ABCDEFGHIJ')
+        self.assertEqual(value['com.apple.developer.icloud-services'], ['CloudKit'])
+        profile['Entitlements']['com.apple.developer.icloud-container-identifiers'] = '*'
+        with self.assertRaises(r.ReleaseError):
+            r.cloud_entitlements(profile, 'ABCDEFGHIJ')
+
     def test_profile_listing_allowed_container_environments_is_accepted(self):
         # Apple profiles list permitted environments; signing still uses Production only.
         profile = self.profile()

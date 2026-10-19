@@ -159,6 +159,11 @@ def cloud_entitlements(profile, team_id, identity=None):
     for key, value in expected.items():
         if key == 'com.apple.security.automation.apple-events': continue
         choices = allowed.get(key)
+        # Apple's Xcode-managed Developer ID profile can authorize all iCloud
+        # services with a scalar '*'. Sign only our explicit CloudKit subset;
+        # do not extend this exception to container IDs or other entitlements.
+        if key == 'com.apple.developer.icloud-services' and choices == '*':
+            choices = ['*']
         if isinstance(value, list):
             require(isinstance(choices, list) and all(any(fnmatch.fnmatchcase(v, pattern) for pattern in choices) for v in value),
                     'Provisioning profile does not allow ' + key)
