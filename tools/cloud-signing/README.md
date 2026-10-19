@@ -13,3 +13,15 @@ Xcode의 자동 프로비저닝은 Apple Developer 계정의 앱 서비스와 �
 실제 프로파일의 서비스 허용값은 배열 대신 scalar `*`였으므로 배포 검증기는 iCloud 서비스 키에 한해서 이 형식을 허용한다. 서명되는 앱의 서비스는 명시적인 `['CloudKit']`으로 제한하고 container ID 등 다른 키에는 이 예외를 적용하지 않는다. Python 배포 검사30개와 실제 프로파일 검증이 통과했다.
 
 서명 검증은 CloudKit 실통신 검증이 아니다. development 스키마 생성 및 production 배포, 두 Mac의 비활성 앱에서 알림에 따른 fetch/UI 반영, 오프라인 병합/계정 변경 대기는 정식 공개 전에 별도 확인한다. 실제 프로파일과 로그·산출물의 운영 경로는 ignored evidence에 보존한다.
+
+## 첫 실통신에서 확인한 서버 준비 항목
+
+2026-10-19 첫 앱 업로드가 실패했다. 동일 Production 서명·컨테이너의 읽기 전용 진단에서 iCloud 계정 사용 가능(accountStatus=1), private DB의 `TileSettings` 질의가 `CKErrorDomain 11: Did not find record type: TileSettings`를 반환했다. 서명/계정 연결과 별개로 운영 schema가 없었다.
+
+CloudKit Console에서 Development에 `TileSettings`를 만들고 `payload`를 **Bytes**로 추가했다. 현재 앱은 `CKRecord["payload"] = Data`를 사용하므로 Encrypted Bytes나 Asset이 아니다. 앱의 CKSyncEngine은 record query를 사용하지 않아 인덱스를 추가하지 않는다. 공개 DB를 사용하지 않으므로 Console이 자동 추가한 해당 타입의 `_world` 읽기와 `_icloud` 생성 권한을 해제했다. 기존 Users 타입/권한은 변경하지 않았다. Private DB는 기본 소유자 읽기·쓰기를 사용한다.
+
+운영 배포 버튼은 자동 승인 검토에서 되돌릴 수 없는 Production 변경의 명시 승인이 부족하다고 차단돼 사용자 확인을 요청했다. 사용자가 **‘허용 · Production 스키마 배포’**로 승인한 뒤 배포했고, Console의 `Schema promoted to production` 알림을 확인했다. 변경 목록과 스크린샷은 ignored evidence에 보존한다. 반영 후 기존 진단 query는 타입 미존재 대신 인덱스 없음 오류를 반환했다. 이는 앱에서 사용하지 않는 질의용 인덱스 문제이므로 추가하지 않았다.
+
+기존 앱의 ‘지금 동기화’가 거부 기록의 보존된 전송 대기를 다시 등록하므로 재빌드 없이 회복을 확인한다. 앱의 native 조작 연결이 응답하지 않아 사용자에게 버튼 한 번 실행을 요청했다. 실행 전 알려진 설정4개의 서버 메타데이터 조회는0/4였으며 아직 업로드 성공으로 해석하지 않는다. 설정 필드값은 조회하지 않는다.
+
+근거: [Apple의 schema 배포 절차](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema), [private DB와 public DB 권한 구분](https://developer.apple.com/icloud/cloudkit/designing/). 운영에 배포한 타입/필드 삭제·형식 변경은 불가능하므로 배포 전에 현재 코드의 이름/형식을 대조한다.

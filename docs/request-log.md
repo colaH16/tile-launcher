@@ -2265,3 +2265,13 @@ Release2.0.0(58) ad-hoc 로컬 번들,246 XCTest/27 Python 검사가 통과했�
 사용자가 Xcode 재로그인 뒤 개발자 팀/Admin/Certificates, Identifiers & Profiles 권한 화면을 전달하고 준비 여부를 물었다. 기존 R299 계정 설정 승인 범위에서 CLI를 재확인했다. No Accounts는 해소됐고, 개발용 자동 서명은 기기 미등록으로 실패했다. 기기 등록 대신 임시 unsigned archive에서 Developer ID export를 수행해 CloudKit 컨테이너·production 푸시·팀·기존 인증서가 일치하는 실제 Mac Team Direct 프로파일을 취득했다. 임시 export의 성공만으로 제품 검증을 주장하지 않고, 프로파일을 검증한 뒤 기존 소스32874b8/2.0.0(58) 준비본의 별도 사본에 적용했다.
 
 Apple 프로파일의 icloud-services가 scalar '*'인 실제 형식에 맞춰 배포 도구의 해당 키만 허용값 배열로 정규화하고, 앱에는 CloudKit만 서명한다. 다른 entitlement/container 키로 예외를 확장하지 않는 회귀 검사와 Python30개가 통과했다. 제품 사본의 hardened runtime·timestamp·앱/팀/컨테이너·인증서·프로파일 해시 및 ZIP 재추출 검증이 통과했다. 미공증 ZIP SHA256은1dfac0943e1ede77bc1d71cefc0655e77503eae4e8a057c7c9087fc63b97d258이다. 프로파일/원본 로그/개인 운영경로는 ignored evidence에 보존한다. 실제 CloudKit 송수신/schema/푸시·두 Mac UI는 미검증이며 설치·실행·공증·GitHub 공개·iCloud 파일 전송은 하지 않았다.
+
+## 2026-10-19 · R308 첫 CloudKit 업로드 실패 조사
+
+사용자가2.0.0(58)의 첫 업로드 실패 화면을 전달했다. 관련 앱/컨테이너 최근 OS 로그에서 CKError2 partialFailure를 확인했으나 nested 원인은 private로 가려졌다. 별도 화면 없는 동일 팀/앱/컨테이너 Production 서명의 읽기 전용 진단으로 accountStatus=1 및 private DB의 TileSettings 조회가 CKError11 ‘Did not find record type: TileSettings’를 반환함을 확인했다. desiredKeys=[]/limit1이며 서버 쓰기·삭제, 제품 소스/설정 변경은 없었다. 운영 스키마 부재가 확인된 차단 조건이며 기존 업로드의 개별 nested 오류 자체를 읽었다고 주장하지 않는다.
+
+사용자에게 서버 준비까지 마친 뒤 시험을 안내했어야 함을 설명했다. CloudKit Console은 별도 웹 로그인이 필요해 페이지를 열고 개발자 계정 로그인 완료를 요청했다. 승인된 기존 Claude 세션에도 공식 문서와 실제 recordType/payload, 서버 준비 후 명시적 refresh 회복을 읽기 전용 검토하도록 전달했다. 서버 schema 생성·production 배포·업로드 회복은 아직 미완료다. 원본 로그·진단 소스/결과는 ignored evidence에 보존한다.
+
+사용자가 CloudKit Console 웹 로그인을 완료했다. 실제 Development에는 Users만 있었고, 앱 코드와 일치하는 TileSettings/payload Bytes를 Console에서 생성·저장했다. 자동 추가된 해당 타입의 공개 읽기/생성 역할을 해제했고 Users는 유지했다. Claude 8차 읽기 전용 보고에서 Bytes 형식·추가 인덱스/GRANT 불필요·명시적 refresh로 재전송 회복 경로를 독립 확인했다. Production 변경 diff는 해당 타입 추가만 포함한다. 배포 실행은 자동 승인 검토에서 ‘되돌릴 수 없는 Production 변경의 명시 승인 부족’으로 차단됐다. 우회하지 않고 실제 변경 캡처와 함께 타입/필드의 운영 반영 후 삭제·형식 변경 불가를 설명하고 명시 승인을 요청했다. 현재 개발 schema 저장까지만 완료했고 운영 배포/업로드 회복은 미완료다. 원인 숫자 미표시와 unknownItem 재시도 가능성은 Claude 후속 후보로 기록하며 이번 단계에서 앱 코드는 변경하지 않는다.
+
+이후 사용자가 ‘허용 · Production 스키마 배포’를 명시 승인했다. 동일 diff를 운영에 반영했고 Console의 Schema promoted to production 성공 알림을 확인했다. 필드/타입 추가뿐이며 데이터 삭제·초기화는 없었다. 읽기 전용 진단의 오류는 타입 부재에서 질의 인덱스 미설정으로 바뀌었고 앱은 그 질의를 사용하지 않아 인덱스는 추가하지 않았다. native 앱 조작 연결이 timeout으로 응답하지 않아 사용자에게 ‘지금 동기화’를 한 번 실행하도록 요청했다. 실행 전4개 설정 기록 메타데이터 조회는0/4였다. 운영 schema 배포 완료와 실제 업로드 회복/두 Mac 동기화 완료는 구별한다.
