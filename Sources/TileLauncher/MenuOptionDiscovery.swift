@@ -95,7 +95,7 @@ final class MenuOptionDiscovery {
                   siblings.contains(where: { CFEqual($0, primary) }),
                   let a = reference(primary), let b = reference(alternate),
                   let pair = MenuOptionPair(primary: a, alternate: .init(path: b.identity.path, identifier: b.axIdentifier),
-                                            primaryModifiers: a.modifiers, alternateModifiers: b.modifiers) else { continue }
+                                            primaryModifiers: a.modifiers, alternateModifiers: b.modifiers, alternateShortcut: b.shortcut) else { continue }
             candidates.append(pair)
         }
         // Several Option candidates for the same primary are ambiguous.

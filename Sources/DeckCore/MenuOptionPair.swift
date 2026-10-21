@@ -6,12 +6,14 @@ import Foundation
 public struct MenuOptionPair: Equatable {
     public let primary: CapturedMenu
     public let alternate: MenuActionReference
-    public init?(primary: CapturedMenu, alternate: MenuActionReference, primaryModifiers: Int, alternateModifiers: Int) {
+    public init?(primary: CapturedMenu, alternate: MenuActionReference, primaryModifiers: Int, alternateModifiers: Int, alternateShortcut: String = "") {
+        let ignored = primary.shortcut.isEmpty && alternateShortcut.isEmpty ? 10 : 2
         guard alternate.isValid, MenuActionReference(path: primary.identity.path, identifier: primary.axIdentifier).isValid, !MenuCapturePolicy.isAppleMenuPath(primary.identity.path),
               primary.identity.path.dropLast().elementsEqual(alternate.path.dropLast()),
               (primaryModifiers & 2) == 0, (alternateModifiers & 2) != 0,
               // NoCommand can differ on items with no key equivalent.
-              (primaryModifiers & ~10) == (alternateModifiers & ~10),
+              (0...15).contains(primaryModifiers), (0...15).contains(alternateModifiers),
+              (primaryModifiers & ~ignored) == (alternateModifiers & ~ignored),
               primary.identity.path != alternate.path || (primary.axIdentifier != nil && alternate.identifier != nil && primary.axIdentifier != alternate.identifier) else { return nil }
         self.primary = primary; self.alternate = alternate
     }

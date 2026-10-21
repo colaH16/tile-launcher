@@ -24,6 +24,12 @@ final class MenuOptionPairTests: XCTestCase {
         XCTAssertNil(MenuOptionPair(primary: primary, alternate: alternate, primaryModifiers: 0, alternateModifiers: 3))
         XCTAssertNil(MenuOptionPair(primary: primary, alternate: .init(path: ["Other", "local"], identifier: "other"), primaryModifiers: 0, alternateModifiers: 2))
     }
+    func testCommandDifferenceIsNotIgnoredForRealKeyboardEquivalents() {
+        let primary = CapturedMenu(appID: "test", appName: "Test", path: ["File", "Run"], shortcut: "x", modifiers: 8)
+        let alternate = MenuActionReference(path: ["File", "Run All"], identifier: nil)
+        XCTAssertNil(MenuOptionPair(primary: primary, alternate: alternate, primaryModifiers: 8, alternateModifiers: 2, alternateShortcut: "x"))
+        XCTAssertNotNil(MenuOptionPair(primary: primary, alternate: alternate, primaryModifiers: 8, alternateModifiers: 10, alternateShortcut: "x"))
+    }
     func testSelectionMergesAtomicallyAndReceiverPreservesBothActions() throws {
         var first = MenuCommand(appID: "test", appName: "Test", path: ["File", "Run"])
         first.axIdentifier = "primaryA"; first.optionAction = .init(path: ["File", "Run All"], identifier: "optionA")
