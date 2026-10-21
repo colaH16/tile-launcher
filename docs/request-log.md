@@ -2311,3 +2311,11 @@ R310 완료: main소스와최종노트를푸시하고 앱소스32874b833eb92c6f9
 R311 검증: 별도 임시 소스 사본에서 전체 XCTest 271개(신규 2개 포함)와 Python 배포 검사 30개를 통과했다. 일반/Option 두 변형, 대소문자, 불일치·없음·조회 실패·진짜 중복 및 같은 객체 반복/상위 경로 중복을 검사했다. 버전·노트 갱신 후 배포 검사 30개도 통과했다. 시험본은 2.0.1(59)로 준비하며, 설치·공증·GitHub 공개는 진행하지 않는다.
 
 R311 전달: 소스 951a410b3439의 2.0.1(59)을 격리 Release 빌드한 뒤 기존 Developer ID·CloudKit 프로파일로 서명했다. 정상 보안 서비스 접근 환경에서 원본과 ZIP 재추출본의 서명·번들/메타데이터 해시를 검증했다. 기존 iCloud 공유 폴더에 Tile-Launcher-2.0.1-arm64-unnotarized.zip을 새 파일로 복사했고 양쪽 SHA256은 a93136b90920697e8ff389f44edc9a2facf9202cc406df6afd710088639b61c1, 크기는 2,944,196바이트다. 서버 전파/다른 Mac 수신은 별도다. 사용자 확인은 기존 런처 종료 후 시험 앱 실행 → iTerm 활성화 → 기존 fish 타일 클릭 → 중복 오류 없이 fish 프로필의 새 탭 하나 실행이다. 공증·GitHub 푸시/공개·설치 교체는 하지 않았다. 원본 로그/서명 manifest/공식 소스 발췌는 ignored evidence에 보존했다.
+
+## 2026-10-21 · R312 단축키 없는 iTerm 프로필의 구분 가능 여부
+
+사용자는 iTerm을 실행했고, 59의 단축키 대조 방식이면 단축키 없는 openmaru8 in local은 해결되지 않는다고 질문했다. 이번 요청은 현재 방식의 한계와 대안 확인이며 추가 제품 수정·빌드 요청으로 해석하지 않는다.
+
+실제 iTerm의 Profiles 메뉴에서 fish와 openmaru8 in local 네 AX 항목만 읽었다(메뉴 실행·앱 활성화·터미널 내용 조회 없음). fish는 NewTab:fish/수정자4와 NewWindow:fish/수정자6으로, 단축키 없는 항목도 NewTab:openmaru8 in local/수정자0과 NewWindow:openmaru8 in local/수정자10으로 각각 노출된다. 모두 AXHidden=false, AXMenuItemPrimaryUIElement는 자기 자신이므로 이 두 속성은 여기서 일반/alternate 구분 수단이 아니다. AXIdentifier는 이 실행 환경에서 실제로 서로 달라 단축키 없는 변형을 식별할 근거가 있다.
+
+59는 saved shortcut이 없으면 여전히 중복으로 차단하므로 질문한 경우는 미해결이다. 추가·수집할 때 식별자를 보존하고 같은 앱/전체 경로 내에서 실행 대상 식별자까지 대조하는 보완이 후보이며, 기존 식별자 없는 항목의 변형을 임의로 단정하지 않는다. 이번에는 런타임 소스·설정·앱·버전을 변경하지 않았다. 좁은 범위의 원본 AX 결과와 읽기 전용 도구는 ignored evidence에 보존했다.
