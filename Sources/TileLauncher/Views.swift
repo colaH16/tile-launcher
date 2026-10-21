@@ -7,6 +7,8 @@ private struct OverlayInteractionRegion {
     var clips: [Anchor<CGRect>] = []
     var circular = false
     var cornerRadius: CGFloat?
+    var capsule = false
+    var usesBackgroundFeedback = false
     var targetID: String?
     var action: (() -> Void)?
     func resolve(in geometry: GeometryProxy) -> CGRect? {
@@ -20,12 +22,12 @@ private struct OverlayControlsKey: PreferenceKey {
     }
 }
 private extension View {
-    func overlayDragExcluded() -> some View {
-        anchorPreference(key: OverlayControlsKey.self, value: .bounds) { [.init(bounds: $0)] }
+    func overlayDragExcluded(capsule: Bool = false) -> some View {
+        anchorPreference(key: OverlayControlsKey.self, value: .bounds) { [.init(bounds: $0, capsule: capsule)] }
     }
-    func overlayDragAction(_ id: String, enabled: Bool = true, circular: Bool = false, cornerRadius: CGFloat? = nil, action: @escaping () -> Void) -> some View {
+    func overlayDragAction(_ id: String, enabled: Bool = true, circular: Bool = false, cornerRadius: CGFloat? = nil, usesBackgroundFeedback: Bool = false, action: @escaping () -> Void) -> some View {
         anchorPreference(key: OverlayControlsKey.self, value: .bounds) {
-            [.init(bounds: $0, circular: circular, cornerRadius: cornerRadius, targetID: id, action: enabled ? action : nil)]
+            [.init(bounds: $0, circular: circular, cornerRadius: cornerRadius, usesBackgroundFeedback: usesBackgroundFeedback, targetID: id, action: enabled ? action : nil)]
         }
     }
     func overlayDragClip() -> some View {
@@ -228,10 +230,15 @@ struct DeckView: View {
                     // R194: held and pinned overlays move the same way.
                     OverlayDragHandle(enabled: true, feedbackEnabled: !reduceTransparency && !reduceMotion, squareSurface: settings.theme.isClassic,
                                       excludedRects: controls.compactMap { $0.resolve(in: geometry) },
+                                      feedbackExclusions: controls.compactMap { region in
+                                          guard region.targetID == nil, let rect = region.resolve(in: geometry) else { return nil }
+                                          return OverlayFeedbackExclusion(rect: rect, surfaceRect: geometry[region.bounds], capsule: region.capsule)
+                                      },
                                       targets: controls.compactMap { region in
                                           guard let id = region.targetID, let rect = region.resolve(in: geometry) else { return nil }
                                           return OverlayDragTarget(id: id, rect: rect, action: region.action, circular: region.circular,
-                                                                   surfaceRect: geometry[region.bounds], cornerRadius: region.cornerRadius)
+                                                                   surfaceRect: geometry[region.bounds], cornerRadius: region.cornerRadius,
+                                                                   usesBackgroundFeedback: region.usesBackgroundFeedback)
                                       })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -377,7 +384,7 @@ struct DeckView: View {
                 sectionTitle("메뉴", symbol: "command")
                 Spacer()
                 Button { showSettings(.addMenu) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).overlayDragAction("chrome.add-menu") { showSettings(.addMenu) }.help("설정에서 앱별 메뉴 추가")
+                    .buttonStyle(.plain).overlayDragAction("chrome.add-menu", usesBackgroundFeedback: true) { showSettings(.addMenu) }.help("설정에서 앱별 메뉴 추가")
             }.frame(height: 20)
             if menuEntries.isEmpty {
                 Button { showSettings(.addMenu) } label: {
@@ -587,7 +594,7 @@ struct DeckView: View {
                 Spacer()
                 Text("\(snapshot.shortcuts.registeredPrefix)1–0").font(.caption).foregroundStyle(.secondary)
                 Button { showSettings(.registered) } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).overlayDragAction("chrome.add-pin") { showSettings(.registered) }.help("앱·폴더 추가 및 순서 변경")
+                    .buttonStyle(.plain).overlayDragAction("chrome.add-pin", usesBackgroundFeedback: true) { showSettings(.registered) }.help("앱·폴더 추가 및 순서 변경")
             }.frame(height: 26)
             if registeredItems.isEmpty {
                 Button("앱이나 폴더 추가") { showSettings(.registered) }
@@ -649,7 +656,7 @@ struct DeckView: View {
         }
         .menuStyle(.borderlessButton).fixedSize()
         .padding(.horizontal, 8).frame(height: 26)
-        .glassEffect(.regular.interactive(), in: Capsule()).overlayDragExcluded()
+        .glassEffect(.regular.interactive(), in: Capsule()).overlayDragExcluded(capsule: true)
         .help("프로필 선택 · ⌥A/S 이전 · ⌥D/F 다음 · 키/휠 임시 전환은 닫으면 복귀")
         .accessibilityAction(named: Text("이전 프로필")) { cycleProfile(-1) }
         .accessibilityAction(named: Text("다음 프로필")) { cycleProfile(1) }

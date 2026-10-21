@@ -492,3 +492,10 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - 원형 버튼 바깥/사각 bounds 안의 모서리에 배경 강조가 이어져야 한다. bounds-only preference와 action preference가 중복되더라도 사각 제외를 다시 적용하지 않는다.
 - hover와 pressed 경로를 모두 실제 실루엣으로 맞추되 클릭·드래그 타깃은 그대로 유지한다. 경로는 레이아웃 변경/최초 진입에 캐시하고 포인터 이동마다 재생성하지 않는다.
 - R324 공동 검토 보완: `rect`는 기존 clip된 입력 영역, `surfaceRect`는 원본 시각 bounds다. 실제 style의 배율 반경을 전달하고 원본 모양을 만든 뒤 viewport와 교차한다. scroll 경계는 새 모서리가 아니다. Option은 원본 side의 inset/곡률을 유지한다. 동일 기하 재전달은 경로를 재사용하되 action은 갱신하는지 확인한다. 클래식/둥근/선택 상태와 반쯤 잘린 primary/Option을 검사한다.
+
+## R327–R328 · native Capsule 입력과 투명 글자 버튼
+
+- 프로필은 native Menu 입력을 가로채지 않고 clip 전 Capsule 실루엣만 전달한다. 중심은 native 피드백, 사각 입력 bounds 안이지만 Capsule 밖 모서리는 배경 피드백인지 확인한다.
+- 바탕 없는+는 입력 타깃만 유지하고 시각 mask/눌림 사각형은 만들지 않는다. 클릭1회/드래그 뒤 취소와 우클릭·휠 통과를 확인한다.
+- 패널의 기존 contentView 뒤 재질을 유지하고 타일 위 새 굴절 view는 금지한다. 커서 연동 토글 초안은 R329의 상시 재질 정정으로 제거했다. 실제 뒤쪽 창의 왜곡·성능 체감은 별도 실기 확인 대상이다.
+- R329 정정: 원하는 것은 상시 backdrop lensing이며 effectIsInteractive 커서 토글은 최종 후보에서 제거했다. 배경 NSGlassEffectView.regular와 설정/핀/프로필의 기본 재질은 기존대로다. native offscreen 렌더는 뒤쪽 실제 창을 샘플링한 굴절의 증거가 아니다. Apple 자료: https://developer.apple.com/videos/play/wwdc2025/219/ (재질 lensing과 입력 반응을 구분). style bounds-only 시각 제외도 action target과 같은 rect면 중복 제거하며 둥근 메뉴/등록 모서리에 사각 제외가 다시 생기지 않는지 검사한다.

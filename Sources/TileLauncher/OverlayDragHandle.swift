@@ -9,6 +9,15 @@ struct OverlayDragTarget {
     var circular = false
     var surfaceRect: CGRect?
     var cornerRadius: CGFloat?
+    var usesBackgroundFeedback = false
+}
+
+/// Native controls keep their own input handling but describe their visible
+/// surface separately from the rectangular region reserved for input.
+struct OverlayFeedbackExclusion: Equatable {
+    let rect: CGRect
+    let surfaceRect: CGRect
+    var capsule = false
 }
 
 /// Direct movement for empty background and thresholded tile responders.
@@ -18,11 +27,13 @@ struct OverlayDragHandle: NSViewRepresentable {
     var feedbackEnabled = false
     var squareSurface = false
     var excludedRects: [CGRect] = []
+    var feedbackExclusions: [OverlayFeedbackExclusion] = []
     var targets: [OverlayDragTarget] = []
 
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ view: DragView, context: Context) {
         view.excludedRects = excludedRects
+        view.feedbackExclusions = feedbackExclusions
         view.enabled = enabled
         view.feedbackEnabled = feedbackEnabled
         view.squareSurface = squareSurface
@@ -32,6 +43,7 @@ struct OverlayDragHandle: NSViewRepresentable {
 
     final class DragView: NSView {
         var excludedRects: [CGRect] = []
+        var feedbackExclusions: [OverlayFeedbackExclusion] = []
         var enabled = false {
             didSet {
                 if enabled && !oldValue { window?.isMovable = true; window?.isMovableByWindowBackground = false; window?.acceptsMouseMovedEvents = true }
@@ -60,6 +72,7 @@ struct OverlayDragHandle: NSViewRepresentable {
         private var feedbackPaths: [String: (rect: CGRect, path: CGPath, rim: CGPath)] = [:]
         private var backgroundCutouts: [FeedbackShape] = []
         private var previousExcludedRects: [CGRect] = []
+        private var previousFeedbackExclusions: [OverlayFeedbackExclusion] = []
         private var previousSquareSurface = false
         private struct TargetGeometry: Equatable {
             let id: String
@@ -68,9 +81,11 @@ struct OverlayDragHandle: NSViewRepresentable {
             let radius: CGFloat?
             let circular: Bool
             let actionable: Bool
+            let background: Bool
             init(_ target: OverlayDragTarget) {
                 id = target.id; rect = target.rect; surfaceRect = target.surfaceRect
                 radius = target.cornerRadius; circular = target.circular; actionable = target.action != nil
+                background = target.usesBackgroundFeedback
             }
         }
         // Visual silhouettes are independent of the rectangular input targets.
@@ -79,6 +94,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             let rect: CGRect
             var radius: CGFloat = 0
             var circular = false
+            var capsule = false
             var clip: CGRect?
             var visibleRect: CGRect { clip.map { rect.intersection($0) } ?? rect }
             func path(relativeTo frame: CGRect) -> CGPath {
@@ -88,7 +104,8 @@ struct OverlayDragHandle: NSViewRepresentable {
                 if circular {
                     let side = min(local.width, local.height)
                     path = CGPath(ellipseIn: CGRect(x: local.midX - side / 2, y: local.midY - side / 2, width: side, height: side), transform: nil)
-                } else { path = RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: local).cgPath }
+                } else if capsule { path = Capsule().path(in: local).cgPath }
+                else { path = RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: local).cgPath }
                 guard let clip else { return path }
                 let clipped = CGRect(x: clip.minX - frame.minX, y: frame.maxY - clip.maxY, width: clip.width, height: clip.height)
                 return path.intersection(CGPath(rect: clipped, transform: nil))
@@ -127,27 +144,31 @@ struct OverlayDragHandle: NSViewRepresentable {
         override func mouseEntered(with event: NSEvent) { pointerInside = true; updatePointerSurface() }
         override func mouseMoved(with event: NSEvent) { pointerInside = true; updatePointerSurface() }
         override func mouseExited(with event: NSEvent) { pointerInside = false; updatePointerSurface() }
+        private func clearPointerFeedback() {
+            feedback.removeFromSuperview(); surfaceID = nil
+        }
         private func updatePointerSurface(at supplied: CGPoint? = nil) {
             guard feedbackEnabled, enabled, pointerInside, let window,
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-                feedback.removeFromSuperview(); surfaceID = nil
+                clearPointerFeedback()
                 return
             }
             let point = supplied ?? convert(window.mouseLocationOutsideOfEventStream, from: nil)
-            guard bounds.contains(point) else { feedback.removeFromSuperview(); surfaceID = nil; return }
+            guard bounds.contains(point) else { clearPointerFeedback(); return }
             let hit = ordered.last(where: { $0.rect.contains(point) })
-            if let hit, hit.action == nil { feedback.removeFromSuperview(); surfaceID = nil; return }
-            // Native controls without an overlay action keep their own feedback.
-            if hit == nil && !canStartDrag(at: point) { feedback.removeFromSuperview(); surfaceID = nil; return }
-            let id = hit?.id ?? "background"
+            if let hit, hit.action == nil { clearPointerFeedback(); return }
+            // A transparent glyph button has no rectangular visible surface.
+            // Its input target still works; feedback flows through as background.
+            let surfaceTarget = hit?.usesBackgroundFeedback == true ? nil : hit
+            let id = surfaceTarget?.id ?? "background"
             let rect: CGRect
             let exclusions: [FeedbackShape]
             let shape: FeedbackShape
-            if let target = hit {
+            if let target = surfaceTarget {
                 shape = silhouette(of: target)
                 rect = shape.visibleRect
-                guard !rect.isNull, !rect.isEmpty else { feedback.removeFromSuperview(); surfaceID = nil; return }
+                guard !rect.isNull, !rect.isEmpty else { clearPointerFeedback(); return }
                 exclusions = cutouts(for: target)
             } else {
                 rect = bounds; exclusions = backgroundCutouts
@@ -168,11 +189,17 @@ struct OverlayDragHandle: NSViewRepresentable {
                 }
                 path = outline; rim = outside; feedbackPaths[id] = (rect, path, rim)
             }
+            // Keep native feedback over a control's visible surface; its
+            // transparent capsule corners still belong to the background.
+            if hit == nil && !canStartDrag(at: point),
+               !path.contains(CGPoint(x: point.x - rect.minX, y: rect.maxY - point.y)) {
+                clearPointerFeedback(); return
+            }
             if surfaceID != id || feedback.frame != rect || feedback.superview == nil {
                 surfaceID = id; feedback.frame = rect; feedback.setOutline(path, rim: rim)
                 if feedback.superview == nil { addSubview(feedback, positioned: .above, relativeTo: nil) }
             }
-            feedback.follow(feedback.convert(point, from: self), pressed: motion?.committed != true && (pressedID == id || (hit == nil && motion != nil)), background: hit == nil)
+            feedback.follow(feedback.convert(point, from: self), pressed: motion?.committed != true && (pressedID == id || (surfaceTarget == nil && motion != nil)), background: surfaceTarget == nil)
         }
         private func cutouts(for target: OverlayDragTarget) -> [FeedbackShape] {
             guard target.id.hasPrefix("menu:") else { return [] }
@@ -181,14 +208,19 @@ struct OverlayDragHandle: NSViewRepresentable {
         }
         func updateTargets(_ targets: [OverlayDragTarget]) {
             let geometryChanged = targets.map(TargetGeometry.init) != ordered.map(TargetGeometry.init)
-                || excludedRects != previousExcludedRects || squareSurface != previousSquareSurface
+                || excludedRects != previousExcludedRects || feedbackExclusions != previousFeedbackExclusions || squareSurface != previousSquareSurface
             ordered = targets
             // Bounds-only preferences duplicate most action regions. Do not
             // subtract their bounding boxes again over a shaped silhouette.
             if geometryChanged {
                 previousExcludedRects = excludedRects; previousSquareSurface = squareSurface
-                backgroundCutouts = excludedRects.filter { rect in !targets.contains(where: { $0.rect == rect }) }
-                    .map { FeedbackShape(rect: $0) } + targets.map { silhouette(of: $0) }
+                previousFeedbackExclusions = feedbackExclusions
+                backgroundCutouts = excludedRects.filter { rect in
+                    !targets.contains(where: { $0.rect == rect }) && !feedbackExclusions.contains(where: { $0.rect == rect })
+                }.map { FeedbackShape(rect: $0) }
+                    + feedbackExclusions.filter { exclusion in !targets.contains(where: { $0.rect == exclusion.rect }) }
+                        .map { FeedbackShape(rect: $0.surfaceRect, capsule: $0.capsule, clip: $0.rect) }
+                    + targets.filter { !$0.usesBackgroundFeedback }.map { silhouette(of: $0) }
                 feedbackPaths.removeAll(keepingCapacity: true)
                 surfaceID = nil
             }
@@ -205,6 +237,7 @@ struct OverlayDragHandle: NSViewRepresentable {
                 if child.frame != target.rect { child.frame = target.rect }
                 child.action = target.action
                 child.circular = target.circular
+                child.usesBackgroundFeedback = target.usesBackgroundFeedback
                 if geometryChanged {
                     child.outline = silhouette(of: target).path(relativeTo: target.rect)
                     child.cutouts = cutouts(for: target).map { $0.path(relativeTo: target.rect) }
@@ -343,6 +376,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             var id = ""
             var action: (() -> Void)?
             var circular = false
+            var usesBackgroundFeedback = false
             var outline: CGPath?
             var cutouts: [CGPath] = []
             var pressed = false { didSet { if oldValue != pressed { needsDisplay = true } } }
@@ -353,7 +387,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             override func mouseDragged(with event: NSEvent) { owner?.drag(event) }
             override func mouseUp(with event: NSEvent) { owner?.release(event) }
             override func draw(_ dirtyRect: NSRect) {
-                if pressed {
+                if pressed && !usesBackgroundFeedback {
                     NSColor.white.withAlphaComponent(0.12).setFill()
                     var path = outline ?? (circular ? CGPath(ellipseIn: bounds, transform: nil) : CGPath(rect: bounds, transform: nil))
                     for cutout in cutouts { path = path.subtracting(cutout) }

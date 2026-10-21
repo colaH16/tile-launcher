@@ -849,7 +849,18 @@ enum PreviewExport {
             var backgroundBaseline: CGFloat?
             let chrome = drag.targetsForValidation.first { $0.id == "chrome.pin" }!
             let besideChrome = CGPoint(x: chrome.rect.maxX + 8, y: chrome.rect.midY)
-            for (name, point) in [("primary", normal), ("option", corner), ("background", background), ("background-chrome", besideChrome)] {
+            let profile = drag.feedbackExclusions.first { $0.capsule }!
+            let profileCenter = CGPoint(x: profile.rect.midX, y: profile.rect.midY)
+            let profileCorner = CGPoint(x: profile.rect.minX + 1, y: profile.rect.minY + 1)
+            let addMenu = drag.targetsForValidation.first { $0.id == "chrome.add-menu" }!
+            let addPin = drag.targetsForValidation.first { $0.id == "chrome.add-pin" }!
+            guard addMenu.usesBackgroundFeedback, addPin.usesBackgroundFeedback,
+                  drag.nativeTarget(at: profileCenter) == nil, !drag.canStartDrag(at: profileCenter) else { throw NSError(domain: "TileLauncher.Feedback", code: 16) }
+            for (name, point) in [("primary", normal), ("option", corner), ("background", background), ("background-chrome", besideChrome),
+                                  ("background-profile", CGPoint(x: profile.rect.maxX + 6, y: profile.rect.midY)),
+                                  ("background-profile-corner", profileCorner),
+                                  ("background-add-menu", CGPoint(x: addMenu.rect.midX, y: addMenu.rect.midY)),
+                                  ("background-add-pin", CGPoint(x: addPin.rect.midX, y: addPin.rect.midY))] {
                 drag.pointerForValidation(point)
                 guard drag.activeFeedbackIDForValidation == (name == "primary" ? primary.id : name == "option" ? option.id : "background"),
                       drag.feedbackContainsForValidation(point) else { throw NSError(domain: "TileLauncher.Feedback", code: 1) }
@@ -860,6 +871,18 @@ enum PreviewExport {
                     guard drag.feedbackContainsForValidation(CGPoint(x: chrome.rect.minX + 1, y: chrome.rect.minY + 1)),
                           !drag.feedbackContainsForValidation(CGPoint(x: chrome.rect.midX, y: chrome.rect.midY)) else {
                         throw NSError(domain: "TileLauncher.Feedback", code: 8)
+                    }
+                }
+                if name.hasPrefix("background-profile"), drag.feedbackContainsForValidation(profileCenter) || !drag.feedbackContainsForValidation(profileCorner) {
+                    throw NSError(domain: "TileLauncher.Feedback", code: 17)
+                }
+                if name.hasPrefix("background"), theme == .glass {
+                    for target in drag.targetsForValidation where target.id.hasPrefix("menu:") || target.id.hasPrefix("pin:") {
+                        let raw = target.surfaceRect ?? target.rect
+                        let edge = CGPoint(x: raw.minX + 1, y: raw.minY + 1)
+                        if target.rect.contains(edge), !drag.feedbackContainsForValidation(edge) {
+                            throw NSError(domain: "TileLauncher.Feedback", code: 18)
+                        }
                     }
                 }
                 surface.layoutSubtreeIfNeeded()
@@ -877,7 +900,10 @@ enum PreviewExport {
                 }
                 try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("feedback-\(name).png"))
             }
+            drag.pointerForValidation(profileCenter)
+            guard drag.activeFeedbackIDForValidation == nil else { throw NSError(domain: "TileLauncher.Feedback", code: 19) }
             drag.pointerForValidation(nil)
+            guard drag.activeFeedbackIDForValidation == nil else { throw NSError(domain: "TileLauncher.Feedback", code: 20) }
         }
         // Isolated callbacks never launch apps. Offscreen movement validates math
         // and action dispatch, not physical native background dragging.
@@ -996,6 +1022,37 @@ enum PreviewExport {
             input.pointerForValidation(CGPoint(x: 290, y: 200))
             guard !input.feedbackContainsForValidation(CGPoint(x: 173, y: 41)), input.feedbackContainsForValidation(CGPoint(x: 171, y: 41)) else { throw NSError(domain: "TileLauncher.Feedback", code: 15) }
             print("Unclipped scaled radii, flat scroll cuts, original Option inset and identical-geometry cache reuse passed.")
+            let capsuleRect = CGRect(x: 40, y: 150, width: 100, height: 26)
+            let plusRect = CGRect(x: 250, y: 30, width: 20, height: 20)
+            var additions = 0
+            input.feedbackExclusions = [.init(rect: capsuleRect, surfaceRect: capsuleRect, capsule: true)]
+            input.excludedRects = [capsuleRect, plusRect]
+            input.updateTargets([.init(id: "chrome.add-menu", rect: plusRect, action: { additions += 1 }, usesBackgroundFeedback: true)])
+            input.pointerForValidation(CGPoint(x: 41, y: 151))
+            guard input.activeFeedbackIDForValidation == "background", input.feedbackContainsForValidation(CGPoint(x: 41, y: 151)),
+                  input.nativeTarget(at: CGPoint(x: 90, y: 163)) == nil else { throw NSError(domain: "TileLauncher.Feedback", code: 21) }
+            let paths = input.feedbackPathBuildCountForValidation
+            input.pointerForValidation(nil)
+            input.feedbackExclusions[0].capsule = false
+            input.updateTargets(input.targetsForValidation)
+            input.pointerForValidation(CGPoint(x: 290, y: 200))
+            guard !input.feedbackContainsForValidation(CGPoint(x: 41, y: 151)), input.feedbackPathBuildCountForValidation > paths else { throw NSError(domain: "TileLauncher.Feedback", code: 22) }
+            let plus = CGPoint(x: plusRect.midX, y: plusRect.midY)
+            input.pointerForValidation(plus)
+            guard input.activeFeedbackIDForValidation == "background", input.feedbackContainsForValidation(plus),
+                  let button = input.nativeTarget(at: plus) as? OverlayDragHandle.DragView.TileView else { throw NSError(domain: "TileLauncher.Feedback", code: 23) }
+            let screenPlus = inputWindow.convertPoint(toScreen: input.convert(plus, to: nil))
+            input.begin(event(screenPlus, type: .leftMouseDown), id: "chrome.add-menu")
+            let pressed = button.bitmapImageRepForCachingDisplay(in: button.bounds)!
+            button.cacheDisplay(in: button.bounds, to: pressed)
+            guard pressed.colorAt(x: pressed.pixelsWide / 2, y: pressed.pixelsHigh / 2)!.alphaComponent < 0.01 else { throw NSError(domain: "TileLauncher.Feedback", code: 24) }
+            input.release(event(screenPlus, type: .leftMouseUp))
+            input.begin(event(screenPlus, type: .leftMouseDown), id: "chrome.add-menu")
+            let plusDragged = CGPoint(x: screenPlus.x + 10 / scale, y: screenPlus.y)
+            input.drag(event(plusDragged, type: .leftMouseDragged))
+            input.release(event(plusDragged, type: .leftMouseUp))
+            guard additions == 1 else { throw NSError(domain: "TileLauncher.Feedback", code: 25) }
+            print("Native profile capsule corners/menu passthrough and transparent + hover/press/click/drag passed; glass materials have no pointer-driven toggle.")
             input.pointerForValidation(nil)
         }
         input.enabled = false
