@@ -117,6 +117,8 @@ enum MenuIconValidation {
         var rebound = saved
         rebound.axIdentifier = "validation.alternate"
         settings.addCommand(rebound)
+        // A late legacy lookup must not overwrite a newer explicit selection.
+        settings.updateMenuIdentifier("validation.earlier", for: saved.id)
         try check(settings.commands.count == 2 && settings.commands[0].id == saved.id
                   && settings.commands[0].axIdentifier == rebound.axIdentifier
                   && settings.commands[0].symbol == saved.symbol && settings.commands[0].isPinned == saved.isPinned

@@ -305,7 +305,7 @@ final class SettingsStore: ObservableObject {
     }
     func updateMenuIdentifier(_ identifier: String, for id: UUID) {
         guard let identifier = MenuAXIdentifier.validated(identifier),
-              let i = commands.firstIndex(where: { $0.id == id }), commands[i].axIdentifier != identifier else { return }
+              let i = commands.firstIndex(where: { $0.id == id }), commands[i].axIdentifier == nil else { return }
         commands[i].axIdentifier = identifier
     }
     func recordUse(_ id: UUID) {
