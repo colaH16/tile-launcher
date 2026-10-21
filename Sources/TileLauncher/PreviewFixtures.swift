@@ -495,6 +495,8 @@ enum PreviewExport {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_OPTION_ONLY"] == "1" {
             try verifyScaledDragTargets(to: directory)
+            try verifyScaledDragTargets(to: directory, theme: .glass)
+            try verifyScaledDragTargets(to: directory, theme: .glass, selected: true)
             try save(DeckPreview(theme: .glass, registeredCount: 18).environment(\.colorScheme, .dark), to: directory.appendingPathComponent("option-corners-dark.png"))
             try save(DeckPreview(theme: .glass, compact: true, registeredCount: 18).environment(\.colorScheme, .light), dark: false, to: directory.appendingPathComponent("option-corners-small-light.png"))
             return
@@ -604,6 +606,8 @@ enum PreviewExport {
         try AppSettingsProductionValidation.verify()
         try IconReadAheadValidation.verify()
         try verifyScaledDragTargets(to: directory)
+        try verifyScaledDragTargets(to: directory, theme: .glass)
+        try verifyScaledDragTargets(to: directory, theme: .glass, selected: true)
         try verifyRegisteredViewport(to: directory)
         try OverlayChromeValidation.verify(to: directory)
         try verifyWebAppIcon()
@@ -768,13 +772,16 @@ enum PreviewExport {
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
     }
 
-    @MainActor private static func verifyScaledDragTargets(to directory: URL) throws {
+    @MainActor private static func verifyScaledDragTargets(to output: URL, theme: DeckTheme = .classic, selected: Bool = false) throws {
+        let directory = theme == .classic ? output : output.appendingPathComponent(selected ? "feedback-glass-selected" : "feedback-glass")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         NSApp.appearance = NSAppearance(named: .darkAqua)
-        let fixture = PreviewFixture(theme: .classic, registeredCount: 18)
+        let fixture = PreviewFixture(theme: theme, registeredCount: 18)
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
                                            cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: 18)
         fixture.content.snapshot.layout = layout
         fixture.presentation.pin()
+        if selected, let command = fixture.content.snapshot.commands.first { fixture.presentation.selection = "menu:\(command.id)" }
         let view = DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
             presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
             changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
@@ -805,6 +812,14 @@ enum PreviewExport {
             guard !drag.canStartDrag(at: point), drag.nativeTarget(at: point) is OverlayDragHandle.DragView.TileView else {
                 throw NSError(domain: "TileLauncher.Preview", code: 84)
             }
+            if target.id.hasPrefix("menu:") || target.id.hasPrefix("pin:") {
+                let expected: CGFloat = theme.isClassic ? 0 : (target.id.hasPrefix("pin:") ? 12 : 14) * layout.scale
+                guard target.cornerRadius == expected, target.surfaceRect != nil else { throw NSError(domain: "TileLauncher.Feedback", code: 9) }
+            }
+        }
+        let unmatched = drag.excludedRects.filter { rect in !drag.targetsForValidation.contains { $0.rect == rect } }
+        for menu in drag.targetsForValidation where menu.id.hasPrefix("menu:") {
+            guard !unmatched.contains(where: { $0.intersects(menu.rect) }) else { throw NSError(domain: "TileLauncher.Feedback", code: 10) }
         }
         let options = drag.targetsForValidation.filter { $0.id.hasPrefix("menu-option:") }
         guard options.count == 2 else { throw NSError(domain: "TileLauncher.Option", code: 4) }
@@ -941,6 +956,11 @@ enum PreviewExport {
                   (input.nativeTarget(at: CGPoint(x: 171, y: 40)) as? OverlayDragHandle.DragView.TileView)?.id == "menu-option:sample" else {
                 throw NSError(domain: "TileLauncher.Feedback", code: 6)
             }
+            let built = input.feedbackPathBuildCountForValidation
+            input.pointerForValidation(nil)
+            input.updateTargets(input.targetsForValidation)
+            input.pointerForValidation(CGPoint(x: 70, y: 70))
+            guard input.feedbackPathBuildCountForValidation == built else { throw NSError(domain: "TileLauncher.Feedback", code: 11) }
             input.pointerForValidation(CGPoint(x: 195, y: 40))
             guard input.activeFeedbackIDForValidation == "menu-option:sample", input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)), !input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)) else { throw NSError(domain: "TileLauncher.Option", code: 8) }
             // Duplicate exclusions cannot cancel one another and light a tile.
@@ -958,6 +978,24 @@ enum PreviewExport {
                 throw NSError(domain: "TileLauncher.Feedback", code: 7)
             }
             print("Feedback silhouettes: Option inset gap/rounded corner and circular-button corners remain lit; opaque centers excluded; rectangular input targets unchanged.")
+            // Build the shape before clipping: a cut through the middle of a
+            // tile is flat, not a new pair of rounded corners.
+            let clipped = CGRect(x: 20, y: 70, width: 200, height: 50)
+            input.excludedRects = [clipped]
+            input.updateTargets([.init(id: "menu:clipped", rect: clipped, action: {}, surfaceRect: CGRect(x: 20, y: 20, width: 200, height: 100), cornerRadius: 19.6)])
+            input.pointerForValidation(CGPoint(x: 70, y: 80))
+            guard input.feedbackContainsForValidation(CGPoint(x: 21, y: 71)) else { throw NSError(domain: "TileLauncher.Feedback", code: 12) }
+            input.pointerForValidation(CGPoint(x: 290, y: 200))
+            guard !input.feedbackContainsForValidation(CGPoint(x: 21, y: 71)) else { throw NSError(domain: "TileLauncher.Feedback", code: 13) }
+            let clippedOption = CGRect(x: 170, y: 40, width: 50, height: 30)
+            input.excludedRects = [clippedOption]
+            input.updateTargets([.init(id: "menu-option:clipped", rect: clippedOption, action: {}, surfaceRect: CGRect(x: 170, y: 20, width: 50, height: 50))])
+            input.pointerForValidation(CGPoint(x: 195, y: 50))
+            guard input.activeFeedbackFrameForValidation == CGRect(x: 172, y: 40, width: 46, height: 28),
+                  input.feedbackContainsForValidation(CGPoint(x: 173, y: 41)) else { throw NSError(domain: "TileLauncher.Feedback", code: 14) }
+            input.pointerForValidation(CGPoint(x: 290, y: 200))
+            guard !input.feedbackContainsForValidation(CGPoint(x: 173, y: 41)), input.feedbackContainsForValidation(CGPoint(x: 171, y: 41)) else { throw NSError(domain: "TileLauncher.Feedback", code: 15) }
+            print("Unclipped scaled radii, flat scroll cuts, original Option inset and identical-geometry cache reuse passed.")
             input.pointerForValidation(nil)
         }
         input.enabled = false

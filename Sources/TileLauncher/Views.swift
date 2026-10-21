@@ -6,6 +6,7 @@ private struct OverlayInteractionRegion {
     let bounds: Anchor<CGRect>
     var clips: [Anchor<CGRect>] = []
     var circular = false
+    var cornerRadius: CGFloat?
     var targetID: String?
     var action: (() -> Void)?
     func resolve(in geometry: GeometryProxy) -> CGRect? {
@@ -22,9 +23,9 @@ private extension View {
     func overlayDragExcluded() -> some View {
         anchorPreference(key: OverlayControlsKey.self, value: .bounds) { [.init(bounds: $0)] }
     }
-    func overlayDragAction(_ id: String, enabled: Bool = true, circular: Bool = false, action: @escaping () -> Void) -> some View {
+    func overlayDragAction(_ id: String, enabled: Bool = true, circular: Bool = false, cornerRadius: CGFloat? = nil, action: @escaping () -> Void) -> some View {
         anchorPreference(key: OverlayControlsKey.self, value: .bounds) {
-            [.init(bounds: $0, circular: circular, targetID: id, action: enabled ? action : nil)]
+            [.init(bounds: $0, circular: circular, cornerRadius: cornerRadius, targetID: id, action: enabled ? action : nil)]
         }
     }
     func overlayDragClip() -> some View {
@@ -205,6 +206,7 @@ struct DeckView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var deckScheme
     private func u(_ value: CGFloat) -> CGFloat { value * snapshot.layout.scale }
+    private func feedbackRadius(_ value: CGFloat) -> CGFloat { settings.theme.isClassic ? 0 : u(value) }
     private func font(_ style: NSFont.TextStyle) -> Font {
         .system(size: u(NSFont.preferredFont(forTextStyle: style).pointSize))
     }
@@ -228,7 +230,8 @@ struct DeckView: View {
                                       excludedRects: controls.compactMap { $0.resolve(in: geometry) },
                                       targets: controls.compactMap { region in
                                           guard let id = region.targetID, let rect = region.resolve(in: geometry) else { return nil }
-                                          return OverlayDragTarget(id: id, rect: rect, action: region.action, circular: region.circular)
+                                          return OverlayDragTarget(id: id, rect: rect, action: region.action, circular: region.circular,
+                                                                   surfaceRect: geometry[region.bounds], cornerRadius: region.cornerRadius)
                                       })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -384,7 +387,7 @@ struct DeckView: View {
                         Text("설정 → 메뉴에서 자주 쓰는 동작을 등록하세요.")
                             .font(font(.caption1)).foregroundStyle(.secondary)
                     }.padding(u(14)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                }.buttonStyle(TileStyle()).overlayDragAction("menu.empty") { showSettings(.addMenu) }
+                }.buttonStyle(TileStyle()).overlayDragAction("menu.empty", cornerRadius: feedbackRadius(14)) { showSettings(.addMenu) }
             } else if menuAppearance == .recentPastel {
                 let sizes = menuEntries.map { entry in
                     entry.isPinned ? RecentTileSize.wide : entry.isFrequent(snapshot.frequentMenuIDs) ? .square : .application
@@ -438,7 +441,7 @@ struct DeckView: View {
                         Image(systemName: "pin.fill").font(.system(size: u(9))).padding(u(8))
                     }
             }.buttonStyle(TileStyle(section: .menus, emphasized: true))
-                .overlayDragAction("menu.app-settings", enabled: snapshot.hasAppSettings) { selectAppSettings(snapshot.context, snapshot.menuContextWindow) }
+                .overlayDragAction("menu.app-settings", enabled: snapshot.hasAppSettings, cornerRadius: feedbackRadius(14)) { selectAppSettings(snapshot.context, snapshot.menuContextWindow) }
                 .disabled(!snapshot.hasAppSettings)
                 .saturation(snapshot.hasAppSettings ? 1 : 0)
                 .opacity(snapshot.hasAppSettings ? 1 : 0.42)
@@ -527,7 +530,7 @@ struct DeckView: View {
             }
             }
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned, separateFeedback: command.optionAction != nil))
-            .overlayDragAction("menu:\(command.id)") { selectMenu(command, snapshot.context, snapshot.menuContextWindow) }
+            .overlayDragAction("menu:\(command.id)", cornerRadius: feedbackRadius(14)) { selectMenu(command, snapshot.context, snapshot.menuContextWindow) }
             .overlay(alignment: .topTrailing) {
                 if let option = command.optionAction, option.isValid {
                     GeometryReader { geometry in
@@ -619,7 +622,7 @@ struct DeckView: View {
                                 }
                             }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)" || presentation.execution?.target == "pin:\(pin.id)",
                                                               emphasized: pin.kind == .app))
-                                .overlayDragAction("pin:\(pin.id)", enabled: !(pin.kind == .app && launches.isBlocked(pin.url))) { selectPin(pin) }
+                                .overlayDragAction("pin:\(pin.id)", enabled: !(pin.kind == .app && launches.isBlocked(pin.url)), cornerRadius: feedbackRadius(12)) { selectPin(pin) }
                                 .disabled(pin.kind == .app && launches.isBlocked(pin.url))
                                 .overlay {
                                     if pin.kind == .app && launches.isBlocked(pin.url) { ApplicationLaunchBusy() }
@@ -846,7 +849,7 @@ struct DeckView: View {
                 }
         }.buttonStyle(TileStyle(section: section, emphasized: emphasized,
                                 selected: presentation.selection == "window:\(window.id)" || presentation.execution?.target == "window:\(window.id)", compact: small || window.isApplication))
-            .overlayDragAction("window:\(window.id)", enabled: !(window.isApplication && window.appURL.map(launches.isBlocked) == true)) { selectWindow(window) }
+            .overlayDragAction("window:\(window.id)", enabled: !(window.isApplication && window.appURL.map(launches.isBlocked) == true), cornerRadius: feedbackRadius(small || window.isApplication ? 8 : 14)) { selectWindow(window) }
             .disabled(window.isApplication && window.appURL.map(launches.isBlocked) == true)
             .overlay {
                 if window.isApplication && window.appURL.map(launches.isBlocked) == true { ApplicationLaunchBusy(compact: true) }
@@ -893,7 +896,7 @@ struct DeckView: View {
                                     Text(entry.name).font(font(.caption1)).lineLimit(2).multilineTextAlignment(.center)
                                 }.padding(u(10)).frame(maxWidth: .infinity).frame(height: u(108))
                             }.buttonStyle(TileStyle(section: .registered)).help(entry.name)
-                                .overlayDragAction("folder:\(entry.url.path)") { if entry.directory { browser.enter(entry) } else { openURL(entry.url) } }
+                                .overlayDragAction("folder:\(entry.url.path)", cornerRadius: feedbackRadius(14)) { if entry.directory { browser.enter(entry) } else { openURL(entry.url) } }
                         }
                     }
                 }.overlayDragClip()

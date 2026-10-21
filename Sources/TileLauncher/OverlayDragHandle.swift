@@ -7,6 +7,8 @@ struct OverlayDragTarget {
     let rect: CGRect
     let action: (() -> Void)?
     var circular = false
+    var surfaceRect: CGRect?
+    var cornerRadius: CGFloat?
 }
 
 /// Direct movement for empty background and thresholded tile responders.
@@ -41,6 +43,7 @@ struct OverlayDragHandle: NSViewRepresentable {
         var targetsForValidation: [OverlayDragTarget] { ordered }
         var activeFeedbackFrameForValidation: CGRect? { feedback.superview == nil ? nil : feedback.frame }
         var activeFeedbackIDForValidation: String? { feedback.superview == nil ? nil : surfaceID }
+        private(set) var feedbackPathBuildCountForValidation = 0
         func feedbackContainsForValidation(_ point: CGPoint) -> Bool {
             feedback.superview != nil && feedback.outline?.contains(feedback.convert(point, from: self)) == true
         }
@@ -56,24 +59,47 @@ struct OverlayDragHandle: NSViewRepresentable {
         private let feedback = FeedbackView()
         private var feedbackPaths: [String: (rect: CGRect, path: CGPath, rim: CGPath)] = [:]
         private var backgroundCutouts: [FeedbackShape] = []
+        private var previousExcludedRects: [CGRect] = []
+        private var previousSquareSurface = false
+        private struct TargetGeometry: Equatable {
+            let id: String
+            let rect: CGRect
+            let surfaceRect: CGRect?
+            let radius: CGFloat?
+            let circular: Bool
+            let actionable: Bool
+            init(_ target: OverlayDragTarget) {
+                id = target.id; rect = target.rect; surfaceRect = target.surfaceRect
+                radius = target.cornerRadius; circular = target.circular; actionable = target.action != nil
+            }
+        }
         // Visual silhouettes are independent of the rectangular input targets.
         // The feedback layer is above SwiftUI, so opaque controls cannot cover it.
         private struct FeedbackShape {
             let rect: CGRect
             var radius: CGFloat = 0
             var circular = false
+            var clip: CGRect?
+            var visibleRect: CGRect { clip.map { rect.intersection($0) } ?? rect }
             func path(relativeTo frame: CGRect) -> CGPath {
                 let local = CGRect(x: rect.minX - frame.minX, y: frame.maxY - rect.maxY,
                                    width: rect.width, height: rect.height)
-                if circular { return CGPath(ellipseIn: local, transform: nil) }
-                return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: local).cgPath
+                let path: CGPath
+                if circular {
+                    let side = min(local.width, local.height)
+                    path = CGPath(ellipseIn: CGRect(x: local.midX - side / 2, y: local.midY - side / 2, width: side, height: side), transform: nil)
+                } else { path = RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: local).cgPath }
+                guard let clip else { return path }
+                let clipped = CGRect(x: clip.minX - frame.minX, y: frame.maxY - clip.maxY, width: clip.width, height: clip.height)
+                return path.intersection(CGPath(rect: clipped, transform: nil))
             }
         }
         private func silhouette(of target: OverlayDragTarget) -> FeedbackShape {
             let option = target.id.hasPrefix("menu-option:")
-            return FeedbackShape(rect: option ? target.rect.insetBy(dx: target.rect.height * 0.04, dy: target.rect.height * 0.04) : target.rect,
-                                 radius: squareSurface ? 0 : option ? target.rect.height * 0.12 : min(14, target.rect.height / 6),
-                                 circular: target.circular)
+            let raw = target.surfaceRect ?? target.rect
+            return FeedbackShape(rect: option ? raw.insetBy(dx: raw.height * 0.04, dy: raw.height * 0.04) : raw,
+                                 radius: target.cornerRadius ?? (option && !squareSurface ? raw.height * 0.12 : 0),
+                                 circular: target.circular, clip: target.rect)
         }
         private var bypassHitTesting = false
         private var pressedID: String?
@@ -120,7 +146,8 @@ struct OverlayDragHandle: NSViewRepresentable {
             let shape: FeedbackShape
             if let target = hit {
                 shape = silhouette(of: target)
-                rect = shape.rect
+                rect = shape.visibleRect
+                guard !rect.isNull, !rect.isEmpty else { feedback.removeFromSuperview(); surfaceID = nil; return }
                 exclusions = cutouts(for: target)
             } else {
                 rect = bounds; exclusions = backgroundCutouts
@@ -131,6 +158,9 @@ struct OverlayDragHandle: NSViewRepresentable {
             let path: CGPath, rim: CGPath
             if let cached = feedbackPaths[id], cached.rect == rect { path = cached.path; rim = cached.rim }
             else {
+                #if TILE_LAUNCHER_DIAGNOSTICS
+                feedbackPathBuildCountForValidation += 1
+                #endif
                 let outside = shape.path(relativeTo: rect)
                 var outline = outside
                 for cutout in exclusions {
@@ -150,13 +180,18 @@ struct OverlayDragHandle: NSViewRepresentable {
             return ordered.filter { $0.id == optionID }.map { silhouette(of: $0) }
         }
         func updateTargets(_ targets: [OverlayDragTarget]) {
+            let geometryChanged = targets.map(TargetGeometry.init) != ordered.map(TargetGeometry.init)
+                || excludedRects != previousExcludedRects || squareSurface != previousSquareSurface
             ordered = targets
             // Bounds-only preferences duplicate most action regions. Do not
             // subtract their bounding boxes again over a shaped silhouette.
-            backgroundCutouts = excludedRects.filter { rect in !targets.contains(where: { $0.rect == rect }) }
-                .map { FeedbackShape(rect: $0) } + targets.map { silhouette(of: $0) }
-            feedbackPaths.removeAll(keepingCapacity: true)
-            surfaceID = nil
+            if geometryChanged {
+                previousExcludedRects = excludedRects; previousSquareSurface = squareSurface
+                backgroundCutouts = excludedRects.filter { rect in !targets.contains(where: { $0.rect == rect }) }
+                    .map { FeedbackShape(rect: $0) } + targets.map { silhouette(of: $0) }
+                feedbackPaths.removeAll(keepingCapacity: true)
+                surfaceID = nil
+            }
             let ids = Set(targets.map(\.id))
             if let pressedID, !ids.contains(pressedID) { cancelPress() }
             for id in Array(controls.keys) where !ids.contains(id) { controls.removeValue(forKey: id)?.removeFromSuperview() }
@@ -170,8 +205,11 @@ struct OverlayDragHandle: NSViewRepresentable {
                 if child.frame != target.rect { child.frame = target.rect }
                 child.action = target.action
                 child.circular = target.circular
-                child.outline = silhouette(of: target).path(relativeTo: target.rect)
-                child.cutouts = cutouts(for: target).map { $0.path(relativeTo: target.rect) }
+                if geometryChanged {
+                    child.outline = silhouette(of: target).path(relativeTo: target.rect)
+                    child.cutouts = cutouts(for: target).map { $0.path(relativeTo: target.rect) }
+                    if child.pressed { child.needsDisplay = true }
+                }
             }
             updatePointerSurface()
         }
