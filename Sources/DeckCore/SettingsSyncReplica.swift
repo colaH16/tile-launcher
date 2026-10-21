@@ -66,11 +66,12 @@ private enum PayloadSchema {
     }
     static func menu(_ value: Any) -> Bool {
         guard let object = only(value, ["id", "appID", "appName", "path", "resourceIdentity", "presence",
-                                        "pinned", "icon", "aliases", "origins"]) else { return false }
+                                        "pinned", "icon", "aliases", "origins", "executionIdentifier"]) else { return false }
         if let identity = object["resourceIdentity"], only(identity, ["appID", "archive", "keys"]) == nil { return false }
         for key in ["presence", "pinned"] {
             if let value = object[key], !field(value, inner: { _ in true }) { return false }
         }
+        if let value = object["executionIdentifier"], !field(value, inner: { $0 is NSNull || $0 is String }) { return false }
         if let icon = object["icon"] {
             guard let edits = only(icon, ["edits"])?["edits"] as? [Any] else { return false }
             for edit in edits {
@@ -234,7 +235,8 @@ public extension SettingsSyncSnapshot {
             for menu in group.dropFirst() {
                 let sameID = SettingsSyncMenu(id: result.id, appID: menu.appID, appName: menu.appName,
                     path: menu.path, resourceIdentity: menu.resourceIdentity, presence: menu.presence,
-                    pinned: menu.pinned, icon: menu.icon, aliases: menu.aliases, origins: menu.origins)
+                    pinned: menu.pinned, icon: menu.icon, aliases: menu.aliases, origins: menu.origins,
+                    executionIdentifier: menu.executionIdentifier)
                 guard let merged = try? result.merged(with: sameID) else { return nil }
                 result = merged
             }
@@ -449,7 +451,8 @@ public struct SettingsSyncReplica: Codable {
 private extension SettingsSyncMenu {
     func withID(_ id: String) -> Self {
         .init(id: id, appID: appID, appName: appName, path: path, resourceIdentity: resourceIdentity,
-              presence: presence, pinned: pinned, icon: icon, aliases: aliases, origins: origins)
+              presence: presence, pinned: pinned, icon: icon, aliases: aliases, origins: origins,
+              executionIdentifier: executionIdentifier)
     }
 }
 
