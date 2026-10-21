@@ -54,7 +54,7 @@ struct OverlayDragHandle: NSViewRepresentable {
         private var pointerInside = false
         private var surfaceID: String?
         private let feedback = FeedbackView()
-        private var feedbackPaths: [String: (rect: CGRect, path: CGPath)] = [:]
+        private var feedbackPaths: [String: (rect: CGRect, path: CGPath, rim: CGPath)] = [:]
         private var bypassHitTesting = false
         private var pressedID: String?
         private var motion: OverlayDragMotion?
@@ -109,18 +109,19 @@ struct OverlayDragHandle: NSViewRepresentable {
             }
             // Paths are made on layout changes / first entry only, never on
             // every mouse movement. Subtraction handles overlapping exclusions.
-            let path: CGPath
-            if let cached = feedbackPaths[id], cached.rect == rect { path = cached.path }
+            let path: CGPath, rim: CGPath
+            if let cached = feedbackPaths[id], cached.rect == rect { path = cached.path; rim = cached.rim }
             else {
-                var outline = CGPath(roundedRect: CGRect(origin: .zero, size: rect.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
+                let outside = CGPath(roundedRect: CGRect(origin: .zero, size: rect.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
+                var outline = outside
                 for cutout in exclusions {
                     let local = CGRect(x: cutout.minX - rect.minX, y: rect.maxY - cutout.maxY, width: cutout.width, height: cutout.height)
                     outline = outline.subtracting(CGPath(rect: local, transform: nil))
                 }
-                path = outline; feedbackPaths[id] = (rect, path)
+                path = outline; rim = outside; feedbackPaths[id] = (rect, path, rim)
             }
             if surfaceID != id || feedback.frame != rect || feedback.superview == nil {
-                surfaceID = id; feedback.frame = rect; feedback.setOutline(path)
+                surfaceID = id; feedback.frame = rect; feedback.setOutline(path, rim: rim)
                 if feedback.superview == nil { addSubview(feedback, positioned: .above, relativeTo: nil) }
             }
             feedback.follow(feedback.convert(point, from: self), pressed: motion?.committed != true && (pressedID == id || (hit == nil && motion != nil)), background: hit == nil)
@@ -245,10 +246,13 @@ struct OverlayDragHandle: NSViewRepresentable {
                 setAccessibilityElement(false)
             }
             required init?(coder: NSCoder) { nil }
-            func setOutline(_ path: CGPath) {
+            func setOutline(_ path: CGPath, rim outside: CGPath) {
                 CATransaction.begin(); CATransaction.setDisableActions(true)
                 outline = path; clip.frame = bounds; clip.path = path
-                sheen.frame = bounds; wash.frame = bounds; rim.frame = bounds; rim.path = path
+                sheen.frame = bounds; wash.frame = bounds; rim.frame = bounds
+                // The mask excludes Option, but that inner cutout is not a
+                // separate border belonging to the main tile.
+                rim.path = outside
                 CATransaction.commit()
             }
             func follow(_ point: CGPoint, pressed: Bool, background: Bool) {
