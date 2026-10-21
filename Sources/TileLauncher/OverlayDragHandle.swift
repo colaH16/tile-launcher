@@ -53,11 +53,16 @@ struct OverlayDragHandle: NSViewRepresentable {
         #if TILE_LAUNCHER_DIAGNOSTICS
         var allowUnorderedActionsForValidation = false
         var targetsForValidation: [OverlayDragTarget] { ordered }
-        var activeFeedbackFrameForValidation: CGRect? { feedback.superview == nil ? nil : feedback.frame }
-        var activeFeedbackIDForValidation: String? { feedback.superview == nil ? nil : surfaceID }
+        var activeFeedbackFrameForValidation: CGRect? { feedback.superview != nil ? feedback.frame : backgroundFeedback.superview != nil ? backgroundFeedback.frame : nil }
+        var activeFeedbackIDForValidation: String? { feedback.superview != nil ? surfaceID : backgroundFeedback.superview != nil ? "background" : nil }
+        var backgroundFeedbackVisibleForValidation: Bool { backgroundFeedback.superview != nil }
+        func backgroundFeedbackContainsForValidation(_ point: CGPoint) -> Bool {
+            backgroundFeedback.superview != nil && backgroundFeedback.outline?.contains(backgroundFeedback.convert(point, from: self)) == true
+        }
         private(set) var feedbackPathBuildCountForValidation = 0
         func feedbackContainsForValidation(_ point: CGPoint) -> Bool {
-            feedback.superview != nil && feedback.outline?.contains(feedback.convert(point, from: self)) == true
+            if feedback.superview != nil { return feedback.outline?.contains(feedback.convert(point, from: self)) == true }
+            return backgroundFeedbackContainsForValidation(point)
         }
         func pointerForValidation(_ point: CGPoint?) { pointerInside = point != nil; updatePointerSurface(at: point) }
         #endif
@@ -69,6 +74,8 @@ struct OverlayDragHandle: NSViewRepresentable {
         private var pointerInside = false
         private var surfaceID: String?
         private let feedback = FeedbackView()
+        private let backgroundFeedback = FeedbackView()
+        private var backgroundPathNeedsUpdate = true
         private var feedbackPaths: [String: (rect: CGRect, path: CGPath, rim: CGPath)] = [:]
         private var backgroundCutouts: [FeedbackShape] = []
         private var previousExcludedRects: [CGRect] = []
@@ -146,6 +153,19 @@ struct OverlayDragHandle: NSViewRepresentable {
         override func mouseExited(with event: NSEvent) { pointerInside = false; updatePointerSurface() }
         private func clearPointerFeedback() {
             feedback.removeFromSuperview(); surfaceID = nil
+            backgroundFeedback.removeFromSuperview()
+        }
+        private func clearForegroundFeedback() { feedback.removeFromSuperview(); surfaceID = nil }
+        private func outline(id: String, shape: FeedbackShape, frame: CGRect, exclusions: [FeedbackShape]) -> (rect: CGRect, path: CGPath, rim: CGPath) {
+            if let cached = feedbackPaths[id], cached.rect == frame { return cached }
+            #if TILE_LAUNCHER_DIAGNOSTICS
+            feedbackPathBuildCountForValidation += 1
+            #endif
+            let outside = shape.path(relativeTo: frame)
+            let path = exclusions.reduce(outside) { $0.subtracting($1.path(relativeTo: frame)) }
+            let result = (rect: frame, path: path, rim: outside)
+            feedbackPaths[id] = result
+            return result
         }
         private func updatePointerSurface(at supplied: CGPoint? = nil) {
             guard feedbackEnabled, enabled, pointerInside, let window,
@@ -157,49 +177,34 @@ struct OverlayDragHandle: NSViewRepresentable {
             let point = supplied ?? convert(window.mouseLocationOutsideOfEventStream, from: nil)
             guard bounds.contains(point) else { clearPointerFeedback(); return }
             let hit = ordered.last(where: { $0.rect.contains(point) })
-            if let hit, hit.action == nil { clearPointerFeedback(); return }
             // A transparent glyph button has no rectangular visible surface.
             // Its input target still works; feedback flows through as background.
             let surfaceTarget = hit?.usesBackgroundFeedback == true ? nil : hit
-            let id = surfaceTarget?.id ?? "background"
-            let rect: CGRect
-            let exclusions: [FeedbackShape]
-            let shape: FeedbackShape
-            if let target = surfaceTarget {
-                shape = silhouette(of: target)
-                rect = shape.visibleRect
-                guard !rect.isNull, !rect.isEmpty else { clearPointerFeedback(); return }
-                exclusions = cutouts(for: target)
-            } else {
-                rect = bounds; exclusions = backgroundCutouts
-                shape = FeedbackShape(rect: rect, radius: DeckSurfaceView.cornerRadius)
-            }
-            // Paths are made on layout changes / first entry only, never on
-            // every mouse movement. Subtraction handles overlapping exclusions.
-            let path: CGPath, rim: CGPath
-            if let cached = feedbackPaths[id], cached.rect == rect { path = cached.path; rim = cached.rim }
-            else {
-                #if TILE_LAUNCHER_DIAGNOSTICS
-                feedbackPathBuildCountForValidation += 1
-                #endif
-                let outside = shape.path(relativeTo: rect)
-                var outline = outside
-                for cutout in exclusions {
-                    outline = outline.subtracting(cutout.path(relativeTo: rect))
+            // The background keeps following the same pointer over every tile
+            // and native control. Its mask still protects their visible content.
+            let backdrop = outline(id: "background", shape: FeedbackShape(rect: bounds, radius: DeckSurfaceView.cornerRadius), frame: bounds, exclusions: backgroundCutouts)
+            if backgroundPathNeedsUpdate || backgroundFeedback.frame != bounds || backgroundFeedback.superview == nil {
+                backgroundFeedback.frame = bounds
+                backgroundFeedback.setOutline(backdrop.path, rim: backdrop.rim)
+                backgroundPathNeedsUpdate = false
+                if backgroundFeedback.superview == nil {
+                    addSubview(backgroundFeedback, positioned: feedback.superview == nil ? .above : .below, relativeTo: feedback.superview == nil ? nil : feedback)
                 }
-                path = outline; rim = outside; feedbackPaths[id] = (rect, path, rim)
             }
-            // Keep native feedback over a control's visible surface; its
-            // transparent capsule corners still belong to the background.
-            if hit == nil && !canStartDrag(at: point),
-               !path.contains(CGPoint(x: point.x - rect.minX, y: rect.maxY - point.y)) {
-                clearPointerFeedback(); return
-            }
+            backgroundFeedback.follow(backgroundFeedback.convert(point, from: self),
+                                      pressed: surfaceTarget == nil && motion != nil && motion?.committed != true, background: true)
+            // A tile's local emphasis is a separate, input-transparent layer.
+            guard let target = surfaceTarget, target.action != nil else { clearForegroundFeedback(); return }
+            let id = target.id
+            let shape = silhouette(of: target)
+            let rect = shape.visibleRect
+            guard !rect.isNull, !rect.isEmpty else { clearForegroundFeedback(); return }
+            let local = outline(id: id, shape: shape, frame: rect, exclusions: cutouts(for: target))
             if surfaceID != id || feedback.frame != rect || feedback.superview == nil {
-                surfaceID = id; feedback.frame = rect; feedback.setOutline(path, rim: rim)
+                surfaceID = id; feedback.frame = rect; feedback.setOutline(local.path, rim: local.rim)
                 if feedback.superview == nil { addSubview(feedback, positioned: .above, relativeTo: nil) }
             }
-            feedback.follow(feedback.convert(point, from: self), pressed: motion?.committed != true && (pressedID == id || (surfaceTarget == nil && motion != nil)), background: surfaceTarget == nil)
+            feedback.follow(feedback.convert(point, from: self), pressed: motion?.committed != true && pressedID == id, background: false)
         }
         private func cutouts(for target: OverlayDragTarget) -> [FeedbackShape] {
             guard target.id.hasPrefix("menu:") else { return [] }
@@ -223,6 +228,7 @@ struct OverlayDragHandle: NSViewRepresentable {
                     + targets.filter { !$0.usesBackgroundFeedback }.map { silhouette(of: $0) }
                 feedbackPaths.removeAll(keepingCapacity: true)
                 surfaceID = nil
+                backgroundPathNeedsUpdate = true
             }
             let ids = Set(targets.map(\.id))
             if let pressedID, !ids.contains(pressedID) { cancelPress() }
@@ -299,6 +305,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             if motion.committed, let pressedID {
                 controls[pressedID]?.pressed = false
                 feedback.setPressed(false)
+                backgroundFeedback.setPressed(false)
             }
             if let origin, window.frame.origin != origin { window.setFrameOrigin(origin) }
         }
@@ -320,6 +327,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             if let pressedID { controls[pressedID]?.pressed = false }
             pressedID = nil; motion = nil
             feedback.setPressed(false)
+            backgroundFeedback.setPressed(false)
         }
         final class FeedbackView: NSView {
             private let clip = CAShapeLayer()

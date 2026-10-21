@@ -864,6 +864,10 @@ enum PreviewExport {
                 drag.pointerForValidation(point)
                 guard drag.activeFeedbackIDForValidation == (name == "primary" ? primary.id : name == "option" ? option.id : "background"),
                       drag.feedbackContainsForValidation(point) else { throw NSError(domain: "TileLauncher.Feedback", code: 1) }
+                guard drag.backgroundFeedbackVisibleForValidation, drag.backgroundFeedbackContainsForValidation(background),
+                      !drag.backgroundFeedbackContainsForValidation(normal), !drag.backgroundFeedbackContainsForValidation(corner) else {
+                    throw NSError(domain: "TileLauncher.Feedback", code: 26)
+                }
                 if name == "primary", drag.feedbackContainsForValidation(corner) { throw NSError(domain: "TileLauncher.Feedback", code: 2) }
                 if name == "option", drag.feedbackContainsForValidation(normal) { throw NSError(domain: "TileLauncher.Feedback", code: 3) }
                 if name == "background", drag.feedbackContainsForValidation(normal) || drag.feedbackContainsForValidation(corner) { throw NSError(domain: "TileLauncher.Feedback", code: 4) }
@@ -900,10 +904,37 @@ enum PreviewExport {
                 }
                 try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("feedback-\(name).png"))
             }
-            drag.pointerForValidation(profileCenter)
-            guard drag.activeFeedbackIDForValidation == nil else { throw NSError(domain: "TileLauncher.Feedback", code: 19) }
+            // Crossing a tile edge must not switch the whole background off.
+            // Measure the same empty-background pixel on both sides of the edge.
+            let witness = CGPoint(x: primary.rect.minX - 6, y: primary.rect.midY)
+            func captureWitness() -> (NSBitmapImageRep, CGFloat) {
+                CATransaction.flush()
+                let image = surface.bitmapImageRepForCachingDisplay(in: surface.bounds)!
+                surface.cacheDisplay(in: surface.bounds, to: image)
+                let sample = surface.convert(witness, from: drag)
+                let x = min(image.pixelsWide - 1, max(0, Int(sample.x * CGFloat(image.pixelsWide) / surface.bounds.width)))
+                let y = min(image.pixelsHigh - 1, max(0, Int((surface.bounds.height - sample.y) * CGFloat(image.pixelsHigh) / surface.bounds.height)))
+                return (image, image.colorAt(x: x, y: y)!.usingColorSpace(.sRGB)!.redComponent)
+            }
             drag.pointerForValidation(nil)
-            guard drag.activeFeedbackIDForValidation == nil else { throw NSError(domain: "TileLauncher.Feedback", code: 20) }
+            let baseline = captureWitness().1
+            var edgeGlow: [CGFloat] = []
+            for (name, x) in [("background", primary.rect.minX - 1), ("tile", primary.rect.minX + 1)] {
+                drag.pointerForValidation(CGPoint(x: x, y: primary.rect.midY))
+                guard drag.backgroundFeedbackVisibleForValidation, drag.backgroundFeedbackContainsForValidation(witness) else { throw NSError(domain: "TileLauncher.Feedback", code: 27) }
+                let (image, brightness) = captureWitness()
+                edgeGlow.append(brightness)
+                try image.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("feedback-edge-\(name).png"))
+            }
+            guard edgeGlow.allSatisfy({ $0 > baseline + 0.03 }), abs(edgeGlow[0] - edgeGlow[1]) < 0.02 else {
+                throw NSError(domain: "TileLauncher.Feedback", code: 28)
+            }
+            print("Tile-edge background pixel continuity: baseline=\(baseline), outside=\(edgeGlow[0]), inside=\(edgeGlow[1])")
+            drag.pointerForValidation(profileCenter)
+            guard drag.activeFeedbackIDForValidation == "background", !drag.feedbackContainsForValidation(profileCenter),
+                  drag.backgroundFeedbackVisibleForValidation else { throw NSError(domain: "TileLauncher.Feedback", code: 19) }
+            drag.pointerForValidation(nil)
+            guard drag.activeFeedbackIDForValidation == nil, !drag.backgroundFeedbackVisibleForValidation else { throw NSError(domain: "TileLauncher.Feedback", code: 20) }
         }
         // Isolated callbacks never launch apps. Offscreen movement validates math
         // and action dispatch, not physical native background dragging.
