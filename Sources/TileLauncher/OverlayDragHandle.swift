@@ -13,7 +13,7 @@ struct OverlayDragTarget {
 /// Right clicks, hover and wheel events pass through to the SwiftUI controls.
 struct OverlayDragHandle: NSViewRepresentable {
     let enabled: Bool
-    var liquidSurface = false
+    var feedbackEnabled = false
     var squareSurface = false
     var excludedRects: [CGRect] = []
     var targets: [OverlayDragTarget] = []
@@ -22,7 +22,7 @@ struct OverlayDragHandle: NSViewRepresentable {
     func updateNSView(_ view: DragView, context: Context) {
         view.excludedRects = excludedRects
         view.enabled = enabled
-        view.liquidSurface = liquidSurface
+        view.feedbackEnabled = feedbackEnabled
         view.squareSurface = squareSurface
         view.updateTargets(targets)
     }
@@ -32,25 +32,29 @@ struct OverlayDragHandle: NSViewRepresentable {
         var excludedRects: [CGRect] = []
         var enabled = false {
             didSet {
-                if enabled && !oldValue { window?.isMovable = true; window?.isMovableByWindowBackground = false }
-                if !enabled { cancelPress() }
+                if enabled && !oldValue { window?.isMovable = true; window?.isMovableByWindowBackground = false; window?.acceptsMouseMovedEvents = true }
+                if !enabled { cancelPress(); updatePointerSurface() }
             }
         }
         #if TILE_LAUNCHER_DIAGNOSTICS
         var allowUnorderedActionsForValidation = false
         var targetsForValidation: [OverlayDragTarget] { ordered }
-        var activeGlassFrameForValidation: CGRect? { hoverGlass?.superview == nil ? nil : hoverGlass?.frame }
+        var activeFeedbackFrameForValidation: CGRect? { feedback.superview == nil ? nil : feedback.frame }
+        var activeFeedbackIDForValidation: String? { feedback.superview == nil ? nil : surfaceID }
+        func feedbackContainsForValidation(_ point: CGPoint) -> Bool {
+            feedback.superview != nil && feedback.outline?.contains(feedback.convert(point, from: self)) == true
+        }
         func pointerForValidation(_ point: CGPoint?) { pointerInside = point != nil; updatePointerSurface(at: point) }
         #endif
         private var controls: [String: TileView] = [:]
         private var ordered: [OverlayDragTarget] = []
-        var liquidSurface = false { didSet { if oldValue != liquidSurface { updatePointerSurface() } } }
+        var feedbackEnabled = false { didSet { if oldValue != feedbackEnabled { updatePointerSurface() } } }
         var squareSurface = false
         private var tracking: NSTrackingArea?
         private var pointerInside = false
         private var surfaceID: String?
-        private var hoverGlass: NSGlassEffectView?
-        private let sheen = CAGradientLayer()
+        private let feedback = FeedbackView()
+        private var feedbackPaths: [String: (rect: CGRect, path: CGPath)] = [:]
         private var bypassHitTesting = false
         private var pressedID: String?
         private var motion: OverlayDragMotion?
@@ -61,8 +65,11 @@ struct OverlayDragHandle: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             // Set once on attachment; never toggle either flag per mouse press.
-            if enabled { window?.isMovable = true; window?.isMovableByWindowBackground = false }
-            if window == nil { cancelPress() }
+            if enabled {
+                window?.isMovable = true; window?.isMovableByWindowBackground = false
+                window?.acceptsMouseMovedEvents = true
+            }
+            if window == nil { cancelPress(); pointerInside = false; updatePointerSurface() }
             setAccessibilityElement(false)
         }
         override func updateTrackingAreas() {
@@ -75,52 +82,58 @@ struct OverlayDragHandle: NSViewRepresentable {
         override func mouseMoved(with event: NSEvent) { pointerInside = true; updatePointerSurface() }
         override func mouseExited(with event: NSEvent) { pointerInside = false; updatePointerSurface() }
         private func updatePointerSurface(at supplied: CGPoint? = nil) {
-            var ancestor = superview
-            while let node = ancestor, !(node is DeckSurfaceView) { ancestor = node.superview }
-            guard liquidSurface, enabled, pointerInside, let window,
+            guard feedbackEnabled, enabled, pointerInside, let window,
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
                   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-                hoverGlass?.removeFromSuperview(); surfaceID = nil
-                (ancestor as? DeckSurfaceView)?.setBackgroundInteractive(false)
+                feedback.removeFromSuperview(); surfaceID = nil
                 return
             }
             let point = supplied ?? convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            guard bounds.contains(point) else { feedback.removeFromSuperview(); surfaceID = nil; return }
             let hit = ordered.last(where: { $0.rect.contains(point) })
-            (ancestor as? DeckSurfaceView)?.setBackgroundInteractive(hit == nil && bounds.contains(point))
-            guard var target = hit else { hoverGlass?.removeFromSuperview(); surfaceID = nil; return }
-            if target.id.hasPrefix("menu-option:"),
-               let main = ordered.first(where: { $0.id == target.id.replacingOccurrences(of: "menu-option:", with: "menu:") }) { target = main }
-            // A single reusable native effect, only over the hovered tile.
-            // Pointer motion never rebuilds the SwiftUI tree or all tile effects.
-            if hoverGlass == nil {
-                let glass = NSGlassEffectView(frame: .zero)
-                glass.style = .clear; glass.contentView = NSView()
-                glass.contentView?.wantsLayer = true
-                sheen.type = .radial
-                sheen.colors = [NSColor.white.withAlphaComponent(0.24).cgColor, NSColor.white.withAlphaComponent(0).cgColor]
-                sheen.locations = [0, 1]
-                glass.contentView?.layer?.addSublayer(sheen)
-                if #available(macOS 27.0, *) { glass.effectIsInteractive = true }
-                glass.setAccessibilityElement(false); hoverGlass = glass
+            if let hit, hit.action == nil { feedback.removeFromSuperview(); surfaceID = nil; return }
+            // Native controls without an overlay action keep their own feedback.
+            if hit == nil && !canStartDrag(at: point) { feedback.removeFromSuperview(); surfaceID = nil; return }
+            let id = hit?.id ?? "background"
+            let rect: CGRect
+            let exclusions: [CGRect]
+            let radius: CGFloat
+            if let target = hit {
+                let option = target.id.hasPrefix("menu-option:")
+                rect = option ? target.rect.insetBy(dx: target.rect.height * 0.04, dy: target.rect.height * 0.04) : target.rect
+                exclusions = cutouts(for: target)
+                radius = target.circular ? min(rect.width, rect.height) / 2
+                    : squareSurface ? 0 : option ? target.rect.height * 0.12 : min(14, rect.height / 6)
+            } else {
+                rect = bounds; exclusions = excludedRects + ordered.map(\.rect); radius = DeckSurfaceView.cornerRadius
             }
-            guard let glass = hoverGlass else { return }
-            if surfaceID != target.id || glass.frame != target.rect || glass.superview == nil {
-                surfaceID = target.id; glass.frame = target.rect
-                glass.cornerRadius = target.circular ? min(target.rect.width, target.rect.height) / 2 : squareSurface ? 0 : min(14, target.rect.height / 6)
-                if glass.superview == nil { addSubview(glass, positioned: .above, relativeTo: nil) }
+            // Paths are made on layout changes / first entry only, never on
+            // every mouse movement. Subtraction handles overlapping exclusions.
+            let path: CGPath
+            if let cached = feedbackPaths[id], cached.rect == rect { path = cached.path }
+            else {
+                var outline = CGPath(roundedRect: CGRect(origin: .zero, size: rect.size), cornerWidth: radius, cornerHeight: radius, transform: nil)
+                for cutout in exclusions {
+                    let local = CGRect(x: cutout.minX - rect.minX, y: rect.maxY - cutout.maxY, width: cutout.width, height: cutout.height)
+                    outline = outline.subtracting(CGPath(rect: local, transform: nil))
+                }
+                path = outline; feedbackPaths[id] = (rect, path)
             }
-            // Only one small surface changes with pointer input. No timers,
-            // display-link loop, or per-move SwiftUI state is required.
-            CATransaction.begin(); CATransaction.setDisableActions(true)
-            sheen.frame = CGRect(origin: .zero, size: target.rect.size)
-            let local = CGPoint(x: (point.x - target.rect.minX) / max(1, target.rect.width),
-                                y: 1 - (point.y - target.rect.minY) / max(1, target.rect.height))
-            sheen.startPoint = local
-            sheen.endPoint = CGPoint(x: local.x + 0.65, y: local.y + 0.65)
-            CATransaction.commit()
+            if surfaceID != id || feedback.frame != rect || feedback.superview == nil {
+                surfaceID = id; feedback.frame = rect; feedback.setOutline(path)
+                if feedback.superview == nil { addSubview(feedback, positioned: .above, relativeTo: nil) }
+            }
+            feedback.follow(feedback.convert(point, from: self), pressed: motion?.committed != true && (pressedID == id || (hit == nil && motion != nil)), background: hit == nil)
+        }
+        private func cutouts(for target: OverlayDragTarget) -> [CGRect] {
+            guard target.id.hasPrefix("menu:") else { return [] }
+            let optionID = target.id.replacingOccurrences(of: "menu:", with: "menu-option:")
+            return ordered.filter { $0.id == optionID }.map(\.rect)
         }
         func updateTargets(_ targets: [OverlayDragTarget]) {
             ordered = targets
+            feedbackPaths.removeAll(keepingCapacity: true)
+            surfaceID = nil
             let ids = Set(targets.map(\.id))
             if let pressedID, !ids.contains(pressedID) { cancelPress() }
             for id in Array(controls.keys) where !ids.contains(id) { controls.removeValue(forKey: id)?.removeFromSuperview() }
@@ -134,6 +147,7 @@ struct OverlayDragHandle: NSViewRepresentable {
                 if child.frame != target.rect { child.frame = target.rect }
                 child.action = target.action
                 child.circular = target.circular
+                child.cutouts = cutouts(for: target).map { child.convert($0, from: self) }
             }
             updatePointerSurface()
         }
@@ -172,6 +186,7 @@ struct OverlayDragHandle: NSViewRepresentable {
                   canStartDrag(at: convert(event.locationInWindow, from: nil)) else { return }
             motion = OverlayDragMotion(start: window.convertPoint(toScreen: event.locationInWindow),
                                        origin: window.frame.origin, pixels: 0, backingScale: window.backingScaleFactor)
+            pointerInside = true; updatePointerSurface(at: convert(event.locationInWindow, from: nil))
         }
         func begin(_ event: NSEvent, id: String) {
             cancelPress()
@@ -180,12 +195,16 @@ struct OverlayDragHandle: NSViewRepresentable {
             motion = OverlayDragMotion(start: window.convertPoint(toScreen: event.locationInWindow),
                                        origin: window.frame.origin, backingScale: window.backingScaleFactor)
             controls[id]?.pressed = true
+            pointerInside = true; updatePointerSurface(at: convert(event.locationInWindow, from: nil))
         }
         func drag(_ event: NSEvent, mayBegin: Bool = true) {
             guard let window, event.window === window, var motion else { return }
             let origin = motion.advance(to: window.convertPoint(toScreen: event.locationInWindow), mayBegin: mayBegin)
             self.motion = motion
-            if motion.committed, let pressedID { controls[pressedID]?.pressed = false }
+            if motion.committed, let pressedID {
+                controls[pressedID]?.pressed = false
+                feedback.setPressed(false)
+            }
             if let origin, window.frame.origin != origin { window.setFrameOrigin(origin) }
         }
         func release(_ event: NSEvent) {
@@ -205,12 +224,61 @@ struct OverlayDragHandle: NSViewRepresentable {
         func cancelPress() {
             if let pressedID { controls[pressedID]?.pressed = false }
             pressedID = nil; motion = nil
+            feedback.setPressed(false)
+        }
+        final class FeedbackView: NSView {
+            private let clip = CAShapeLayer()
+            private let rim = CAShapeLayer()
+            private let sheen = CAGradientLayer()
+            private let wash = CALayer()
+            private(set) var outline: CGPath?
+            private var isBackground = false
+            private var phase: Int?
+            override var isOpaque: Bool { false }
+            override func hitTest(_ point: NSPoint) -> NSView? { nil }
+            override init(frame: CGRect) {
+                super.init(frame: frame)
+                wantsLayer = true; layer?.mask = clip
+                layer?.addSublayer(wash); layer?.addSublayer(sheen); layer?.addSublayer(rim)
+                sheen.type = .radial; sheen.locations = [0, 1]
+                rim.fillColor = NSColor.clear.cgColor; rim.lineWidth = 1
+                setAccessibilityElement(false)
+            }
+            required init?(coder: NSCoder) { nil }
+            func setOutline(_ path: CGPath) {
+                CATransaction.begin(); CATransaction.setDisableActions(true)
+                outline = path; clip.frame = bounds; clip.path = path
+                sheen.frame = bounds; wash.frame = bounds; rim.frame = bounds; rim.path = path
+                CATransaction.commit()
+            }
+            func follow(_ point: CGPoint, pressed: Bool, background: Bool) {
+                CATransaction.begin(); CATransaction.setDisableActions(true)
+                let center = CGPoint(x: point.x / max(1, bounds.width), y: point.y / max(1, bounds.height))
+                let radius: CGFloat = background ? 170 : min(105, max(bounds.width, bounds.height))
+                sheen.startPoint = center
+                sheen.endPoint = CGPoint(x: center.x + radius / max(1, bounds.width), y: center.y + radius / max(1, bounds.height))
+                isBackground = background
+                setPressed(pressed)
+                CATransaction.commit()
+            }
+            func setPressed(_ pressed: Bool) {
+                let next = (isBackground ? 2 : 0) + (pressed ? 1 : 0)
+                guard phase != next else { return }
+                phase = next
+                CATransaction.begin(); CATransaction.setDisableActions(true)
+                let background = isBackground
+                sheen.colors = [NSColor.white.withAlphaComponent(pressed ? 0.22 : background ? 0.12 : 0.14).cgColor, NSColor.white.withAlphaComponent(0).cgColor]
+                wash.backgroundColor = NSColor.white.withAlphaComponent(background ? 0 : pressed ? 0.06 : 0.02).cgColor
+                rim.strokeColor = NSColor.white.withAlphaComponent(background ? 0 : pressed ? 0.42 : 0.20).cgColor
+                CATransaction.commit()
+            }
         }
         final class TileView: NSView {
             weak var owner: DragView?
             var id = ""
             var action: (() -> Void)?
             var circular = false
+            var cutouts: [CGRect] = []
             var pressed = false { didSet { if oldValue != pressed { needsDisplay = true } } }
             override var isOpaque: Bool { false }
             override var mouseDownCanMoveWindow: Bool { false }
@@ -221,7 +289,11 @@ struct OverlayDragHandle: NSViewRepresentable {
             override func draw(_ dirtyRect: NSRect) {
                 if pressed {
                     NSColor.white.withAlphaComponent(0.12).setFill()
-                    (circular ? NSBezierPath(ovalIn: bounds) : NSBezierPath(rect: bounds)).fill()
+                    var path = circular ? CGPath(ellipseIn: bounds, transform: nil) : CGPath(rect: bounds, transform: nil)
+                    for cutout in cutouts { path = path.subtracting(CGPath(rect: cutout, transform: nil)) }
+                    if let context = NSGraphicsContext.current?.cgContext {
+                        context.addPath(path); context.fillPath()
+                    }
                 }
             }
             override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); setAccessibilityElement(false) }

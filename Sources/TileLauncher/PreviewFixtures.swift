@@ -494,7 +494,7 @@ enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_OPTION_ONLY"] == "1" {
-            try verifyScaledDragTargets()
+            try verifyScaledDragTargets(to: directory)
             try save(DeckPreview(theme: .glass, registeredCount: 18).environment(\.colorScheme, .dark), to: directory.appendingPathComponent("option-corners-dark.png"))
             try save(DeckPreview(theme: .glass, compact: true, registeredCount: 18).environment(\.colorScheme, .light), dark: false, to: directory.appendingPathComponent("option-corners-small-light.png"))
             return
@@ -603,7 +603,7 @@ enum PreviewExport {
         try ApplicationSettingsLaunchValidation.verify()
         try AppSettingsProductionValidation.verify()
         try IconReadAheadValidation.verify()
-        try verifyScaledDragTargets()
+        try verifyScaledDragTargets(to: directory)
         try verifyRegisteredViewport(to: directory)
         try OverlayChromeValidation.verify(to: directory)
         try verifyWebAppIcon()
@@ -768,7 +768,8 @@ enum PreviewExport {
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
     }
 
-    @MainActor private static func verifyScaledDragTargets() throws {
+    @MainActor private static func verifyScaledDragTargets(to directory: URL) throws {
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         let fixture = PreviewFixture(theme: .classic, registeredCount: 18)
         let layout = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
                                            cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: 18)
@@ -778,7 +779,7 @@ enum PreviewExport {
             presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
             changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
             openInFinder: { _ in }, openTrash: {}, showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
-        let hosting = NSHostingView(rootView: view)
+        let hosting = NSHostingView(rootView: view.environment(\.colorScheme, .dark))
         let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
         let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -810,9 +811,9 @@ enum PreviewExport {
         for option in options {
             let normalID = option.id.replacingOccurrences(of: "menu-option:", with: "menu:")
             guard let normal = drag.targetsForValidation.first(where: { $0.id == normalID }),
-                  abs(option.rect.width * 2 - normal.rect.width) <= 1.01,
-                  abs(option.rect.height * 2 - normal.rect.height) <= 1.01,
-                  abs(option.rect.minX - normal.rect.midX) <= 1.01,
+                  abs(option.rect.width - option.rect.height) <= 1.01,
+                  abs(option.rect.height * 2 - min(normal.rect.height, normal.rect.width)) <= 1.01,
+                  abs(option.rect.maxX - normal.rect.maxX) <= 1.01,
                   abs(option.rect.minY - normal.rect.minY) <= 1.01,
                   (drag.nativeTarget(at: CGPoint(x: option.rect.midX, y: option.rect.midY)) as? OverlayDragHandle.DragView.TileView)?.id == option.id else {
                 print("Option geometry mismatch: option=\(option.rect) primary=\(drag.targetsForValidation.first(where: { $0.id == normalID })?.rect as Any) hit=\((drag.nativeTarget(at: CGPoint(x: option.rect.midX, y: option.rect.midY)) as? OverlayDragHandle.DragView.TileView)?.id as Any)")
@@ -822,6 +823,38 @@ enum PreviewExport {
         for point in [CGPoint(x: drag.bounds.midX, y: 15), CGPoint(x: 3, y: drag.bounds.midY),
                       CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 10)] {
             guard drag.canStartDrag(at: point), drag.nativeTarget(at: point) === drag else { throw NSError(domain: "TileLauncher.Preview", code: 85) }
+        }
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+           let option = options.first,
+           let primary = drag.targetsForValidation.first(where: { $0.id == option.id.replacingOccurrences(of: "menu-option:", with: "menu:") }) {
+            drag.feedbackEnabled = true
+            let normal = CGPoint(x: primary.rect.minX + primary.rect.width / 4, y: primary.rect.midY)
+            let corner = CGPoint(x: option.rect.midX, y: option.rect.midY)
+            let background = CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 100)
+            var backgroundBaseline: CGFloat?
+            for (name, point) in [("primary", normal), ("option", corner), ("background", background)] {
+                drag.pointerForValidation(point)
+                guard drag.activeFeedbackIDForValidation == (name == "primary" ? primary.id : name == "option" ? option.id : "background"),
+                      drag.feedbackContainsForValidation(point) else { throw NSError(domain: "TileLauncher.Feedback", code: 1) }
+                if name == "primary", drag.feedbackContainsForValidation(corner) { throw NSError(domain: "TileLauncher.Feedback", code: 2) }
+                if name == "option", drag.feedbackContainsForValidation(normal) { throw NSError(domain: "TileLauncher.Feedback", code: 3) }
+                if name == "background", drag.feedbackContainsForValidation(normal) || drag.feedbackContainsForValidation(corner) { throw NSError(domain: "TileLauncher.Feedback", code: 4) }
+                surface.layoutSubtreeIfNeeded()
+                CATransaction.flush()
+                let bitmap = surface.bitmapImageRepForCachingDisplay(in: surface.bounds)!
+                surface.cacheDisplay(in: surface.bounds, to: bitmap)
+                let sample = surface.convert(background, from: drag)
+                let x = min(bitmap.pixelsWide - 1, max(0, Int(sample.x * CGFloat(bitmap.pixelsWide) / surface.bounds.width)))
+                let y = min(bitmap.pixelsHigh - 1, max(0, Int((surface.bounds.height - sample.y) * CGFloat(bitmap.pixelsHigh) / surface.bounds.height)))
+                let color = bitmap.colorAt(x: x, y: y)!.usingColorSpace(.sRGB)!
+                if name == "primary" { backgroundBaseline = color.redComponent }
+                if name == "background", let before = backgroundBaseline {
+                    print("Background feedback pixel: \(before) -> \(color.redComponent)")
+                    guard color.redComponent > before + 0.015 else { throw NSError(domain: "TileLauncher.Feedback", code: 5) }
+                }
+                try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("feedback-\(name).png"))
+            }
+            drag.pointerForValidation(nil)
         }
         // Isolated callbacks never launch apps. Offscreen movement validates math
         // and action dispatch, not physical native background dragging.
@@ -870,30 +903,36 @@ enum PreviewExport {
               bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)!.alphaComponent > 0.05 else {
             throw NSError(domain: "TileLauncher.Preview", code: 93)
         }
-        // Native corner responder wins only inside the top-right quarter.
+        // The alternate stays one square unit even on a wide tile.
         // Crossing to another action before 7px cancels; dragging never clicks.
         var normal = 0, alternate = 0
         input.updateTargets([
-            .init(id: "normal", rect: CGRect(x: 20, y: 20, width: 200, height: 100), action: { normal += 1 }),
-            .init(id: "option", rect: CGRect(x: 120, y: 20, width: 100, height: 50), action: { alternate += 1 })
+            .init(id: "menu:sample", rect: CGRect(x: 20, y: 20, width: 200, height: 100), action: { normal += 1 }),
+            .init(id: "menu-option:sample", rect: CGRect(x: 170, y: 20, width: 50, height: 50), action: { alternate += 1 })
         ])
-        for (id, local) in [("normal", CGPoint(x: 70, y: 70)), ("option", CGPoint(x: 170, y: 40))] {
+        for (id, local) in [("menu:sample", CGPoint(x: 70, y: 70)), ("menu-option:sample", CGPoint(x: 195, y: 40))] {
             guard (input.nativeTarget(at: local) as? OverlayDragHandle.DragView.TileView)?.id == id else { throw NSError(domain: "TileLauncher.Option", code: 1) }
             let point = inputWindow.convertPoint(toScreen: input.convert(local, to: nil))
             input.begin(event(point, type: .leftMouseDown), id: id)
             input.release(event(point, type: .leftMouseUp))
         }
         guard normal == 1, alternate == 1 else { throw NSError(domain: "TileLauncher.Option", code: 2) }
-        let edge = inputWindow.convertPoint(toScreen: input.convert(CGPoint(x: 119, y: 40), to: nil))
-        input.begin(event(edge, type: .leftMouseDown), id: "normal")
+        let edge = inputWindow.convertPoint(toScreen: input.convert(CGPoint(x: 169, y: 40), to: nil))
+        input.begin(event(edge, type: .leftMouseDown), id: "menu:sample")
         input.release(event(CGPoint(x: edge.x + 2, y: edge.y), type: .leftMouseUp))
         guard normal == 1, alternate == 1 else { throw NSError(domain: "TileLauncher.Option", code: 3) }
-        input.liquidSurface = true
+        input.feedbackEnabled = true
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             input.pointerForValidation(CGPoint(x: 70, y: 70))
-            guard input.activeGlassFrameForValidation == CGRect(x: 20, y: 20, width: 200, height: 100) else { throw NSError(domain: "TileLauncher.Option", code: 6) }
+            guard input.activeFeedbackFrameForValidation == CGRect(x: 20, y: 20, width: 200, height: 100) else { throw NSError(domain: "TileLauncher.Option", code: 6) }
+            guard input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)), !input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)) else { throw NSError(domain: "TileLauncher.Option", code: 7) }
+            input.pointerForValidation(CGPoint(x: 195, y: 40))
+            guard input.activeFeedbackIDForValidation == "menu-option:sample", input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)), !input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)) else { throw NSError(domain: "TileLauncher.Option", code: 8) }
+            // Duplicate exclusions cannot cancel one another and light a tile.
+            input.excludedRects = [CGRect(x: 20, y: 20, width: 200, height: 100)]
+            input.updateTargets(input.targetsForValidation)
             input.pointerForValidation(CGPoint(x: 290, y: 200))
-            guard input.activeGlassFrameForValidation == nil else { throw NSError(domain: "TileLauncher.Option", code: 7) }
+            guard input.activeFeedbackIDForValidation == "background", input.feedbackContainsForValidation(CGPoint(x: 290, y: 200)), !input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)), !input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)) else { throw NSError(domain: "TileLauncher.Option", code: 9) }
             input.pointerForValidation(nil)
         }
         input.enabled = false

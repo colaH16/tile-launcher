@@ -57,14 +57,6 @@ final class DeckSurfaceView: NSView {
         updateSilhouette()
     }
 
-    func setBackgroundInteractive(_ enabled: Bool) {
-        if #available(macOS 27.0, *) {
-            let allowed = enabled && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-            if glass.effectIsInteractive != allowed { glass.effectIsInteractive = allowed }
-        }
-    }
-
     private func updateSilhouette() {
         // Only geometry changes affect the mask. Moving the panel must not animate
         // or regenerate a different shadow contour for every content refresh.
