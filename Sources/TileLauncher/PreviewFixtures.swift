@@ -828,17 +828,25 @@ enum PreviewExport {
            let option = options.first,
            let primary = drag.targetsForValidation.first(where: { $0.id == option.id.replacingOccurrences(of: "menu-option:", with: "menu:") }) {
             drag.feedbackEnabled = true
-            let normal = CGPoint(x: primary.rect.minX + primary.rect.width / 4, y: primary.rect.midY)
+            let normal = CGPoint(x: option.rect.minX - 6, y: option.rect.midY)
             let corner = CGPoint(x: option.rect.midX, y: option.rect.midY)
             let background = CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 100)
             var backgroundBaseline: CGFloat?
-            for (name, point) in [("primary", normal), ("option", corner), ("background", background)] {
+            let chrome = drag.targetsForValidation.first { $0.id == "chrome.pin" }!
+            let besideChrome = CGPoint(x: chrome.rect.maxX + 8, y: chrome.rect.midY)
+            for (name, point) in [("primary", normal), ("option", corner), ("background", background), ("background-chrome", besideChrome)] {
                 drag.pointerForValidation(point)
                 guard drag.activeFeedbackIDForValidation == (name == "primary" ? primary.id : name == "option" ? option.id : "background"),
                       drag.feedbackContainsForValidation(point) else { throw NSError(domain: "TileLauncher.Feedback", code: 1) }
                 if name == "primary", drag.feedbackContainsForValidation(corner) { throw NSError(domain: "TileLauncher.Feedback", code: 2) }
                 if name == "option", drag.feedbackContainsForValidation(normal) { throw NSError(domain: "TileLauncher.Feedback", code: 3) }
                 if name == "background", drag.feedbackContainsForValidation(normal) || drag.feedbackContainsForValidation(corner) { throw NSError(domain: "TileLauncher.Feedback", code: 4) }
+                if name == "background-chrome" {
+                    guard drag.feedbackContainsForValidation(CGPoint(x: chrome.rect.minX + 1, y: chrome.rect.minY + 1)),
+                          !drag.feedbackContainsForValidation(CGPoint(x: chrome.rect.midX, y: chrome.rect.midY)) else {
+                        throw NSError(domain: "TileLauncher.Feedback", code: 8)
+                    }
+                }
                 surface.layoutSubtreeIfNeeded()
                 CATransaction.flush()
                 let bitmap = surface.bitmapImageRepForCachingDisplay(in: surface.bounds)!
@@ -926,6 +934,13 @@ enum PreviewExport {
             input.pointerForValidation(CGPoint(x: 70, y: 70))
             guard input.activeFeedbackFrameForValidation == CGRect(x: 20, y: 20, width: 200, height: 100) else { throw NSError(domain: "TileLauncher.Option", code: 6) }
             guard input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)), !input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)) else { throw NSError(domain: "TileLauncher.Option", code: 7) }
+            // The inset gap and rounded corner belong to the primary surface,
+            // even though Option's logical click target includes both points.
+            guard input.feedbackContainsForValidation(CGPoint(x: 171, y: 40)),
+                  input.feedbackContainsForValidation(CGPoint(x: 172.1, y: 22.1)),
+                  (input.nativeTarget(at: CGPoint(x: 171, y: 40)) as? OverlayDragHandle.DragView.TileView)?.id == "menu-option:sample" else {
+                throw NSError(domain: "TileLauncher.Feedback", code: 6)
+            }
             input.pointerForValidation(CGPoint(x: 195, y: 40))
             guard input.activeFeedbackIDForValidation == "menu-option:sample", input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)), !input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)) else { throw NSError(domain: "TileLauncher.Option", code: 8) }
             // Duplicate exclusions cannot cancel one another and light a tile.
@@ -933,6 +948,16 @@ enum PreviewExport {
             input.updateTargets(input.targetsForValidation)
             input.pointerForValidation(CGPoint(x: 290, y: 200))
             guard input.activeFeedbackIDForValidation == "background", input.feedbackContainsForValidation(CGPoint(x: 290, y: 200)), !input.feedbackContainsForValidation(CGPoint(x: 70, y: 70)), !input.feedbackContainsForValidation(CGPoint(x: 195, y: 40)) else { throw NSError(domain: "TileLauncher.Option", code: 9) }
+            let circle = OverlayDragTarget(id: "chrome.circle-test", rect: CGRect(x: 250, y: 30, width: 32, height: 32), action: {}, circular: true)
+            input.excludedRects.append(circle.rect)
+            input.updateTargets(input.targetsForValidation + [circle])
+            input.pointerForValidation(CGPoint(x: 290, y: 200))
+            guard input.feedbackContainsForValidation(CGPoint(x: 251, y: 31)),
+                  !input.feedbackContainsForValidation(CGPoint(x: 266, y: 46)),
+                  input.nativeTarget(at: CGPoint(x: 251, y: 31)) is OverlayDragHandle.DragView.TileView else {
+                throw NSError(domain: "TileLauncher.Feedback", code: 7)
+            }
+            print("Feedback silhouettes: Option inset gap/rounded corner and circular-button corners remain lit; opaque centers excluded; rectangular input targets unchanged.")
             input.pointerForValidation(nil)
         }
         input.enabled = false
