@@ -114,7 +114,14 @@ final class MenuCatalog: ObservableObject {
             }, title: { element in
                 let name = read(element, kAXTitleAttribute) as? String ?? ""
                 return failed ? nil : name
-            }, equal: { CFEqual($0, $1) })
+            }, equal: { CFEqual($0, $1) }, preferredShortcut: command.shortcut, shortcut: { element in
+                let key = read(element, kAXMenuItemCmdCharAttribute) as? String
+                guard !failed else { return (nil, false) }
+                guard let key, !key.isEmpty else { return (nil, true) }
+                guard let modifiers = read(element, kAXMenuItemCmdModifiersAttribute) as? Int, !failed,
+                      let equivalent = MenuShortcut(key: key, modifiers: modifiers) else { return (nil, false) }
+                return (equivalent, true)
+            })
             let current: AXUIElement
             switch resolved {
             case .found(let element): current = element

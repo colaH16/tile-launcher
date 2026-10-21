@@ -2,6 +2,43 @@ import XCTest
 @testable import DeckCore
 
 final class MenuResolutionTests: XCTestCase {
+    func testProfileAlternateRequiresExactlyOneMatchingSavedShortcut() {
+        let labels = [0:"", 1:"Profiles", 2:"fish", 3:"fish"]
+        let tree = [0:[1], 1:[2,3]]
+        var shortcuts: [Int: MenuShortcut] = [2: MenuShortcut(key: "x", modifiers: 4)!,
+                                             3: MenuShortcut(key: "x", modifiers: 6)!]
+        var unreadable: Int?
+        func resolve(_ saved: MenuShortcut?) -> MenuPathResolution<Int> {
+            MenuPathResolver.resolve(paths: [["Profiles", "fish"]], root: 0,
+                children: { tree[$0] ?? [] }, title: { labels[$0] }, equal: ==,
+                preferredShortcut: saved, shortcut: { (shortcuts[$0], $0 != unreadable) })
+        }
+        let normal = MenuShortcut(key: "X", modifiers: 4)!
+        if case .found(let node) = resolve(normal) { XCTAssertEqual(node, 2) } else { XCTFail() }
+        if case .found(let node) = resolve(shortcuts[3]) { XCTAssertEqual(node, 3) } else { XCTFail() }
+        guard case .ambiguous = resolve(nil) else { return XCTFail("No saved equivalent must not guess") }
+        guard case .ambiguous = resolve(MenuShortcut(key: "z", modifiers: 4)) else { return XCTFail("Stale equivalent must not guess") }
+        unreadable = 3
+        guard case .unavailable = resolve(normal) else { return XCTFail("Unreadable alternate must not be ignored") }
+        unreadable = nil
+        shortcuts[3] = normal
+        guard case .ambiguous = resolve(normal) else { return XCTFail("Two matching actions must remain blocked") }
+    }
+    func testRepeatedReferenceIsOneActionAndParentDuplicatesStayAmbiguous() {
+        let labels = [0:"", 1:"Profiles", 2:"fish", 3:"Profiles"]
+        var tree = [0:[1,1], 1:[2,2]]
+        var reads = 0
+        func resolve() -> MenuPathResolution<Int> {
+            MenuPathResolver.resolve(paths: [["Profiles", "fish"]], root: 0,
+                children: { tree[$0] ?? [] }, title: { labels[$0] }, equal: ==,
+                preferredShortcut: MenuShortcut(key: "X", modifiers: 4), shortcut: { _ in reads += 1; return (nil, true) })
+        }
+        if case .found(let node) = resolve() { XCTAssertEqual(node, 2) } else { XCTFail() }
+        XCTAssertEqual(reads, 0)
+        tree[0] = [1,3]
+        guard case .ambiguous = resolve() else { return XCTFail("Leaf equivalent cannot choose a parent") }
+        XCTAssertEqual(reads, 0)
+    }
     func testResolverDoesNotMixParentsAndLeavesAcrossLanguages() {
         let labels = [0:"", 1:"파일", 2:"開く"]
         let children = [0:[1], 1:[2]]
