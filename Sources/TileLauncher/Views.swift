@@ -86,7 +86,7 @@ private struct RegisteredTileStyle: ButtonStyle {
             configuration.label
                 .foregroundStyle(palette.ink, palette.secondary)
                 .contentShape(shape)
-                .background(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96), in: shape)
+                .background(palette.fill, in: shape)
                 .overlay {
                     shape.fill(palette.ink.opacity(selected || configuration.isPressed ? 0.22 : hovering ? 0.07 : 0))
                         .allowsHitTesting(false)
@@ -134,7 +134,7 @@ private struct TileStyle: ButtonStyle {
                 .contentShape(shape)
                 .background {
                     ZStack {
-                        shape.fill(palette.fill.opacity(theme.isClassic || reduceTransparency ? 1 : 0.96))
+                        shape.fill(palette.fill)
                         shape.fill(palette.ink.opacity(selected || configuration.isPressed ? 0.22 : hovering ? 0.10 : 0))
                     }.allowsHitTesting(false)
                 }
@@ -161,6 +161,7 @@ struct DeckView: View {
     let selectApp: (AppItem) -> Void
     let selectPin: (PinnedItem) -> Void
     let selectMenu: (MenuCommand, AppItem?, WindowItem?) -> Void
+    var selectOptionMenu: (MenuCommand, AppItem?, WindowItem?) -> Void = { _, _, _ in }
     var selectAppSettings: (AppItem?, WindowItem?) -> Void = { _, _ in }
     let changeProfile: (String?) -> Void
     let cycleProfile: (Int) -> Void
@@ -198,6 +199,7 @@ struct DeckView: View {
     private var compact: Bool { snapshot.layout.compact }
     private var registeredItems: [PinnedItem] { presentation.profile?.items ?? snapshot.pins }
     private var profileName: String { presentation.profile?.name ?? snapshot.profileName }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var deckScheme
     private func u(_ value: CGFloat) -> CGFloat { value * snapshot.layout.scale }
@@ -220,7 +222,7 @@ struct DeckView: View {
             .overlayPreferenceValue(OverlayControlsKey.self) { controls in
                 GeometryReader { geometry in
                     // R194: held and pinned overlays move the same way.
-                    OverlayDragHandle(enabled: true,
+                    OverlayDragHandle(enabled: true, liquidSurface: !reduceTransparency && !reduceMotion, squareSurface: settings.theme.isClassic,
                                       excludedRects: controls.compactMap { $0.resolve(in: geometry) },
                                       targets: controls.compactMap { region in
                                           guard let id = region.targetID, let rect = region.resolve(in: geometry) else { return nil }
@@ -447,7 +449,9 @@ struct DeckView: View {
         if menuAppearance == .recentGraySquare && !command.isPinned && !snapshot.frequentMenuIDs.contains(command.id) {
             colors.menus = TileColor(0x777777)
         }
+        let palette = DeckPalette(section: .menus, emphasized: command.isPinned, dark: deckScheme == .dark, theme: settings.theme, colors: colors)
         return Button { selectMenu(command, snapshot.context, snapshot.menuContextWindow) } label: {
+            GeometryReader { tileGeometry in
             if startTileLabels {
                 let glyph = command.glyph
                 ZStack(alignment: .bottomLeading) {
@@ -456,18 +460,22 @@ struct DeckView: View {
                         if icon.kind == .symbol {
                             Image(systemName: icon.resourceName).font(.system(size: u(small ? 26 : 44), weight: .light))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                                .padding(.trailing, command.optionAction == nil ? 0 : tileGeometry.size.width / 2)
                         } else if let image = SavedMenuImages.image(icon) {
                             Image(nsImage: image).resizable().scaledToFit()
                                 .frame(width: u(small ? 26 : 44), height: u(small ? 26 : 44))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                                .padding(.trailing, command.optionAction == nil ? 0 : tileGeometry.size.width / 2)
                         }
                     case .symbol(let symbol):
                         Image(systemName: symbol).font(.system(size: u(small ? 26 : 44), weight: .light))
                             .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                                .padding(.trailing, command.optionAction == nil ? 0 : tileGeometry.size.width / 2)
                     case .shortcut(let keys):
                         Text(keys).font(.system(size: u(small ? 18 : 34), weight: .medium, design: .rounded))
                             .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, u(small ? 4 : 12))
                             .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                                .padding(.trailing, command.optionAction == nil ? 0 : tileGeometry.size.width / 2)
                     case .text:
                         // Windows 8 text-only tile: the name itself is the large
                         // content, with its parent menu as the small bottom label.
@@ -475,7 +483,7 @@ struct DeckView: View {
                             .lineLimit(3).minimumScaleFactor(0.7).multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                             .padding(.horizontal, u(small ? 3 : 8)).padding(.top, u(small ? 3 : 8))
-                            .padding(.trailing, u(small ? 10 : 28)).padding(.bottom, u(small ? 12 : 22))
+                            .padding(.trailing, command.optionAction == nil ? u(small ? 10 : 28) : tileGeometry.size.width / 2).padding(.bottom, u(small ? 12 : 22))
                     }
                     Text(glyph == .text ? command.path.dropLast().joined(separator: " › ") : command.title)
                         .font(.system(size: u(small ? 8 : 12), weight: .medium)).lineLimit(1)
@@ -487,6 +495,7 @@ struct DeckView: View {
                             if command.isPinned { Image(systemName: "pin.fill") }
                             Text("\(command.totalUseCount)회")
                         }.font(.system(size: u(9))).padding(u(8))
+                            .frame(maxHeight: .infinity, alignment: command.optionAction == nil ? .top : .bottom)
                     }
             } else {
             VStack(alignment: .leading, spacing: u(2)) {
@@ -513,8 +522,33 @@ struct DeckView: View {
                 }
             }.padding(u(small ? 4 : 10)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
+            }
         }.buttonStyle(TileStyle(section: .menus, emphasized: command.isPinned))
             .overlayDragAction("menu:\(command.id)") { selectMenu(command, snapshot.context, snapshot.menuContextWindow) }
+            .overlay(alignment: .topTrailing) {
+                if let option = command.optionAction, option.isValid {
+                    GeometryReader { geometry in
+                        Button { selectOptionMenu(command, snapshot.context, snapshot.menuContextWindow) } label: {
+                            VStack(alignment: .trailing, spacing: u(2)) {
+                                Image(systemName: "option").font(.system(size: u(small ? 12 : 20), weight: .medium))
+                                if !small { Text(option.path.last ?? "").font(.system(size: u(9))).lineLimit(2) }
+                            }
+                            .padding(u(small ? 4 : 7)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .foregroundStyle(palette.ink)
+                            .background(palette.ink.opacity(0.12))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .clipShape(UnevenRoundedRectangle(topTrailingRadius: settings.theme.isClassic ? 0 : u(small ? 8 : 14)))
+                        .frame(width: geometry.size.width / 2, height: geometry.size.height / 2)
+                        .overlayDragAction("menu-option:\(command.id)") { selectOptionMenu(command, snapshot.context, snapshot.menuContextWindow) }
+                        .accessibilityLabel("Option 메뉴: " + (option.path.last ?? ""))
+                        .help("⌥ " + option.path.joined(separator: " › "))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    }
+                }
+            }
+            .accessibilityAction(named: Text("일반 메뉴 실행")) { selectMenu(command, snapshot.context, snapshot.menuContextWindow) }
             .help(command.path.joined(separator: " › ") + (command.isPinned ? " · 고정됨" : "") + "\n" + command.usageDescription)
             .accessibilityValue(command.usageDescription)
             .contextMenu {

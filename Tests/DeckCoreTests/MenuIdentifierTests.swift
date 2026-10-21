@@ -61,20 +61,21 @@ final class MenuIdentifierTests: XCTestCase {
         XCTAssertEqual(concurrentAddition[0].id, used.id)
         XCTAssertEqual(concurrentAddition[0].axIdentifier, edited.axIdentifier)
     }
-    func testIdentifierRemainsLocalAndCloudApplicationPreservesLocalBinding() {
+    func testSelectionSynchronizesAndLegacyAbsencePreservesLocalBinding() throws {
         var command = MenuCommand(appID: "com.googlecode.iterm2", appName: "iTerm2", path: path)
         command.axIdentifier = "NewTab:openmaru8 in local"
         let before = SettingsSyncProjection(preferences: [:], commands: [command])
         var replica = SettingsSyncReplica()
         replica.capture(before: nil, after: before, at: Date())
-        let snapshot = replica.snapshot, sequence = replica.sequence
         var changed = command; changed.axIdentifier = "NewWindow:openmaru8 in local"
         let after = SettingsSyncProjection(preferences: [:], commands: [changed])
         replica.capture(before: before, after: after, at: Date())
-        XCTAssertEqual(replica.snapshot, snapshot)
-        XCTAssertEqual(replica.sequence, sequence)
+        var otherMac = SettingsSyncReplica(); otherMac.snapshot = replica.snapshot
+        XCTAssertEqual(otherMac.applying(to: .init(preferences: [:], commands: [])).commands.first?.axIdentifier, changed.axIdentifier)
+        for id in replica.snapshot.menus.keys { replica.snapshot.menus[id]?.execution = nil }
         XCTAssertEqual(replica.applying(to: after).commands.first?.axIdentifier, changed.axIdentifier)
-        var otherMac = SettingsSyncReplica(); otherMac.snapshot = snapshot
-        XCTAssertNil(otherMac.applying(to: .init(preferences: [:], commands: [])).commands.first?.axIdentifier)
+        replica.seedExecutionSelections(from: after)
+        XCTAssertEqual(replica.snapshot.combinedMenus[0].execution?.value, changed.executionSelection)
+        XCTAssertNil(replica.snapshot.combinedMenus[0].execution?.stamp.date)
     }
 }

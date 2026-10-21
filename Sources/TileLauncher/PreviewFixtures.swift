@@ -115,6 +115,10 @@ final class PreviewFixture: ObservableObject {
                 return command
             }
         }
+        if !menuComparison {
+            commands[0].optionAction = .init(path: ["파일", "모두 PDF로 내보내기"], identifier: "preview.exportAll")
+            commands[4].optionAction = .init(path: ["보기", "모두 확대"], identifier: "preview.zoomAll")
+        }
         settings.commands = commands
         var windows: [WindowItem] = []
         let iconURLs = ["terminal", "externaldrive", "note.text", "calendar", "plus", "music.note"].map { URL(string: "tile-preview://\($0)/\($0)")! }
@@ -489,6 +493,12 @@ struct FittedSettingsPreview: View {
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if ProcessInfo.processInfo.environment["TILE_PREVIEW_OPTION_ONLY"] == "1" {
+            try verifyScaledDragTargets()
+            try save(DeckPreview(theme: .glass, registeredCount: 18).environment(\.colorScheme, .dark), to: directory.appendingPathComponent("option-corners-dark.png"))
+            try save(DeckPreview(theme: .glass, compact: true, registeredCount: 18).environment(\.colorScheme, .light), dark: false, to: directory.appendingPathComponent("option-corners-small-light.png"))
+            return
+        }
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_SYNC_ONLY"] == "1" {
             try SettingsSyncValidation.verify()
             let fixture = PreviewFixture(theme: .classic), login = LoginItemManager()
@@ -795,6 +805,20 @@ enum PreviewExport {
                 throw NSError(domain: "TileLauncher.Preview", code: 84)
             }
         }
+        let options = drag.targetsForValidation.filter { $0.id.hasPrefix("menu-option:") }
+        guard options.count == 2 else { throw NSError(domain: "TileLauncher.Option", code: 4) }
+        for option in options {
+            let normalID = option.id.replacingOccurrences(of: "menu-option:", with: "menu:")
+            guard let normal = drag.targetsForValidation.first(where: { $0.id == normalID }),
+                  abs(option.rect.width * 2 - normal.rect.width) <= 1.01,
+                  abs(option.rect.height * 2 - normal.rect.height) <= 1.01,
+                  abs(option.rect.minX - normal.rect.midX) <= 1.01,
+                  abs(option.rect.minY - normal.rect.minY) <= 1.01,
+                  (drag.nativeTarget(at: CGPoint(x: option.rect.midX, y: option.rect.midY)) as? OverlayDragHandle.DragView.TileView)?.id == option.id else {
+                print("Option geometry mismatch: option=\(option.rect) primary=\(drag.targetsForValidation.first(where: { $0.id == normalID })?.rect as Any) hit=\((drag.nativeTarget(at: CGPoint(x: option.rect.midX, y: option.rect.midY)) as? OverlayDragHandle.DragView.TileView)?.id as Any)")
+                throw NSError(domain: "TileLauncher.Option", code: 5)
+            }
+        }
         for point in [CGPoint(x: drag.bounds.midX, y: 15), CGPoint(x: 3, y: drag.bounds.midY),
                       CGPoint(x: drag.bounds.midX, y: drag.bounds.maxY - 10)] {
             guard drag.canStartDrag(at: point), drag.nativeTarget(at: point) === drag else { throw NSError(domain: "TileLauncher.Preview", code: 85) }
@@ -845,6 +869,32 @@ enum PreviewExport {
         guard bitmap.colorAt(x: 0, y: 0)!.alphaComponent < 0.01,
               bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)!.alphaComponent > 0.05 else {
             throw NSError(domain: "TileLauncher.Preview", code: 93)
+        }
+        // Native corner responder wins only inside the top-right quarter.
+        // Crossing to another action before 7px cancels; dragging never clicks.
+        var normal = 0, alternate = 0
+        input.updateTargets([
+            .init(id: "normal", rect: CGRect(x: 20, y: 20, width: 200, height: 100), action: { normal += 1 }),
+            .init(id: "option", rect: CGRect(x: 120, y: 20, width: 100, height: 50), action: { alternate += 1 })
+        ])
+        for (id, local) in [("normal", CGPoint(x: 70, y: 70)), ("option", CGPoint(x: 170, y: 40))] {
+            guard (input.nativeTarget(at: local) as? OverlayDragHandle.DragView.TileView)?.id == id else { throw NSError(domain: "TileLauncher.Option", code: 1) }
+            let point = inputWindow.convertPoint(toScreen: input.convert(local, to: nil))
+            input.begin(event(point, type: .leftMouseDown), id: id)
+            input.release(event(point, type: .leftMouseUp))
+        }
+        guard normal == 1, alternate == 1 else { throw NSError(domain: "TileLauncher.Option", code: 2) }
+        let edge = inputWindow.convertPoint(toScreen: input.convert(CGPoint(x: 119, y: 40), to: nil))
+        input.begin(event(edge, type: .leftMouseDown), id: "normal")
+        input.release(event(CGPoint(x: edge.x + 2, y: edge.y), type: .leftMouseUp))
+        guard normal == 1, alternate == 1 else { throw NSError(domain: "TileLauncher.Option", code: 3) }
+        input.liquidSurface = true
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            input.pointerForValidation(CGPoint(x: 70, y: 70))
+            guard input.activeGlassFrameForValidation == CGRect(x: 20, y: 20, width: 200, height: 100) else { throw NSError(domain: "TileLauncher.Option", code: 6) }
+            input.pointerForValidation(CGPoint(x: 290, y: 200))
+            guard input.activeGlassFrameForValidation == nil else { throw NSError(domain: "TileLauncher.Option", code: 7) }
+            input.pointerForValidation(nil)
         }
         input.enabled = false
         guard input.nativeTarget(at: CGPoint(x: 70, y: 70)) == nil else { throw NSError(domain: "TileLauncher.Preview", code: 90) }

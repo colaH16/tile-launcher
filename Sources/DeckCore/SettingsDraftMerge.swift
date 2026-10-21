@@ -26,7 +26,7 @@ public enum SettingsDraftMerge {
         for change in edited {
             if let base = old[change.id] {
                 if positions[change.id] == nil {
-                    guard base.isPinned != change.isPinned || base.symbol != change.symbol else { continue }
+                    guard base.isPinned != change.isPinned || base.symbol != change.symbol || base.executionSelection != change.executionSelection else { continue }
                     var restored = tombstones[change.id] ?? base
                     restored.isPinned = field(base.isPinned, change.isPinned, restored.isPinned)
                     restored.symbol = field(base.symbol, change.symbol, restored.symbol)
@@ -37,7 +37,8 @@ public enum SettingsDraftMerge {
                 current.isPinned = field(base.isPinned, change.isPinned, current.isPinned)
                 current.symbol = field(base.symbol, change.symbol, current.symbol)
                 current.shortcut = field(base.shortcut, change.shortcut, current.shortcut)
-                current.axIdentifier = field(base.axIdentifier, change.axIdentifier, current.axIdentifier)
+                let selection = field(base.executionSelection, change.executionSelection, current.executionSelection)
+                current.axIdentifier = selection.identifier; current.optionAction = selection.option
                 current.resourceIcon = field(base.resourceIcon, change.resourceIcon, current.resourceIcon)
                 current.resourceBinding = field(base.resourceBinding, change.resourceBinding, current.resourceBinding)
                 current.resourceIdentityVersion = field(base.resourceIdentityVersion, change.resourceIdentityVersion, current.resourceIdentityVersion)
@@ -49,7 +50,9 @@ public enum SettingsDraftMerge {
                 result[index].isPinned = change.isPinned
                 if let symbol = change.symbol { result[index].symbol = symbol }
                 if let icon = change.resourceIcon { result[index].resourceIcon = icon }
-                if let identifier = change.axIdentifier { result[index].axIdentifier = identifier }
+                if !change.executionSelection.isEmpty {
+                    result[index].axIdentifier = change.axIdentifier; result[index].optionAction = change.optionAction
+                }
                 if let binding = change.resourceBinding {
                     result[index].resourceBinding = binding
                     result[index].resourceIdentityVersion = change.resourceIdentityVersion
@@ -107,6 +110,7 @@ public struct MenuSettingsDraft: Equatable {
         let symbol: String?
         let shortcut: MenuShortcut?
         let axIdentifier: String?
+        let optionAction: MenuActionReference?
         let icon: MenuResourceIcon?
         let binding: MenuResourceBinding?
         let identityVersion: Int?
@@ -114,6 +118,7 @@ public struct MenuSettingsDraft: Equatable {
         init(_ command: MenuCommand) {
             id = command.id; pinned = command.isPinned; symbol = command.symbol; shortcut = command.shortcut
             axIdentifier = command.axIdentifier
+            optionAction = command.optionAction
             icon = command.resourceIcon; binding = command.resourceBinding
             identityVersion = command.resourceIdentityVersion; aliases = command.pathAliases
         }

@@ -13,6 +13,8 @@ struct OverlayDragTarget {
 /// Right clicks, hover and wheel events pass through to the SwiftUI controls.
 struct OverlayDragHandle: NSViewRepresentable {
     let enabled: Bool
+    var liquidSurface = false
+    var squareSurface = false
     var excludedRects: [CGRect] = []
     var targets: [OverlayDragTarget] = []
 
@@ -20,6 +22,8 @@ struct OverlayDragHandle: NSViewRepresentable {
     func updateNSView(_ view: DragView, context: Context) {
         view.excludedRects = excludedRects
         view.enabled = enabled
+        view.liquidSurface = liquidSurface
+        view.squareSurface = squareSurface
         view.updateTargets(targets)
     }
     static func dismantleNSView(_ view: DragView, coordinator: ()) { view.enabled = false; view.cancelPress() }
@@ -35,9 +39,18 @@ struct OverlayDragHandle: NSViewRepresentable {
         #if TILE_LAUNCHER_DIAGNOSTICS
         var allowUnorderedActionsForValidation = false
         var targetsForValidation: [OverlayDragTarget] { ordered }
+        var activeGlassFrameForValidation: CGRect? { hoverGlass?.superview == nil ? nil : hoverGlass?.frame }
+        func pointerForValidation(_ point: CGPoint?) { pointerInside = point != nil; updatePointerSurface(at: point) }
         #endif
         private var controls: [String: TileView] = [:]
         private var ordered: [OverlayDragTarget] = []
+        var liquidSurface = false { didSet { if oldValue != liquidSurface { updatePointerSurface() } } }
+        var squareSurface = false
+        private var tracking: NSTrackingArea?
+        private var pointerInside = false
+        private var surfaceID: String?
+        private var hoverGlass: NSGlassEffectView?
+        private let sheen = CAGradientLayer()
         private var bypassHitTesting = false
         private var pressedID: String?
         private var motion: OverlayDragMotion?
@@ -51,6 +64,60 @@ struct OverlayDragHandle: NSViewRepresentable {
             if enabled { window?.isMovable = true; window?.isMovableByWindowBackground = false }
             if window == nil { cancelPress() }
             setAccessibilityElement(false)
+        }
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let tracking { removeTrackingArea(tracking) }
+            let area = NSTrackingArea(rect: .zero, options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
+            addTrackingArea(area); tracking = area
+        }
+        override func mouseEntered(with event: NSEvent) { pointerInside = true; updatePointerSurface() }
+        override func mouseMoved(with event: NSEvent) { pointerInside = true; updatePointerSurface() }
+        override func mouseExited(with event: NSEvent) { pointerInside = false; updatePointerSurface() }
+        private func updatePointerSurface(at supplied: CGPoint? = nil) {
+            var ancestor = superview
+            while let node = ancestor, !(node is DeckSurfaceView) { ancestor = node.superview }
+            guard liquidSurface, enabled, pointerInside, let window,
+                  !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
+                  !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+                hoverGlass?.removeFromSuperview(); surfaceID = nil
+                (ancestor as? DeckSurfaceView)?.setBackgroundInteractive(false)
+                return
+            }
+            let point = supplied ?? convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            let hit = ordered.last(where: { $0.rect.contains(point) })
+            (ancestor as? DeckSurfaceView)?.setBackgroundInteractive(hit == nil && bounds.contains(point))
+            guard var target = hit else { hoverGlass?.removeFromSuperview(); surfaceID = nil; return }
+            if target.id.hasPrefix("menu-option:"),
+               let main = ordered.first(where: { $0.id == target.id.replacingOccurrences(of: "menu-option:", with: "menu:") }) { target = main }
+            // A single reusable native effect, only over the hovered tile.
+            // Pointer motion never rebuilds the SwiftUI tree or all tile effects.
+            if hoverGlass == nil {
+                let glass = NSGlassEffectView(frame: .zero)
+                glass.style = .clear; glass.contentView = NSView()
+                glass.contentView?.wantsLayer = true
+                sheen.type = .radial
+                sheen.colors = [NSColor.white.withAlphaComponent(0.24).cgColor, NSColor.white.withAlphaComponent(0).cgColor]
+                sheen.locations = [0, 1]
+                glass.contentView?.layer?.addSublayer(sheen)
+                if #available(macOS 27.0, *) { glass.effectIsInteractive = true }
+                glass.setAccessibilityElement(false); hoverGlass = glass
+            }
+            guard let glass = hoverGlass else { return }
+            if surfaceID != target.id || glass.frame != target.rect || glass.superview == nil {
+                surfaceID = target.id; glass.frame = target.rect
+                glass.cornerRadius = target.circular ? min(target.rect.width, target.rect.height) / 2 : squareSurface ? 0 : min(14, target.rect.height / 6)
+                if glass.superview == nil { addSubview(glass, positioned: .above, relativeTo: nil) }
+            }
+            // Only one small surface changes with pointer input. No timers,
+            // display-link loop, or per-move SwiftUI state is required.
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            sheen.frame = CGRect(origin: .zero, size: target.rect.size)
+            let local = CGPoint(x: (point.x - target.rect.minX) / max(1, target.rect.width),
+                                y: 1 - (point.y - target.rect.minY) / max(1, target.rect.height))
+            sheen.startPoint = local
+            sheen.endPoint = CGPoint(x: local.x + 0.65, y: local.y + 0.65)
+            CATransaction.commit()
         }
         func updateTargets(_ targets: [OverlayDragTarget]) {
             ordered = targets
@@ -68,6 +135,7 @@ struct OverlayDragHandle: NSViewRepresentable {
                 child.action = target.action
                 child.circular = target.circular
             }
+            updatePointerSurface()
         }
         func canStartDrag(at point: NSPoint) -> Bool {
             enabled && !isHiddenOrHasHiddenAncestor
@@ -130,7 +198,7 @@ struct OverlayDragHandle: NSViewRepresentable {
             canExecute = canExecute || allowUnorderedActionsForValidation
             #endif
             let action = motion?.committed == false && controls[id]?.frame.contains(local) == true
-                && canExecute ? controls[id]?.action : nil
+                && nativeTarget(at: local) === controls[id] && canExecute ? controls[id]?.action : nil
             cancelPress() // Clear tracking before an action hides/rebuilds the overlay.
             action?()
         }

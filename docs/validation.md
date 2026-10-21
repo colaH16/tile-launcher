@@ -800,3 +800,11 @@ open "$HOME/Library/Developer/TileLauncher/build/Tile Launcher.app"
 - stapler staple/validate, codesign deep strict, Gatekeeper, 공식 release verify의 ZIP 재추출 검사 통과. 최종 ZIP은2,601,968바이트/SHA256 147214b944aa5138fe8e70f0b48af89dfaa6dcf2cf6a3cdb94595071ddf52f45다.
 - v1.9.6 태그는 빌드 소스0f5fed7d6567b240fc3841bc0286687466e5b226이다. 공개전3자산재다운로드 해시·노트·태그를 확인해 정식/최신으로 공개했다. 공개후 비로그인3자산 해시가 일치했다. 익명latest API는요청한도403으로실패했고 인증조회에서v1.9.6/draft=false/prerelease=false를확인했다.
 - iCloud의Tile-Launcher-1.9.6-notarized에동일공개자산과노트를복사해해시확인했다. 서버동기화완료는미확인이며 개발Mac설치/실행은변경하지않았다.
+
+
+## 2026-10-21 · 2.1.0(61) Option 코너·불투명 커서 표면
+
+- 격리 소스 사본에서 전체 XCTest289개/Python30개 통과. 기본/대안 묶음의 실제 편집시각 병합·초기 legacy 선택·이전 필드 없음 보존·명시적 비우기·이관·수신 적용, 다른 이름/단축키 없는 쌍, 초안에서 다른 쌍의 반쪽 혼합 방지를 검사했다.
+- Debug 전체 네이티브 비표시 검사가 통과하고 미리보기101개를 생성했다. 기본/작은 타일 두 Option 코너가 가로·세로 절반(정수 픽셀 반올림 오차 이내)이며 해당 코너에만 별도 실행 응답자가 잡히는 것을 검사했다. 7px 전 일반/대안 클릭 분리·영역 경계 이동 취소·드래그 후 미실행·배경1px 이동·원형 강조와 단일 hover 표면도 통과했다.
+- 메뉴 아이콘/재등록 검사와 CloudKit 엔진 없는 오프라인 coordinator·journal·초기 잠금 검사가 통과했다. 설정 List의 기존 NSTableView 재진입 경고가 있었으나 검사 실패는 없었다. 실제 원격 송수신과 서명 후 합성/손 입력은 이 검사로 확정하지 않는다.
+- 열린 Finder 메뉴에서 AXPrimary로 확인했던 관계를 일반화한 읽기 코드를 연결했다. 닫힌 메뉴만으로 관계를 추정하지 않으며 실제 앱별 지원 범위는 사용자가 설치 시험으로 확인한다. 현재 Claude 세션은 연결되지 않아 이번 변경을 Claude 공동 검증 완료로 표시하지 않는다.

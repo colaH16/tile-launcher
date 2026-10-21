@@ -95,23 +95,23 @@ public struct SettingsSyncMenu: Codable, Equatable, Identifiable {
     public var resourceIdentity: MenuResourceIdentity?
     /// A selected AX identifier, still checked against the receiving app's
     /// actual menu path. nil field means an older peer has no selection data.
-    public var executionIdentifier: SettingsSyncField<String?>?
+    public var execution: SettingsSyncField<MenuExecutionSelection>?
     public var presence: SettingsSyncField<Bool>
     public var pinned: SettingsSyncField<Bool>
     public var icon: SettingsSyncIcon
     public var aliases: [String]?
     public var origins: [String: String]?
     public var lastEdit: SettingsSyncStamp {
-        (icon.edits.map(\.stamp) + [presence.stamp, pinned.stamp] + [executionIdentifier?.stamp].compactMap { $0 }).max()!
+        (icon.edits.map(\.stamp) + [presence.stamp, pinned.stamp] + [execution?.stamp].compactMap { $0 }).max()!
     }
     public init(id: String, appID: String, appName: String, path: [String],
                 resourceIdentity: MenuResourceIdentity? = nil, presence: SettingsSyncField<Bool>,
                 pinned: SettingsSyncField<Bool>, icon: SettingsSyncIcon, aliases: [String]? = nil, origins: [String: String]? = nil,
-                executionIdentifier: SettingsSyncField<String?>? = nil) {
+                execution: SettingsSyncField<MenuExecutionSelection>? = nil) {
         self.id = id; self.appID = appID; self.appName = appName; self.path = path
         self.resourceIdentity = resourceIdentity; self.presence = presence; self.pinned = pinned
         self.icon = icon; self.aliases = aliases; self.origins = origins
-        self.executionIdentifier = executionIdentifier
+        self.execution = execution
     }
     public var isPresent: Bool {
         presence.value || (lastEdit.date != nil && presence.stamp < lastEdit)
@@ -126,9 +126,9 @@ public struct SettingsSyncMenu: Codable, Equatable, Identifiable {
         value.presence = presence.merged(with: other.presence)
         value.pinned = pinned.merged(with: other.pinned)
         value.icon = icon.merged(with: other.icon)
-        if let own = executionIdentifier, let remote = other.executionIdentifier {
-            value.executionIdentifier = own.merged(with: remote)
-        } else { value.executionIdentifier = executionIdentifier ?? other.executionIdentifier }
+        if let own = execution, let remote = other.execution {
+            value.execution = own.merged(with: remote)
+        } else { value.execution = execution ?? other.execution }
         value.aliases = aliases == nil && other.aliases == nil ? nil : Array(Set((aliases ?? [id]) + (other.aliases ?? [id]))).sorted()
         var origins = self.origins ?? [:]
         for (device, localID) in other.origins ?? [:] {
@@ -193,9 +193,9 @@ public struct SettingsSyncSnapshot: Codable, Equatable {
                   menu.origins?.allSatisfy({ !$0.key.isEmpty && !$0.value.isEmpty }) ?? true else {
                 throw MergeError.inconsistentIdentity
             }
-            if let field = menu.executionIdentifier {
+            if let field = menu.execution {
                 guard field.stamp.isValid,
-                      field.value == nil || MenuAXIdentifier.validated(field.value) != nil else { throw MergeError.inconsistentIdentity }
+                      field.value.isValid else { throw MergeError.inconsistentIdentity }
             }
             if let identity = menu.resourceIdentity {
                 guard identity.appID == menu.appID, !identity.archive.isEmpty,

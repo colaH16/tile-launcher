@@ -458,6 +458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                             selectApp: { [weak self] in self?.select(app: $0) },
                             selectPin: { [weak self] in self?.select(pin: $0) },
                             selectMenu: { [weak self] command, context, window in self?.select(menu: command, context: context, window: window) },
+                            selectOptionMenu: { [weak self] command, context, window in self?.select(menu: command, context: context, window: window, option: true) },
                             selectAppSettings: { [weak self] context, window in self?.selectAppSettings(context: context, window: window) },
                             changeProfile: { [weak self] id in self?.changeProfile(id) },
                             cycleProfile: { [weak self] step in self?.cycleProfile(step) },
@@ -808,14 +809,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         else { selectFolderInFinder(pin.url) }
     }
-    private func select(menu: MenuCommand, context: AppItem?, window: WindowItem?) {
+    private func select(menu: MenuCommand, context: AppItem?, window: WindowItem?, option: Bool = false) {
+        guard !option || menu.optionCommand() != nil else { return }
+        let action = option ? menu.optionCommand()! : menu
         guard let context, context.id == menu.appID else { return }
         performMenu(in: context, window: window) { [weak self] in
-            self?.menuUsage.suppressLauncherAction(menu)
-            self?.menuCatalog.execute(menu, in: context, shortcut: { [weak self] in
-                self?.settings.updateShortcut($0, for: menu.id)
+            self?.menuUsage.suppressLauncherAction(action, primary: menu)
+            self?.menuCatalog.execute(action, in: context, shortcut: { [weak self] in
+                if !option { self?.settings.updateShortcut($0, for: menu.id) }
             }, identifier: { [weak self] in
-                self?.settings.updateMenuIdentifier($0, for: menu.id)
+                if !option { self?.settings.updateMenuIdentifier($0, for: menu.id) }
             }) { [weak self] message in
                 if let message { self?.error(message) } else {
                     self?.settings.recordUse(menu.id)

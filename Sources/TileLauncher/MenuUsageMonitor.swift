@@ -83,10 +83,10 @@ final class MenuUsageMonitor {
         frontmost = nil
         queue.async { [weak self] in self?.tearDown() }
     }
-    func suppressLauncherAction(_ menu: MenuCommand, completion: (() -> Void)? = nil) {
+    func suppressLauncherAction(_ menu: MenuCommand, primary: MenuCommand? = nil, completion: (() -> Void)? = nil) {
         queue.async { [weak self] in
             self?.suppressedUntil = ProcessInfo.processInfo.systemUptime + 2
-            self?.suppressedMenus = Set(MenuPathMatch.paths(menu).map { MenuIdentity(appID: menu.appID, path: $0) })
+            self?.suppressedMenus = Set((MenuPathMatch.paths(menu) + (primary.map(MenuPathMatch.paths) ?? [])).map { MenuIdentity(appID: menu.appID, path: $0) })
             self?.resetInteraction()
             if let completion { DispatchQueue.main.async(execute: completion) }
         }
@@ -232,6 +232,13 @@ final class MenuUsageMonitor {
             if !openedMenus.contains(where: { CFEqual($0, element) }), openedMenus.count < 32 { openedMenus.append(element) }
             subscribe(element)
             helpCache = nil
+            discoverOptions(element, app: app)
+            // Some apps emit AXMenuOpened just before the primary links update.
+            let process = lifecycle.process
+            queue.asyncAfter(deadline: .now() + 0.025) { [weak self] in
+                guard let self, self.lifecycle.process == process, self.app == app, self.openedMenus.contains(where: { CFEqual($0, element) }) else { return }
+                self.discoverOptions(element, app: app)
+            }
         } else if name == kAXMenuClosedNotification {
             openedMenus.removeAll { CFEqual($0, element) }
             if let observer, reader.value(element, kAXRoleAttribute) as? String == kAXMenuRole {
@@ -250,6 +257,16 @@ final class MenuUsageMonitor {
             commit(hit, time: time)
         }
     }
+    private func discoverOptions(_ element: AXUIElement, app: AppItem) {
+        let pairs = MenuOptionDiscovery.read(opened: element, app: app)
+        MenuOptionDiscovery.shared.remember(pairs, app: app)
+        guard !pairs.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.settings.attachOptionPairs(pairs)
+            self.onCapture?()
+        }
+    }
     private func selectedHit(reader: MenuAXReader) -> MenuHit? {
         for menu in openedMenus.reversed() {
             if let selected = reader.selectedLeaf(menu), let hit = hit(selected, reader: reader) { return hit }
@@ -266,7 +283,8 @@ final class MenuUsageMonitor {
             guard let resolved = MenuCapturePolicy.resolveHelp(title: hit.menu.identity.path.last ?? "", choices: helpCache ?? []) else { return nil }
             hit = MenuHit(menu: resolved, frame: hit.frame, isHelpResult: true)
         }
-        return hit
+        let normalized = MenuOptionDiscovery.shared.normalized(hit.menu, app: app)
+        return MenuHit(menu: normalized, frame: hit.frame, isHelpResult: hit.isHelpResult)
     }
     private func commit(_ hit: MenuHit, time: TimeInterval) {
         if suppressedMenus.contains(hit.menu.identity), time < suppressedUntil { return }

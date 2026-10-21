@@ -472,3 +472,10 @@ OS 변경에 맞춰 재질·곡률·컨트롤·타이포그래피를 조정하�
 - Developer ID 단계는 강화된 런타임·타임스탬프·팀을 확인하고 실제 기능을 재검증한다. Apple Events 용도 설명과 권한은 Finder 기능에 한정한다. 예외 entitlement를 일괄로 켜지 않는다.
 - notarytool JSON의 id/name/status, Keychain profile, 중단 후 제출 복구, stapler/Gatekeeper와 재패키징을 당시 도구로 재확인한다. 개발용 서명 패키징 검사가 공증 성공을 대신하지 않는다.
 - GitHub CLI의 공개 저장소/태그/초안/파일 다운로드 동작을 검사한다. 정식(prerelease=false) 선택과 공증 상태는 별개로 유지한다. 실제 게시 단계 실행 전 업로드한 파일 해시/설명 일치를 확인한다.
+
+
+## R318–R320 · Option 관계와 포인터 유리 표면
+
+- 공개 AXMenuItemPrimaryUIElement는 실제 열린 메뉴에서 기본 항목을 가리키는지 확인한다. 닫힌 메뉴에서 self를 반환하는 경우는 대안 부재의 증거로 쓰지 않는다. Option 단축키만 있는 일반 항목을 대안으로 묶지 않는다. 현재 Finder의 이름이 다른3쌍을 실측했으며 모든 앱으로 확대하지 않는다.
+- macOS27 NSGlassEffectView.effectIsInteractive는 가용성 가드로 사용하고26도 빌드한다. Opaque tile 바탕 위에 하나의 재사용 hover glass와 반사광만 두며, 타일 위에서는 외곽 배경의 interactive 반응을 끈다. 포인터 이동은 native layer만 갱신하고 idle 타이머/SwiftUI 전체 재구성은 없다. 실제 FPS·반응 정도는 네이티브 창이 보이는 상태에서 따로 확인한다.
+- 큰/작은 타일의25% 코너, 일반/대안 실행, 7px 드래그·우클릭·휠, 동작/투명도 줄이기를 함께 확인한다. 다른 Mac에서는 두 실행 대상의 앱/전체 경로/식별자가 일치할 때만 실행되는지 확인한다.

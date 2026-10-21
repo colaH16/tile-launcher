@@ -1,6 +1,7 @@
 {
   "previous_release": "v2.0.0",
   "included_versions": [
-    "2.0.1"
+    "2.0.1",
+    "2.1.0"
   ]
 }

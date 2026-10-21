@@ -45,7 +45,7 @@ public enum SettingsSyncLifecycle {
     }
     /// Only fields that synchronize: runtime counters never count as an edit.
     struct SyncedView: Equatable {
-        struct Menu: Equatable { let id: UUID; let appID: String; let path: [String]; let pinned: Bool; let symbol: String? }
+        struct Menu: Equatable { let id: UUID; let appID: String; let path: [String]; let pinned: Bool; let symbol: String?; let execution: MenuExecutionSelection }
         let preferences: [String: SettingsSyncValue]
         let menus: [Menu]
         init(_ projection: SettingsSyncProjection, managed: Set<UUID>) {
@@ -54,7 +54,7 @@ public enum SettingsSyncLifecycle {
             // they are never journaled and must not count as an outside edit.
             menus = projection.commands.filter {
                 !$0.appID.hasPrefix("/") && (managed.contains($0.id) || !$0.isAutomatic || $0.isPinned || $0.symbol != nil)
-            }.map { .init(id: $0.id, appID: $0.appID, path: $0.path, pinned: $0.isPinned, symbol: $0.symbol) }
+            }.map { .init(id: $0.id, appID: $0.appID, path: $0.path, pinned: $0.isPinned, symbol: $0.symbol, execution: $0.executionSelection) }
         }
     }
 }
@@ -79,6 +79,7 @@ public extension SettingsSyncReplica {
             var menu = value
             menu.presence.stamp = legacy(menu.presence.stamp)
             menu.pinned.stamp = legacy(menu.pinned.stamp)
+            if let execution = menu.execution { menu.execution?.stamp = legacy(execution.stamp) }
             menu.icon = SettingsSyncIcon(menu.icon.edits.map {
                 SettingsSyncIconEdit(symbol: $0.symbol, stamp: legacy($0.stamp), observed: $0.observed)
             })

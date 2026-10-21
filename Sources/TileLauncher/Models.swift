@@ -262,11 +262,27 @@ final class SettingsStore: ObservableObject {
             if replacingTarget || MenuAXIdentifier.validated(command.axIdentifier) != nil {
                 commands[index].axIdentifier = MenuAXIdentifier.validated(command.axIdentifier)
                 commands[index].shortcut = command.shortcut
+                commands[index].optionAction = command.optionAction
             }
             return
         }
         commands.append(command)
         onMenuAdded?(command)
+    }
+    func attachOptionPairs(_ pairs: [MenuOptionPair]) {
+        guard !syncStatus.locked else { return }
+        var updated = commands
+        for index in updated.indices {
+            let command = updated[index]
+            let matching = pairs.filter { pair in
+                pair.primary.identity.appID == command.appID && pair.primary.identity.path == command.path
+                    && (command.axIdentifier == nil || pair.matches(path: command.path, identifier: command.axIdentifier))
+            }
+            guard matching.count == 1 else { continue }
+            updated[index].axIdentifier = matching[0].primary.axIdentifier
+            updated[index].optionAction = matching[0].alternate
+        }
+        if updated != commands { commands = updated }
     }
     func recordCapturedMenu(_ menu: CapturedMenu) {
         guard MenuCapturePolicy.allows(menu, preferences: menuCapture) else { return }

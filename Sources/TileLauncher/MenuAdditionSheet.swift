@@ -60,12 +60,13 @@ struct MenuAdditionSheet: View {
                         }
                         Spacer()
                         let existing = settings.commands.first { $0.appID == selectedID && $0.path == menu.path }
-                        let added = existing != nil && existing?.axIdentifier == menu.axIdentifier
+                        let added = existing != nil && existing?.axIdentifier == menu.axIdentifier && existing?.optionAction == menu.optionAction
                         Button(added ? "등록됨" : existing != nil ? "대상 변경" : "추가") {
                             if let app = selectedApp {
                                 var command = MenuCommand(appID: app.id, appName: app.name, path: menu.path)
                                 command.shortcut = menu.shortcut
                                 command.axIdentifier = menu.axIdentifier
+                                command.optionAction = menu.optionAction
                                 settings.addCommand(command, replacingTarget: true)
                             }
                         }.disabled(added)

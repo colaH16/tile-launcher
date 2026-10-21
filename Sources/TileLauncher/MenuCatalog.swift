@@ -6,6 +6,7 @@ struct AvailableMenu: Identifiable {
     let path: [String]
     var shortcut: MenuShortcut? = nil
     var axIdentifier: String? = nil
+    var optionAction: MenuActionReference? = nil
     var variantLabel: String? = nil
     var needsDisambiguation = false
     var id: String { path.joined(separator: "\u{1f}") + "\u{1e}" + (axIdentifier ?? "") }
@@ -85,6 +86,16 @@ final class MenuCatalog: ObservableObject {
             if let bar = Self.element(application, kAXMenuBarAttribute) {
                 // Match automatic capture: macOS's first root is the system Apple menu.
                 for root in Self.children(bar).dropFirst() { walk(root, path: [], depth: 0) }
+            }
+            let pairs = MenuOptionDiscovery.shared.pairs(for: app)
+            found = found.compactMap { choice in
+                let matches = pairs.filter { $0.matches(path: choice.path, identifier: choice.axIdentifier) }
+                guard matches.count == 1 else { return choice }
+                let pair = matches[0]
+                // Keep a single primary row, with the related action attached.
+                guard choice.path == pair.primary.identity.path, choice.axIdentifier == pair.primary.axIdentifier else { return nil }
+                var result = choice; result.optionAction = pair.alternate; result.variantLabel = "⌥ " + (pair.alternate.path.last ?? "")
+                return result
             }
             // Retain distinct identified alternates; ambiguous paths stay hidden.
             let unique = Self.searchableChoices(found)

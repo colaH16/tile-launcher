@@ -33,14 +33,16 @@ public struct CapturedMenu: Equatable {
     public let shortcutKnown: Bool
     public let fromHelpSearch: Bool
     public let axIdentifier: String?
+    public let optionAction: MenuActionReference?
     public init(appID: String, appName: String, path: [String], shortcut: String = "",
                 commandModifier: Bool = false, modifiers: Int = 0, shortcutKnown: Bool? = nil, fromHelpSearch: Bool = false,
-                axIdentifier: String? = nil) {
+                axIdentifier: String? = nil, optionAction: MenuActionReference? = nil) {
         identity = MenuIdentity(appID: appID, path: path); self.appName = appName
         self.shortcut = shortcut; self.commandModifier = commandModifier; self.modifiers = modifiers
         self.shortcutKnown = shortcutKnown ?? !shortcut.isEmpty
         self.fromHelpSearch = fromHelpSearch
         self.axIdentifier = MenuAXIdentifier.validated(axIdentifier)
+        self.optionAction = optionAction?.isValid == true ? optionAction : nil
     }
 }
 
@@ -62,7 +64,7 @@ public enum MenuCapturePolicy {
             "최근 항목 열기", "최근 사용", "최근 사용 항목", "최근 항목", "최근 문서", "최근 폴더"]
         guard !normalized.dropLast().contains(where: dynamicParents.contains) else { return false }
         // Unbound leaves directly in Window are commonly changing document/window titles.
-        if ["window", "윈도우", "창"].contains(normalized[0]), path.count == 2, menu.shortcut.isEmpty { return false }
+        if ["window", "윈도우", "창"].contains(normalized[0]), path.count == 2, menu.shortcut.isEmpty, menu.optionAction == nil { return false }
         return true
     }
     public static func normalize(_ value: String) -> String {
@@ -89,7 +91,7 @@ public enum MenuCapturePolicy {
         return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
                             shortcut: match.shortcut, commandModifier: match.commandModifier,
                             modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true,
-                            axIdentifier: match.axIdentifier)
+                            axIdentifier: match.axIdentifier, optionAction: match.optionAction)
     }
 }
 
@@ -135,12 +137,17 @@ public enum MenuCaptureHistory {
             result[i].recordUse(at: date, observed: true)
             // Only a confirmed reading may clear a shortcut the app removed.
             if menu.shortcutKnown { result[i].shortcut = shortcut }
-            if let identifier = menu.axIdentifier { result[i].axIdentifier = identifier }
+            if let identifier = menu.axIdentifier {
+                if result[i].axIdentifier != identifier { result[i].optionAction = menu.optionAction }
+                result[i].axIdentifier = identifier
+            }
+            if let option = menu.optionAction { result[i].optionAction = option }
         } else {
             var command = MenuCommand(appID: menu.identity.appID, appName: menu.appName, path: menu.identity.path, isPinned: false)
             command.isAutomatic = true; command.recordUse(at: date, observed: true)
             command.shortcut = shortcut
             command.axIdentifier = menu.axIdentifier
+            command.optionAction = menu.optionAction
             result.append(command)
         }
         // Visibility uses the user-selected lookback OR the app-local recent five.

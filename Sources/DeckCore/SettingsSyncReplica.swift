@@ -64,14 +64,19 @@ private enum PayloadSchema {
         guard let object = only(value, ["bool", "integer", "seconds", "text", "color"]) else { return false }
         return object.values.allSatisfy { only($0, ["_0"]) != nil }
     }
+    static func selection(_ value: Any) -> Bool {
+        guard let object = only(value, ["identifier", "option"]) else { return false }
+        if let option = object["option"], only(option, ["path", "identifier"]) == nil { return false }
+        return true
+    }
     static func menu(_ value: Any) -> Bool {
         guard let object = only(value, ["id", "appID", "appName", "path", "resourceIdentity", "presence",
-                                        "pinned", "icon", "aliases", "origins", "executionIdentifier"]) else { return false }
+                                        "pinned", "icon", "aliases", "origins", "execution"]) else { return false }
         if let identity = object["resourceIdentity"], only(identity, ["appID", "archive", "keys"]) == nil { return false }
         for key in ["presence", "pinned"] {
             if let value = object[key], !field(value, inner: { _ in true }) { return false }
         }
-        if let value = object["executionIdentifier"], !field(value, inner: { $0 is NSNull || $0 is String }) { return false }
+        if let value = object["execution"], !field(value, inner: { selection($0) }) { return false }
         if let icon = object["icon"] {
             guard let edits = only(icon, ["edits"])?["edits"] as? [Any] else { return false }
             for edit in edits {
@@ -236,7 +241,7 @@ public extension SettingsSyncSnapshot {
                 let sameID = SettingsSyncMenu(id: result.id, appID: menu.appID, appName: menu.appName,
                     path: menu.path, resourceIdentity: menu.resourceIdentity, presence: menu.presence,
                     pinned: menu.pinned, icon: menu.icon, aliases: menu.aliases, origins: menu.origins,
-                    executionIdentifier: menu.executionIdentifier)
+                    execution: menu.execution)
                 guard let merged = try? result.merged(with: sameID) else { return nil }
                 result = merged
             }
@@ -284,7 +289,7 @@ public struct SettingsSyncReplica: Codable {
            before.commands.count == after.commands.count,
            zip(before.commands, after.commands).allSatisfy({ a, b in
                a.id == b.id && a.appID == b.appID && a.isAutomatic == b.isAutomatic
-                   && a.isPinned == b.isPinned && a.symbol == b.symbol
+                   && a.isPinned == b.isPinned && a.symbol == b.symbol && a.executionSelection == b.executionSelection
            }) { return }
         let oldPreferences = before?.preferences ?? [:]
         for (key, value) in after.preferences {
@@ -328,7 +333,8 @@ public struct SettingsSyncReplica: Codable {
                 record = .init(id: syncID, appID: command.appID, appName: command.appName, path: command.path,
                     resourceIdentity: command.resourceBinding?.identity, presence: .init(true, stamp: time),
                     pinned: .init(command.isPinned, stamp: time),
-                    icon: .init([.init(symbol: command.symbol, stamp: time)]), origins: [device: command.id.uuidString])
+                    icon: .init([.init(symbol: command.symbol, stamp: time)]), origins: [device: command.id.uuidString],
+                    execution: command.executionSelection.isEmpty ? nil : .init(command.executionSelection, stamp: time))
             } else if old == nil, before != nil {
                 if !command.isAutomatic { record!.presence = .init(true, stamp: stamp(at: date)) }
                 if record!.pinned.value != command.isPinned { record!.pinned = .init(command.isPinned, stamp: stamp(at: date)) }
@@ -345,6 +351,13 @@ public struct SettingsSyncReplica: Codable {
                 }
             }
             if var record {
+                if let old, old.executionSelection != command.executionSelection {
+                    record.execution = .init(command.executionSelection, stamp: stamp(at: date))
+                } else if old == nil, before != nil, record.execution?.value != command.executionSelection {
+                    record.execution = .init(command.executionSelection, stamp: stamp(at: date))
+                } else if record.execution == nil, !command.executionSelection.isEmpty {
+                    record.execution = .init(command.executionSelection, stamp: stamp(at: nil))
+                }
                 // Adopting a remote record must also establish this Mac's
                 // distinct identity before any later alias reconciliation.
                 // Keep the original origin on re-addition: replacing it would
@@ -388,6 +401,17 @@ public struct SettingsSyncReplica: Codable {
             snapshot.orders[appID] = .init(order, stamp: stamp(at: date))
         }
     }
+    /// Upgrade already-tracked build60 selectors without claiming an edit time.
+    public mutating func seedExecutionSelections(from projection: SettingsSyncProjection) {
+        let canonical = snapshot.canonicalMenuIDs
+        let groups = snapshot.combinedMenus
+        for command in projection.commands where !command.executionSelection.isEmpty {
+            guard let shared = localIDs[command.id],
+                  var menu = groups.first(where: { $0.id == (canonical[shared] ?? shared) }), menu.execution == nil else { continue }
+            menu.execution = .init(command.executionSelection, stamp: stamp(at: nil))
+            snapshot.menus[menu.id] = menu
+        }
+    }
     public mutating func applying(to projection: SettingsSyncProjection) -> SettingsSyncProjection {
         var result = projection
         for (key, field) in snapshot.preferences { result.preferences[key] = field.value }
@@ -413,6 +437,10 @@ public struct SettingsSyncReplica: Codable {
                 localIDs[result.commands[index].id] = menu.id
                 result.commands[index].isPinned = menu.pinned.value
                 result.commands[index].symbol = menu.icon.displayed
+                if let execution = menu.execution?.value {
+                    result.commands[index].axIdentifier = execution.identifier
+                    result.commands[index].optionAction = execution.option
+                }
                 // A command that already ran on this Mac keeps its own binding;
                 // only a menu first created from iCloud waits for verification.
                 if result.commands[index].syncResourceIdentity != nil {
@@ -423,6 +451,9 @@ public struct SettingsSyncReplica: Codable {
                 // Shared resource hints are not execution bindings on this Mac.
                 if let local = localIDs.first(where: { $0.value == menu.id })?.key { command.id = local }
                 command.symbol = menu.icon.displayed; command.syncResourceIdentity = menu.resourceIdentity
+                if let execution = menu.execution?.value {
+                    command.axIdentifier = execution.identifier; command.optionAction = execution.option
+                }
                 localIDs[command.id] = menu.id; result.commands.append(command)
             }
         }
@@ -452,7 +483,7 @@ private extension SettingsSyncMenu {
     func withID(_ id: String) -> Self {
         .init(id: id, appID: appID, appName: appName, path: path, resourceIdentity: resourceIdentity,
               presence: presence, pinned: pinned, icon: icon, aliases: aliases, origins: origins,
-              executionIdentifier: executionIdentifier)
+              execution: execution)
     }
 }
 
@@ -483,6 +514,12 @@ public extension SettingsSyncReplica {
                 result.append("pin:" + own.id)
             }
         }
+        for own in snapshot.combinedMenus {
+            let id = ids[own.id] ?? own.id
+            let matches = remote.combinedMenus.filter { (ids[$0.id] ?? $0.id) == id }
+            if matches.count == 1, let a = own.execution, let b = matches[0].execution,
+               a.stamp.date == nil, b.stamp.date == nil, a.value != b.value { result.append("execution:" + own.id) }
+        }
         return result.sorted()
     }
     mutating func mergeInitial(_ remote: SettingsSyncSnapshot, preferLocal: Bool?, at date: Date) throws {
@@ -500,6 +537,15 @@ public extension SettingsSyncReplica {
             snapshot.orders[key] = .init(field.value, stamp: stamp(at: date))
         }
         let ids = snapshot.canonicalMenuIDs
+        for local in old.combinedMenus {
+            let id = ids[local.id] ?? local.id
+            let matches = remote.combinedMenus.filter { (ids[$0.id] ?? $0.id) == id }
+            guard matches.count == 1, let a = local.execution, let b = matches[0].execution,
+                  a.stamp.date == nil, b.stamp.date == nil, a.value != b.value,
+                  var menu = snapshot.combinedMenus.first(where: { $0.id == id }) else { continue }
+            menu.execution = .init(preferLocal ? a.value : b.value, stamp: stamp(at: date))
+            snapshot.menus[id] = menu
+        }
         for local in old.combinedMenus {
             let id = ids[local.id] ?? local.id
             let matches = remote.combinedMenus.filter { (ids[$0.id] ?? $0.id) == id }

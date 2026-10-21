@@ -115,6 +115,11 @@ final class SettingsSyncCoordinator {
             disk.replica.capture(before: nil, after: settings.syncProjection, at: Date())
             disk.observed = settings.syncProjection
         }
+        if !readOnly {
+            let previous = disk.replica.snapshot
+            disk.replica.seedExecutionSelections(from: disk.observed ?? settings.syncProjection)
+            markChanged(from: previous)
+        }
         settings.onPersistentChange = { [weak self] in self?.capture() }
         settings.onPersistentWrite = { [weak self] in self?.checkpoint() }
         status.enabled = disk.enabled; status.awaitingAccount = disk.awaitingAccount
