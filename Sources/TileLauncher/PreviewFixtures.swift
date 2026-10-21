@@ -391,7 +391,9 @@ struct AppearancePreview: View {
 struct MenuAdditionPreview: View {
     @StateObject private var fixture = PreviewFixture(theme: .glass)
     @StateObject private var catalog = MenuCatalog(initialChoices:
-        (1...50).map { AvailableMenu(path: ["파일", "내보내기", "문서 내보내기 \($0)"]) })
+        [AvailableMenu(path: ["Profiles", "openmaru8 in local"], axIdentifier: "NewTab:openmaru8 in local", variantLabel: "새 탭"),
+         AvailableMenu(path: ["Profiles", "openmaru8 in local"], axIdentifier: "NewWindow:openmaru8 in local", variantLabel: "새 창")]
+        + (1...50).map { AvailableMenu(path: ["파일", "내보내기", "문서 내보내기 \($0)"]) })
     @State private var selectedID = "preview.editor"
     @State private var search = ""
     @State private var manualPath = ""
@@ -1027,6 +1029,15 @@ enum PreviewExport {
             }
         }
         let duplicate = AvailableMenu(path: ["File", "Export"])
+        let tab = AvailableMenu(path: ["Profiles", "local"], axIdentifier: "NewTab:local", variantLabel: "새 탭")
+        let window = AvailableMenu(path: tab.path, axIdentifier: "NewWindow:local", variantLabel: "새 창")
+        let identified = MenuCatalog.searchableChoices([tab, window])
+        guard identified.count == 2, Set(identified.map(\.id)).count == 2,
+              identified.allSatisfy(\.needsDisambiguation),
+              MenuCatalog.searchableChoices([tab, tab]).isEmpty,
+              MenuCatalog.searchableChoices([tab, AvailableMenu(path: tab.path)]).isEmpty else {
+            throw NSError(domain: "TileLauncher.Preview", code: 75)
+        }
         let filtered = MenuCatalog.searchableChoices(apple + regular + [duplicate, duplicate])
         guard filtered.map(\.id) == regular.map(\.id),
               MenuCatalog(initialChoices: apple).choices.isEmpty else {

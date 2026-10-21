@@ -114,6 +114,14 @@ enum MenuIconValidation {
         }
         try check(!settings.refreshingMenuIcons.contains("com.apple.Music") && settings.commands[0].glyph == .symbol("star"), "Refresh overwrote manual choice")
         let saved = settings.commands[0]
+        var rebound = saved
+        rebound.axIdentifier = "validation.alternate"
+        settings.addCommand(rebound)
+        try check(settings.commands.count == 2 && settings.commands[0].id == saved.id
+                  && settings.commands[0].axIdentifier == rebound.axIdentifier
+                  && settings.commands[0].symbol == saved.symbol && settings.commands[0].isPinned == saved.isPinned
+                  && settings.commands[0].observedCount == saved.observedCount,
+                  "Rebinding replaced tile identity, icon, pin or history")
         let savedID = saved.id
         try check(saved.resourceBinding != nil && saved.id == manual.id && saved.isPinned, "Binding changed saved identity/pin")
         settings.removeCommand(saved)

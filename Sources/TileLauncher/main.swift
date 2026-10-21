@@ -814,6 +814,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.menuUsage.suppressLauncherAction(menu)
             self?.menuCatalog.execute(menu, in: context, shortcut: { [weak self] in
                 self?.settings.updateShortcut($0, for: menu.id)
+            }, identifier: { [weak self] in
+                self?.settings.updateMenuIdentifier($0, for: menu.id)
             }) { [weak self] message in
                 if let message { self?.error(message) } else {
                     self?.settings.recordUse(menu.id)

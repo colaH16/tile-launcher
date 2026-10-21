@@ -5,7 +5,10 @@ import DeckCore
 struct AvailableMenu: Identifiable {
     let path: [String]
     var shortcut: MenuShortcut? = nil
-    var id: String { path.joined(separator: "\u{1f}") }
+    var axIdentifier: String? = nil
+    var variantLabel: String? = nil
+    var needsDisambiguation = false
+    var id: String { path.joined(separator: "\u{1f}") + "\u{1e}" + (axIdentifier ?? "") }
     var title: String { path.joined(separator: " › ") }
 }
 
@@ -21,8 +24,17 @@ final class MenuCatalog: ObservableObject {
 
     static func searchableChoices(_ menus: [AvailableMenu]) -> [AvailableMenu] {
         let appMenus = menus.filter { !MenuCapturePolicy.isAppleMenuPath($0.path) }
-        let counts = Dictionary(grouping: appMenus, by: \.id)
-        return appMenus.filter { counts[$0.id]?.count == 1 }
+        let paths = Dictionary(grouping: appMenus, by: \.path)
+        return appMenus.compactMap { menu in
+            guard let group = paths[menu.path], group.count > 1 else { return menu }
+            // A path with alternates is selectable only when every item has a
+            // distinct explicit identifier; order or a shortcut is not identity.
+            guard group.allSatisfy({ MenuAXIdentifier.validated($0.axIdentifier) != nil }),
+                  Set(group.compactMap(\.axIdentifier)).count == group.count else { return nil }
+            var identified = menu
+            identified.needsDisambiguation = true
+            return identified
+        }
     }
 
     func clear() { generation = UUID(); choices = []; loading = false; message = nil }
@@ -57,7 +69,14 @@ final class MenuCatalog: ObservableObject {
                 let children = Self.children(element)
                 if role == kAXMenuItemRole, !title.isEmpty, children.isEmpty, next.count >= 2 {
                     if Self.actions(element).contains(kAXPressAction) {
-                        found.append(AvailableMenu(path: next, shortcut: MenuShortcutReading.read(element).shortcut))
+                        let identifier = MenuAXIdentifier.validated(Self.value(element, kAXIdentifierAttribute) as? String)
+                        var variant: String?
+                        if app.id == "com.googlecode.iterm2", let last = identifier?.components(separatedBy: "\t").last {
+                            if last == "NewTab:" + title { variant = "새 탭" }
+                            if last == "NewWindow:" + title { variant = "새 창" }
+                        }
+                        found.append(AvailableMenu(path: next, shortcut: MenuShortcutReading.read(element).shortcut,
+                                                   axIdentifier: identifier, variantLabel: variant))
                     }
                 } else {
                     for child in children { walk(child, path: next, depth: depth + 1) }
@@ -67,7 +86,7 @@ final class MenuCatalog: ObservableObject {
                 // Match automatic capture: macOS's first root is the system Apple menu.
                 for root in Self.children(bar).dropFirst() { walk(root, path: [], depth: 0) }
             }
-            // Duplicate menu titles cannot safely identify an action after a later menu update.
+            // Retain distinct identified alternates; ambiguous paths stay hidden.
             let unique = Self.searchableChoices(found)
             DispatchQueue.main.async { [weak self] in
                 guard self?.generation == request else { return }
@@ -80,6 +99,7 @@ final class MenuCatalog: ObservableObject {
 
     /// `shortcut` reports the item's current keyboard equivalent (nil = none) before it is pressed.
     func execute(_ command: MenuCommand, in app: AppItem, shortcut: ((MenuShortcut?) -> Void)? = nil,
+                 identifier: ((String) -> Void)? = nil,
                  completion: @escaping (String?) -> Void) {
         queue.async {
             func finish(_ error: String?) { DispatchQueue.main.async { completion(error) } }
@@ -114,26 +134,31 @@ final class MenuCatalog: ObservableObject {
             }, title: { element in
                 let name = read(element, kAXTitleAttribute) as? String ?? ""
                 return failed ? nil : name
-            }, equal: { CFEqual($0, $1) }, preferredShortcut: command.shortcut, shortcut: { element in
-                let key = read(element, kAXMenuItemCmdCharAttribute) as? String
-                guard !failed else { return (nil, false) }
-                guard let key, !key.isEmpty else { return (nil, true) }
-                guard let modifiers = read(element, kAXMenuItemCmdModifiersAttribute) as? Int, !failed,
-                      let equivalent = MenuShortcut(key: key, modifiers: modifiers) else { return (nil, false) }
-                return (equivalent, true)
+            }, equal: { CFEqual($0, $1) }, preferredIdentifier: command.axIdentifier, identifier: { element in
+                guard !failed, Date() < deadline else { return (nil, false) }
+                AXUIElementSetMessagingTimeout(element, 0.08)
+                return MenuIdentifierReading.read(element)
             })
             let current: AXUIElement
             switch resolved {
             case .found(let element): current = element
             case .unavailable: finish("메뉴 정보를 확인하지 못했습니다. 실행하지 않았습니다."); return
-            case .ambiguous: finish("같은 경로의 메뉴가 여러 개입니다. 실행하지 않았습니다."); return
-            case .missing: finish("메뉴 경로가 바뀌었거나 언어 연결을 확인하지 못했습니다. 설정에서 다시 등록해 주세요."); return
+            case .ambiguous: finish("같은 경로의 실행 항목을 구분할 정보가 없습니다. 설정의 메뉴 추가에서 원하는 대상을 다시 선택해 주세요."); return
+            case .missing: finish("메뉴 경로나 식별자가 바뀌었거나 언어 연결을 확인하지 못했습니다. 설정에서 실행 대상을 다시 선택해 주세요."); return
             }
             guard Date() < deadline else { finish("메뉴 확인 시간이 초과되었습니다. 실행하지 않았습니다."); return }
             guard Self.value(current, kAXEnabledAttribute) as? Bool == true else {
                 finish("지금은 ‘\(command.title)’ 메뉴를 사용할 수 없습니다. 문서나 선택 상태를 확인해 주세요."); return
             }
             guard Self.actions(current).contains(kAXPressAction) else { finish("이 메뉴는 실행 동작을 제공하지 않습니다."); return }
+            if command.axIdentifier == nil, let identifier, Date() < deadline {
+                AXUIElementSetMessagingTimeout(current, 0.08)
+                let reading = MenuIdentifierReading.read(current)
+                if reading.known, let value = reading.identifier {
+                    DispatchQueue.main.async { identifier(value) }
+                }
+            }
+            guard !failed, Date() < deadline else { finish("메뉴 정보를 확인하지 못했습니다. 실행하지 않았습니다."); return }
             // Report only a confirmed reading: a timeout must not erase a saved shortcut.
             if let shortcut, case let reading = MenuShortcutReading.read(current), reading.known {
                 DispatchQueue.main.async { shortcut(reading.shortcut) }
@@ -159,6 +184,21 @@ final class MenuCatalog: ObservableObject {
         var values: CFArray?
         guard AXUIElementCopyActionNames(element, &values) == .success else { return [] }
         return values as? [String] ?? []
+    }
+}
+
+/// Unsupported attributes and malformed values are unknown, not proof that a
+/// saved menu disappeared. In particular, availability must not strike it out.
+enum MenuIdentifierReading {
+    static func read(_ element: AXUIElement) -> (identifier: String?, known: Bool) {
+        var value: CFTypeRef?
+        switch AXUIElementCopyAttributeValue(element, kAXIdentifierAttribute as CFString, &value) {
+        case .success:
+            guard let identifier = MenuAXIdentifier.validated(value as? String) else { return (nil, false) }
+            return (identifier, true)
+        case .noValue: return (nil, true)
+        default: return (nil, false)
+        }
     }
 }
 

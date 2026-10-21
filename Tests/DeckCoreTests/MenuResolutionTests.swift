@@ -2,27 +2,26 @@ import XCTest
 @testable import DeckCore
 
 final class MenuResolutionTests: XCTestCase {
-    func testProfileAlternateRequiresExactlyOneMatchingSavedShortcut() {
+    func testProfileAlternateRequiresExactlyOneMatchingSavedIdentifier() {
         let labels = [0:"", 1:"Profiles", 2:"fish", 3:"fish"]
         let tree = [0:[1], 1:[2,3]]
-        var shortcuts: [Int: MenuShortcut] = [2: MenuShortcut(key: "x", modifiers: 4)!,
-                                             3: MenuShortcut(key: "x", modifiers: 6)!]
+        var identifiers = [2: "NewTab:fish", 3: "NewWindow:fish"]
         var unreadable: Int?
-        func resolve(_ saved: MenuShortcut?) -> MenuPathResolution<Int> {
+        func resolve(_ saved: String?) -> MenuPathResolution<Int> {
             MenuPathResolver.resolve(paths: [["Profiles", "fish"]], root: 0,
                 children: { tree[$0] ?? [] }, title: { labels[$0] }, equal: ==,
-                preferredShortcut: saved, shortcut: { (shortcuts[$0], $0 != unreadable) })
+                preferredIdentifier: saved, identifier: { (identifiers[$0], $0 != unreadable) })
         }
-        let normal = MenuShortcut(key: "X", modifiers: 4)!
+        let normal = "NewTab:fish"
         if case .found(let node) = resolve(normal) { XCTAssertEqual(node, 2) } else { XCTFail() }
-        if case .found(let node) = resolve(shortcuts[3]) { XCTAssertEqual(node, 3) } else { XCTFail() }
-        guard case .ambiguous = resolve(nil) else { return XCTFail("No saved equivalent must not guess") }
-        guard case .ambiguous = resolve(MenuShortcut(key: "z", modifiers: 4)) else { return XCTFail("Stale equivalent must not guess") }
+        if case .found(let node) = resolve(identifiers[3]) { XCTAssertEqual(node, 3) } else { XCTFail() }
+        guard case .ambiguous = resolve(nil) else { return XCTFail("No saved identifier must not guess") }
+        guard case .missing = resolve("NewTab:Fish") else { return XCTFail("Identifiers must be exact and case sensitive") }
         unreadable = 3
         guard case .unavailable = resolve(normal) else { return XCTFail("Unreadable alternate must not be ignored") }
         unreadable = nil
-        shortcuts[3] = normal
-        guard case .ambiguous = resolve(normal) else { return XCTFail("Two matching actions must remain blocked") }
+        identifiers[3] = normal
+        guard case .ambiguous = resolve(normal) else { return XCTFail("Two matching identifiers must remain blocked") }
     }
     func testRepeatedReferenceIsOneActionAndParentDuplicatesStayAmbiguous() {
         let labels = [0:"", 1:"Profiles", 2:"fish", 3:"Profiles"]
@@ -31,13 +30,28 @@ final class MenuResolutionTests: XCTestCase {
         func resolve() -> MenuPathResolution<Int> {
             MenuPathResolver.resolve(paths: [["Profiles", "fish"]], root: 0,
                 children: { tree[$0] ?? [] }, title: { labels[$0] }, equal: ==,
-                preferredShortcut: MenuShortcut(key: "X", modifiers: 4), shortcut: { _ in reads += 1; return (nil, true) })
+                identifier: { _ in reads += 1; return (nil, true) })
         }
         if case .found(let node) = resolve() { XCTAssertEqual(node, 2) } else { XCTFail() }
         XCTAssertEqual(reads, 0)
         tree[0] = [1,3]
         guard case .ambiguous = resolve() else { return XCTFail("Leaf equivalent cannot choose a parent") }
         XCTAssertEqual(reads, 0)
+    }
+    func testShortcutFreeProfileAndRemovedAlternateNeverFallBackToSibling() {
+        let labels = [0:"", 1:"Profiles", 2:"openmaru8 in local", 3:"openmaru8 in local"]
+        var tree = [0:[1], 1:[2,3]]
+        let identifiers = [2:"NewTab:openmaru8 in local", 3:"NewWindow:openmaru8 in local"]
+        func resolve(_ saved: String) -> MenuPathResolution<Int> {
+            MenuPathResolver.resolve(paths: [["Profiles", "openmaru8 in local"]], root: 0,
+                children: { tree[$0] ?? [] }, title: { labels[$0] }, equal: ==,
+                preferredIdentifier: saved, identifier: { (identifiers[$0], true) })
+        }
+        if case .found(let node) = resolve(identifiers[2]!) { XCTAssertEqual(node, 2) } else { XCTFail() }
+        if case .found(let node) = resolve(identifiers[3]!) { XCTAssertEqual(node, 3) } else { XCTFail() }
+        tree[1] = [2]
+        guard case .missing = resolve(identifiers[3]!) else { return XCTFail("Removed window variant must not execute tab") }
+        guard case .unavailable = resolve("bad\nidentifier") else { return XCTFail("Invalid saved identity must not fall back to title") }
     }
     func testResolverDoesNotMixParentsAndLeavesAcrossLanguages() {
         let labels = [0:"", 1:"파일", 2:"開く"]

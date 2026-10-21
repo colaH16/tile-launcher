@@ -32,12 +32,15 @@ public struct CapturedMenu: Equatable {
     /// means “unknown”, not “removed”.
     public let shortcutKnown: Bool
     public let fromHelpSearch: Bool
+    public let axIdentifier: String?
     public init(appID: String, appName: String, path: [String], shortcut: String = "",
-                commandModifier: Bool = false, modifiers: Int = 0, shortcutKnown: Bool? = nil, fromHelpSearch: Bool = false) {
+                commandModifier: Bool = false, modifiers: Int = 0, shortcutKnown: Bool? = nil, fromHelpSearch: Bool = false,
+                axIdentifier: String? = nil) {
         identity = MenuIdentity(appID: appID, path: path); self.appName = appName
         self.shortcut = shortcut; self.commandModifier = commandModifier; self.modifiers = modifiers
         self.shortcutKnown = shortcutKnown ?? !shortcut.isEmpty
         self.fromHelpSearch = fromHelpSearch
+        self.axIdentifier = MenuAXIdentifier.validated(axIdentifier)
     }
 }
 
@@ -81,10 +84,12 @@ public enum MenuCapturePolicy {
             }
         }
         let unique = Dictionary(grouping: matches, by: \.identity)
-        guard unique.count == 1, let match = unique.values.first?.first else { return nil }
+        guard unique.count == 1, let group = unique.values.first, let match = group.first,
+              Set(group.map(\.axIdentifier)).count == 1 else { return nil }
         return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
                             shortcut: match.shortcut, commandModifier: match.commandModifier,
-                            modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true)
+                            modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true,
+                            axIdentifier: match.axIdentifier)
     }
 }
 
@@ -130,10 +135,12 @@ public enum MenuCaptureHistory {
             result[i].recordUse(at: date, observed: true)
             // Only a confirmed reading may clear a shortcut the app removed.
             if menu.shortcutKnown { result[i].shortcut = shortcut }
+            if let identifier = menu.axIdentifier { result[i].axIdentifier = identifier }
         } else {
             var command = MenuCommand(appID: menu.identity.appID, appName: menu.appName, path: menu.identity.path, isPinned: false)
             command.isAutomatic = true; command.recordUse(at: date, observed: true)
             command.shortcut = shortcut
+            command.axIdentifier = menu.axIdentifier
             result.append(command)
         }
         // Visibility uses the user-selected lookback OR the app-local recent five.

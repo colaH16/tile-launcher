@@ -44,7 +44,14 @@ enum MenuAvailabilityReader {
                         } else { result.append(child) }
                     }
                     return result
-                }, title: { read($0, kAXTitleAttribute) as? String }, equal: { CFEqual($0, $1) })
+                }, title: { read($0, kAXTitleAttribute) as? String }, equal: { CFEqual($0, $1) },
+                preferredIdentifier: command.axIdentifier, identifier: { element in
+                    guard ProcessInfo.processInfo.systemUptime < deadline else { failed = true; return (nil, false) }
+                    AXUIElementSetMessagingTimeout(element, 0.08)
+                    let reading = MenuIdentifierReading.read(element)
+                    if !reading.known { failed = true }
+                    return reading
+                })
                 if case .missing = resolution, !failed { missing.insert(command.id) }
             }
             return missing

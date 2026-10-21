@@ -37,6 +37,7 @@ public enum SettingsDraftMerge {
                 current.isPinned = field(base.isPinned, change.isPinned, current.isPinned)
                 current.symbol = field(base.symbol, change.symbol, current.symbol)
                 current.shortcut = field(base.shortcut, change.shortcut, current.shortcut)
+                current.axIdentifier = field(base.axIdentifier, change.axIdentifier, current.axIdentifier)
                 current.resourceIcon = field(base.resourceIcon, change.resourceIcon, current.resourceIcon)
                 current.resourceBinding = field(base.resourceBinding, change.resourceBinding, current.resourceBinding)
                 current.resourceIdentityVersion = field(base.resourceIdentityVersion, change.resourceIdentityVersion, current.resourceIdentityVersion)
@@ -48,6 +49,7 @@ public enum SettingsDraftMerge {
                 result[index].isPinned = change.isPinned
                 if let symbol = change.symbol { result[index].symbol = symbol }
                 if let icon = change.resourceIcon { result[index].resourceIcon = icon }
+                if let identifier = change.axIdentifier { result[index].axIdentifier = identifier }
                 if let binding = change.resourceBinding {
                     result[index].resourceBinding = binding
                     result[index].resourceIdentityVersion = change.resourceIdentityVersion
@@ -104,12 +106,14 @@ public struct MenuSettingsDraft: Equatable {
         let pinned: Bool
         let symbol: String?
         let shortcut: MenuShortcut?
+        let axIdentifier: String?
         let icon: MenuResourceIcon?
         let binding: MenuResourceBinding?
         let identityVersion: Int?
         let aliases: [[String]]?
         init(_ command: MenuCommand) {
             id = command.id; pinned = command.isPinned; symbol = command.symbol; shortcut = command.shortcut
+            axIdentifier = command.axIdentifier
             icon = command.resourceIcon; binding = command.resourceBinding
             identityVersion = command.resourceIdentityVersion; aliases = command.pathAliases
         }

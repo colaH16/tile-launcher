@@ -15,6 +15,9 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
     public private(set) var recentUses: [Date]
     /// Last keyboard equivalent seen in the app's menu bar, if any.
     public var shortcut: MenuShortcut?
+    /// App-local AXIdentifier, verified within this app and a complete menu path.
+    /// Like shortcuts and resource bindings, this is not an iCloud execution grant.
+    public var axIdentifier: String?
     /// User-chosen SF Symbol for the overlay tile: nil = built-in default,
     /// `MenuSymbolName.hidden` = no icon.
     public var symbol: String?
@@ -52,7 +55,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = false; observedCount = 0; recentUses = []
     }
     private enum CodingKeys: String, CodingKey {
-        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, symbol, resourceIcon, pathAliases, resourceBinding, resourceIdentityVersion, syncResourceIdentity
+        case id, appID, appName, path, isPinned, useCount, lastUsed, isAutomatic, observedCount, recentUses, shortcut, axIdentifier, symbol, resourceIcon, pathAliases, resourceBinding, resourceIdentityVersion, syncResourceIdentity
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -73,6 +76,7 @@ public struct MenuCommand: Codable, Equatable, Identifiable {
         isAutomatic = try c.decodeIfPresent(Bool.self, forKey: .isAutomatic) ?? false
         observedCount = max(0, try c.decodeIfPresent(Int.self, forKey: .observedCount) ?? 0)
         shortcut = try? c.decodeIfPresent(MenuShortcut.self, forKey: .shortcut)
+        axIdentifier = try? c.decodeIfPresent(String.self, forKey: .axIdentifier)
         symbol = MenuSymbolName.stored(try? c.decodeIfPresent(String.self, forKey: .symbol))
         if let dates = try c.decodeIfPresent([Date].self, forKey: .recentUses) {
             recentUses = Array(dates.sorted(by: >).prefix(3))

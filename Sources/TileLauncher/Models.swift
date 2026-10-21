@@ -252,11 +252,19 @@ final class SettingsStore: ObservableObject {
               profiles.indices.contains(index + offset) else { return }
         profiles.swapAt(index, index + offset)
     }
-    func addCommand(_ command: MenuCommand) {
+    func addCommand(_ command: MenuCommand, replacingTarget: Bool = false) {
         guard !syncStatus.locked else { return }
         let restored = Set(MenuPathMatch.paths(command).map { MenuIdentity(appID: command.appID, path: $0) })
         menuCapture.excludedMenus.subtract(restored)
-        guard MenuCaptureHistory.index(of: MenuIdentity(appID: command.appID, path: command.path), in: commands) == nil else { return }
+        if let index = MenuCaptureHistory.index(of: MenuIdentity(appID: command.appID, path: command.path), in: commands) {
+            // Re-selecting a variant upgrades a legacy tile without losing its
+            // UUID, pin, icon or usage history.
+            if replacingTarget || MenuAXIdentifier.validated(command.axIdentifier) != nil {
+                commands[index].axIdentifier = MenuAXIdentifier.validated(command.axIdentifier)
+                commands[index].shortcut = command.shortcut
+            }
+            return
+        }
         commands.append(command)
         onMenuAdded?(command)
     }
@@ -294,6 +302,11 @@ final class SettingsStore: ObservableObject {
     func updateShortcut(_ shortcut: MenuShortcut?, for id: UUID) {
         guard let i = commands.firstIndex(where: { $0.id == id }), commands[i].shortcut != shortcut else { return }
         commands[i].shortcut = shortcut
+    }
+    func updateMenuIdentifier(_ identifier: String, for id: UUID) {
+        guard let identifier = MenuAXIdentifier.validated(identifier),
+              let i = commands.firstIndex(where: { $0.id == id }), commands[i].axIdentifier != identifier else { return }
+        commands[i].axIdentifier = identifier
     }
     func recordUse(_ id: UUID) {
         guard let i = commands.firstIndex(where: { $0.id == id }) else { return }

@@ -9,8 +9,9 @@ public enum MenuPathResolution<Node> {
 public enum MenuPathResolver {
     public static func resolve<Node>(paths: [[String]], root: Node,
         children: (Node) -> [Node]?, title: (Node) -> String?, equal: (Node, Node) -> Bool,
-        preferredShortcut: MenuShortcut? = nil,
-        shortcut: ((Node) -> (shortcut: MenuShortcut?, known: Bool))? = nil) -> MenuPathResolution<Node> {
+        preferredIdentifier: String? = nil,
+        identifier: ((Node) -> (identifier: String?, known: Bool))? = nil) -> MenuPathResolution<Node> {
+        if let preferredIdentifier, MenuAXIdentifier.validated(preferredIdentifier) == nil { return .unavailable }
         func follow(_ path: [String]) -> MenuPathResolution<Node> {
             var current = root
             for (index, name) in path.enumerated() {
@@ -23,24 +24,23 @@ public enum MenuPathResolver {
                     }
                 }
                 guard !matches.isEmpty else { return .missing }
-                if matches.count > 1 {
-                    // AppKit alternates can share a complete title path (e.g.
-                    // iTerm profiles). Only an exact saved key equivalent may
-                    // disambiguate the leaf; never guess between parent menus.
-                    guard index == path.count - 1, let preferredShortcut, let shortcut else { return .ambiguous }
+                if index == path.count - 1, let preferredIdentifier {
+                    // A saved identifier is mandatory even when only one leaf
+                    // remains: removing one alternate must not run its sibling.
+                    guard let identifier else { return .unavailable }
                     var preferred: [Node] = []
                     for node in matches {
-                        let reading = shortcut(node)
+                        let reading = identifier(node)
                         guard reading.known else { return .unavailable }
-                        if let candidate = reading.shortcut,
-                           candidate.modifiers == preferredShortcut.modifiers,
-                           candidate.key.caseInsensitiveCompare(preferredShortcut.key) == .orderedSame {
+                        if reading.identifier?.utf8.elementsEqual(preferredIdentifier.utf8) == true {
                             preferred.append(node)
                         }
                     }
+                    guard !preferred.isEmpty else { return .missing }
                     guard preferred.count == 1 else { return .ambiguous }
                     matches = preferred
                 }
+                guard matches.count == 1 else { return .ambiguous }
                 current = matches[0]
             }
             return .found(current)
@@ -58,5 +58,15 @@ public enum MenuPathResolver {
         }
         if found.count > 1 { return .ambiguous }
         return found.first.map(MenuPathResolution.found) ?? .missing
+    }
+}
+
+public enum MenuAXIdentifier {
+    /// Preserve exact case and tabs (iTerm uses tabs between tag components).
+    public static func validated(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              value.utf8.count <= 4096,
+              !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) && $0 != "\t" }) else { return nil }
+        return value
     }
 }
