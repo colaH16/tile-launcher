@@ -610,11 +610,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         presentation.reset()
         profileScroll.reset()
     }
-    private func performImmediately(retainingOverlay: Bool = false, _ action: () -> Void) {
+    private enum ActionOverlay { case dismissUnlessPinned, preserve, pin }
+    private func performImmediately(overlay: ActionOverlay = .dismissUnlessPinned, _ action: () -> Void) {
         clearKeyboardFeedback()
         pendingAction = nil
         presentation.selection = nil
-        if retainingOverlay {
+        if overlay == .pin {
             // Batch quit is an in-overlay action. Survive Option release and
             // app focus changes just like a user-pinned presentation.
             presentation.pin()
@@ -622,7 +623,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 NSApp.activate()
                 panel.makeKeyAndOrderFront(nil)
             }
-        } else if !presentation.isPinned { hide() }
+        } else if overlay == .dismissUnlessPinned && !presentation.isPinned { hide() }
         action()
     }
     private func finishOptionSelection() {
@@ -678,6 +679,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             finishOptionSelection()
             guard clicks == 1, queued == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 62) }
         }
+        // App clicks keep a held overlay visible without silently pinning it or
+        // changing Option state. More apps can be opened before releasing Option.
+        for pinned in [false, true] {
+            presentation.reset()
+            if pinned { presentation.pin() }
+            hold.isShowing = true
+            var apps = 0, queued = 0
+            pendingAction = { queued += 1 }
+            presentation.selection = "stale-number"
+            for _ in 0..<2 { performImmediately(overlay: .preserve) { apps += 1 } }
+            finishOptionSelection()
+            guard hold.isShowing, hold.optionDown, apps == 2, queued == 0,
+                  pendingAction == nil, presentation.selection == nil,
+                  presentation.isPinned == pinned,
+                  presentation.dismisses(for: .release) == !pinned else {
+                throw NSError(domain: "TileLauncher.Preview", code: 66)
+            }
+        }
         var numbers = 0
         presentation.pin()
         presentation.selection = "pin:preview"
@@ -714,7 +733,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 throw NSError(domain: "TileLauncher.Preview", code: 65)
             }
         }
-        print("AppDelegate: immediate clicks/numbers preserved; batch quit pins the overlay, cancels queued actions and survives release/focus changes without terminating real apps.")
+        print("AppDelegate: app actions keep held/pinned overlays visible without pinning or changing Option; repeated clicks cancel queued numbers. Immediate clicks/numbers and batch quit policy preserved without launching or terminating real apps.")
     }
     #endif
     private func refreshFocus(completion: (() -> Void)? = nil) {
@@ -857,7 +876,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func select(app: AppItem) {
         if let url = app.url, launches.isBlocked(url) { return }
-        performImmediately { [weak self] in
+        performImmediately(overlay: .preserve) { [weak self] in
             guard let running = NSRunningApplication(processIdentifier: app.pid) else {
                 self?.error("앱이 종료되었습니다.")
                 return
@@ -874,7 +893,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
-        performImmediately { [weak self] in
+        performImmediately(overlay: window.isApplication ? .preserve : .dismissUnlessPinned) { [weak self] in
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
             }
@@ -883,7 +902,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func requestQuit(windowless window: WindowItem,
                              request: (NSRunningApplication?) -> String? = ApplicationTermination.request) {
         guard window.isApplication else { return }
-        performImmediately(retainingOverlay: true) { [weak self] in
+        performImmediately(overlay: .pin) { [weak self] in
             if let message = request(window.runningApplication) { self?.error(message) }
             self?.scheduleOverlayRefresh()
         }
@@ -899,7 +918,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func launchApplication(at url: URL, title: String? = nil) {
         guard !launches.isBlocked(url) else { return }
-        performImmediately { [weak self] in
+        performImmediately(overlay: .preserve) { [weak self] in
             self?.launches.launch(at: url, title: title ?? url.deletingPathExtension().lastPathComponent) { [weak self] message in
                 self?.error(message)
             }
