@@ -128,16 +128,18 @@ final class WindowTracker {
             }
             if attempt < 4 {
                 if attempt == 0 {
-                    // A cold-start off-Space window may not expose AX yet.
-                    // Activate its app once, then resolve only the selected ID.
+                    // Safari can own the menu bar while its restored window is
+                    // still off-Space and absent from AXWindows. Re-activating an
+                    // already-active app may not reveal that window. Establish
+                    // a real cooperative handoff once, then resolve the same ID.
                     DispatchQueue.main.async {
                         guard request.active else { return }
                         guard let app = NSRunningApplication(processIdentifier: target.item.pid), !app.isTerminated else {
                             completion("앱이 종료되었습니다."); return
                         }
-                        NSApp.yieldActivation(to: app)
-                        guard app.activate(options: []) else { completion("앱을 활성화하지 못했습니다."); return }
-                        self.resolveFocus(target, request: request, attempt: 1, delay: 0.2, completion: completion)
+                        if !NSApp.isActive { NSApp.activate() }
+                        self.handoffForMissingWindow(app, target: target, request: request,
+                                                     attempt: 0, completion: completion)
                     }
                 } else {
                     self.resolveFocus(target, request: request, attempt: attempt + 1, delay: 0.2, completion: completion)
@@ -148,6 +150,27 @@ final class WindowTracker {
                 }
             }
         }
+    }
+    private func handoffForMissingWindow(_ app: NSRunningApplication, target: TrackedWindow,
+                                         request: WindowFocusRequest, attempt: Int,
+                                         completion: @escaping (String?) -> Void) {
+        // Main-thread run-loop turns allow the source activation to complete.
+        // No panel close/pin, synthetic key release, app reopen or Space setter.
+        guard request.active else { return }
+        guard !app.isTerminated else { completion("앱이 종료되었습니다."); return }
+        if !NSApp.isActive && attempt < 8 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self] in
+                self?.handoffForMissingWindow(app, target: target, request: request,
+                                             attempt: attempt + 1, completion: completion)
+            }
+            return
+        }
+        NSApp.yieldActivation(to: app)
+        let accepted = NSApp.isActive
+            ? app.activate(from: NSRunningApplication.current, options: [])
+            : app.activate(options: [])
+        guard accepted else { completion("앱을 활성화하지 못했습니다."); return }
+        resolveFocus(target, request: request, attempt: 1, delay: 0.2, completion: completion)
     }
     private func raise(_ element: AXUIElement, item: WindowItem, request: WindowFocusRequest, completion: @escaping (String?) -> Void) {
         guard request.active else { return }
