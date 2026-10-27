@@ -2499,3 +2499,6 @@ R338 68 검증후속·69요구: 사용자는첫전환이동작하나오버레이
 
 
 R338 69 실기 재발: 사용자는 ①② 동작 및 오버레이 유지와 별개로 ③ STP 등록 타일의 로딩/클릭 차단이 남고 최근 창에서도 STP 전환 실패라고 정정했다. 추가로 등록 앱 선택에서도 전환하지 않는다고 보고했다. 공개/공증은 보류하며 원인을 아직 확정하지 않는다. 외부 관찰은 STP가 실행완료 true가 되고 일시 AX창/활성 상태가 나타났음을 보여주지만 실제 클릭 요청 및 런처 내부 gate와 연결되지 않는다. 70 임시 진단은 동작 변경 없이 선택→활성화→AX결과→완료와 bound/fresh NSRunningApplication 상태를 요청 ID로 연결한다. opt-in --window-launch-log에서만 새 private /tmp 파일,10분/4MiB 제한이며 제목/메뉴/URL/내용은 수집하지 않고 공증 전 제거한다.
+
+
+70 진단본 설치 확인: 소스f2f8e82bea9e9d18c338e33ee4642629eda3967b의동일Git tree1651f4bbcb5b90a72261255b0584fd6d9bb7dc8a를격리체크아웃에서Release빌드/기존Developer ID CloudKit서명/원본및ZIP재추출검증후설치했다.69는정상종료·백업했고70의실제PID/BuildID/해시를확인했다. --window-launch-log로실행해0600의새JSONL파일과build70의start/application_ready기록을직접확인했다. XCTest295/Python30이통과했다. 사용자에게STP정상종료→Option유지등록앱실행→최근창선택→실패해도3초유지후해제의1회재현을요청했다.공증/공개는보류한다.
