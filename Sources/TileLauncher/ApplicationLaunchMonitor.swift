@@ -25,6 +25,7 @@ final class ApplicationLaunchMonitor: ObservableObject {
         let key: String
         let title: String
         let bundleID: String?
+        let identity: ApplicationLaunchIdentity
         let previousPIDs: Set<pid_t>
         var gate: ApplicationLaunchGate
         var app: NSRunningApplication?
@@ -32,7 +33,10 @@ final class ApplicationLaunchMonitor: ObservableObject {
         init(url: URL, title: String, now: TimeInterval, running: [NSRunningApplication]) {
             key = ApplicationLaunchMonitor.key(url)
             self.title = title
-            bundleID = Bundle(url: url)?.bundleIdentifier
+            let bundle = Bundle(url: url)
+            bundleID = bundle?.bundleIdentifier
+            identity = ApplicationLaunchIdentity(bundlePath: key, bundleID: bundleID,
+                executablePath: bundle?.executableURL.map(ApplicationLaunchMonitor.key))
             previousPIDs = Set(running.map(\.processIdentifier))
             gate = ApplicationLaunchGate(now: now)
         }
@@ -115,7 +119,7 @@ final class ApplicationLaunchMonitor: ObservableObject {
                     if self.requests[key]?.id == request.id { self.finish(request, status: .failed) }
                     failure("앱을 열지 못했습니다. \(error.localizedDescription)")
                 } else if let app, self.requests[key]?.id == request.id {
-                    self.attach(app, to: request)
+                    self.attach(app, to: request, authoritative: true)
                     self.refresh()
                 }
             }
@@ -124,8 +128,11 @@ final class ApplicationLaunchMonitor: ObservableObject {
         return true
     }
 
-    private func attach(_ app: NSRunningApplication, to request: Request) {
-        guard request.app == nil else { return }
+    private func attach(_ app: NSRunningApplication, to request: Request, authoritative: Bool = false) {
+        // The open completion identifies the process actually opened by AppKit.
+        // Inventory guesses must never prevent that authoritative correction.
+        guard request.app == nil || (authoritative && request.app?.isEqual(app) != true) else { return }
+        request.observations.removeAll()
         request.app = app
         WindowLaunchDiagnostics.record("launch_attached", ["request": request.id.uuidString, "pid": app.processIdentifier, "finished": app.isFinishedLaunching, "terminated": app.isTerminated, "urlMatches": app.bundleURL.map(Self.key) == request.key])
         let changed: () -> Void = { [weak self, weak request] in
@@ -144,10 +151,15 @@ final class ApplicationLaunchMonitor: ObservableObject {
         let running = running()
         for request in Array(requests.values) {
             if request.app == nil {
-                let exact = running.first { !$0.isTerminated && $0.bundleURL.map(Self.key) == request.key }
+                let exact = running.first {
+                    !$0.isTerminated && request.identity.matches(bundlePath: $0.bundleURL.map(Self.key),
+                        bundleID: $0.bundleIdentifier, executablePath: $0.executableURL.map(Self.key))
+                }
+                let executableName = request.identity.executablePath.map { URL(fileURLWithPath: $0).lastPathComponent }
                 let newlyLaunched = running.first {
                     !$0.isTerminated && request.bundleID != nil && $0.bundleIdentifier == request.bundleID
                         && !request.previousPIDs.contains($0.processIdentifier)
+                        && (executableName == nil || $0.executableURL?.lastPathComponent == executableName)
                 }
                 if let app = exact ?? newlyLaunched { attach(app, to: request) }
             }
@@ -240,6 +252,25 @@ final class ApplicationLaunchMonitor: ObservableObject {
             let attached = monitor.requests[Self.key(url)]?.app != nil
             throw NSError(domain: "TileLauncher.Preview", code: 94, userInfo: [NSLocalizedDescriptionKey:
                 "Native launch fixture: blocked=\(blocked), finished=\(finished), terminated=\(terminated), attached=\(attached), errors=\(errors), completions=\(completions.count)"])
+        }
+        // Exercise the actual replacement and observation wiring, using two
+        // existing processes without activating or launching either one.
+        if let prior = NSWorkspace.shared.runningApplications.first(where: {
+            !$0.isTerminated && $0.processIdentifier != getpid()
+        }) {
+            let corrected = ApplicationLaunchMonitor(now: { 0 }, running: { [] }, observesSystem: false,
+                                                      open: { _, _ in })
+            corrected.launch(at: url, title: "테스트", failure: { _ in })
+            let correction = corrected.requests[Self.key(url)]!
+            corrected.attach(prior, to: correction)
+            corrected.attach(NSRunningApplication.current, to: correction)
+            guard correction.app?.isEqual(prior) == true else {
+                throw NSError(domain: "TileLauncher.Preview", code: 97)
+            }
+            corrected.attach(NSRunningApplication.current, to: correction, authoritative: true)
+            guard correction.app?.isEqual(NSRunningApplication.current) == true else {
+                throw NSError(domain: "TileLauncher.Preview", code: 98)
+            }
         }
         var verifiedCompletion: ((NSRunningApplication?, Error?) -> Void)?
         var verifiedErrors = 0

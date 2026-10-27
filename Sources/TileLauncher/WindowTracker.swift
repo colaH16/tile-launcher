@@ -149,7 +149,7 @@ final class WindowTracker {
                         guard let app = NSRunningApplication(processIdentifier: target.item.pid), !app.isTerminated else {
                             completion("앱이 종료되었습니다."); return
                         }
-                        if !NSApp.isActive { NSApp.activate() }
+                        if !NSApp.isActive || NSWorkspace.shared.frontmostApplication?.processIdentifier != getpid() { NSApp.activate() }
                         self.handoffForMissingWindow(app, target: target, request: request,
                                                      attempt: 0, completion: completion)
                     }
@@ -170,8 +170,11 @@ final class WindowTracker {
         // No panel close/pin, synthetic key release, app reopen or Space setter.
         guard request.active else { return }
         guard !app.isTerminated else { completion("앱이 종료되었습니다."); return }
-        WindowLaunchDiagnostics.record("handoff_source", ["request": request.diagnosticID, "attempt": attempt, "sourceActive": NSApp.isActive, "targetActive": app.isActive, "targetPID": app.processIdentifier])
-        if !NSApp.isActive && attempt < 8 {
+        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let decision = WindowActivationHandoff.evaluate(sourceActive: NSApp.isActive,
+            sourceFrontmost: frontmost == getpid(), targetActive: app.isActive, attempt: attempt)
+        WindowLaunchDiagnostics.record("handoff_source", ["request": request.diagnosticID, "attempt": attempt, "sourceActive": NSApp.isActive, "frontmostPID": frontmost ?? 0, "targetActive": app.isActive, "targetPID": app.processIdentifier, "decision": String(describing: decision)])
+        if decision == .wait {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self] in
                 self?.handoffForMissingWindow(app, target: target, request: request,
                                              attempt: attempt + 1, completion: completion)
@@ -179,7 +182,7 @@ final class WindowTracker {
             return
         }
         NSApp.yieldActivation(to: app)
-        let accepted = NSApp.isActive
+        let accepted = decision == .cooperative
             ? app.activate(from: NSRunningApplication.current, options: [])
             : app.activate(options: [])
         WindowLaunchDiagnostics.record("handoff_requested", ["request": request.diagnosticID, "accepted": accepted, "sourceActive": NSApp.isActive])

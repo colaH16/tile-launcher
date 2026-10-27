@@ -55,3 +55,12 @@ Option 키 합성·해제, 패널 닫기·자동 고정, 앱 재실행, Space �
 
 
 70 진단본 설치 확인: 소스f2f8e82bea9e9d18c338e33ee4642629eda3967b의동일Git tree1651f4bbcb5b90a72261255b0584fd6d9bb7dc8a를격리체크아웃에서Release빌드/기존Developer ID CloudKit서명/원본및ZIP재추출검증후설치했다.69는정상종료·백업했고70의실제PID/BuildID/해시를확인했다. --window-launch-log로실행해0600의새JSONL파일과build70의start/application_ready기록을직접확인했다. XCTest295/Python30이통과했다. 사용자에게STP정상종료→Option유지등록앱실행→최근창선택→실패해도3초유지후해제의1회재현을요청했다.공증/공개는보류한다.
+
+
+## 70 원인 확인 · 71 후보
+
+이번 실행 요청은114.774초에생성됐고114.800초에PID2271에연결됐다.115.250초AppKit실행콜백은다른PID83143을반환했지만attach의기존객체존재guard가교체를막았다.134.708초정확한창13571의전환이확인된뒤에도window_ready_signal의PID83143과boundPID2271이달라로딩을해제하지못했다.독립읽기로2271이AuthenticationServicesAgent-STP(다른bundleID/실행파일),83143이STP본체임을확인했다.둘은같은STP.app bundleURL을보고한다.따라서로딩원인은실행완료신호누락이아니라우리코드의프로세스오인과정상콜백교체차단으로확정한다.등록앱재클릭은actionable=false/execute=false로실제로차단됐다.
+
+첫최근창요청은122.942초에처리됐고activate요청accepted=true였으나123.864초까지5회모두AX객체가없어실패했다.같은요청의sourceActive=true/targetActive=true가동시에기록됐다.두번째는sourceActive=true/targetActive=false후134.510초AX객체를얻어134.708초focused/confirmed였다.이비교가OS내부원인을확정하지는않으며,accepted를전환성공으로해석하지않는다.
+
+71후보는프로세스재고의경로뿐아니라앱식별자·주실행파일을대조하고현재요청의AppKit콜백이예비연결을정정하도록한다.창전환은첫런루프를넘기고workspace.frontmostApplication/sourceActive/targetInactive를함께확인한뒤cooperative활성화를요청한다.기존최대0.2초source대기/정확한창조회상한을유지하며확인되지않으면기존단순activate로대체한다.오버레이닫기/합성Option/Space직접쓰기는추가하지않는다.전환개선은실기확인이필요한후보이고진단은이번확인까지만유지해정식공증전제거한다.
