@@ -124,10 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return true
         }
         hold.onReopenCancelled = { [weak self] in self?.optionReopen.cancel() }
-        hold.onHide = { [weak self] reason, time in
-            guard let self, self.presentation.dismisses(for: reason) else { return }
-            self.hide(reason: reason, at: time)
-        }
+        installHoldDismissal()
         hold.onCancel = { [weak self] in
             self?.pendingAction = nil
             self?.presentation.selection = nil
@@ -213,9 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                             object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
-            if self.presentation.dismisses(for: .spaceChange, optionHeld: self.hold.optionDown) {
-                self.hide(reason: .spaceChange)
-            }
+            if self.dismissesFollowingOptionHold(.spaceChange) { self.hide(reason: .spaceChange) }
             self.refreshWindows()
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
@@ -592,6 +587,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                               appSettingsSearchStopped: appSettingsMenu.pendingTileSearchStopped(in: lastContext))
         resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
+    /// Shared by window selection and Space changes. Only an overlay opened by
+    /// the Option hold survives them, since only that Option release closes it.
+    private func dismissesFollowingOptionHold(_ reason: OverlayDismissal) -> Bool {
+        presentation.dismisses(for: reason, heldPresentation: heldPresentation, optionDown: hold.optionDown)
+    }
+    private func installHoldDismissal() {
+        hold.onHide = { [weak self] reason, time in
+            guard let self, self.presentation.dismisses(for: reason) else { return }
+            self.hide(reason: reason, at: time)
+        }
+    }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
         clearKeyboardFeedback()
         // A held overlay can be dragged now; reopen where it actually is.
@@ -740,6 +746,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         print("AppDelegate: app actions keep held/pinned overlays visible without pinning or changing Option; repeated clicks cancel queued numbers. Immediate clicks/numbers and batch quit policy preserved without launching or terminating real apps.")
+    }
+    /// Real HoldMonitor gestures through the production dismissal wiring and
+    /// decision, with synthetic modifier events only: no panel, window, Space or app.
+    func verifyOptionHoldDismissalForPreview() throws {
+        func flags(_ modifiers: NSEvent.ModifierFlags, _ time: TimeInterval) throws -> NSEvent {
+            guard let event = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: modifiers,
+                                               timestamp: time, windowNumber: 0, context: nil, characters: "",
+                                               charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) else {
+                throw NSError(domain: "TileLauncher.Preview", code: 67)
+            }
+            return event
+        }
+        installHoldDismissal()
+        hold.hasPressedMouseButtons = { false }
+        defer {
+            hold.onAbandon = nil
+            hold.stop()
+            hold.onHide = nil; hold.onQuickReopen = nil; hold.canTriggerHold = nil
+            hold.hasPressedMouseButtons = { NSEvent.pressedMouseButtons != 0 }
+            heldPresentation = false
+            presentation.reset()
+        }
+        var time: TimeInterval = 10
+        for held in [false, true] {
+            for pinned in [false, true] {
+                hold.onAbandon = nil
+                hold.stop()
+                presentation.reset()
+                if pinned { presentation.pin() }
+                var abandons = 0
+                hold.onAbandon = { abandons += 1 }
+                // Held: Option arms the real gesture; quick reopen stands in for
+                // the 0.25 s show timer. Manual: the overlay is already visible.
+                hold.isShowing = !held
+                hold.canTriggerHold = { held }
+                hold.onQuickReopen = { _ in held }
+                time += 1
+                let press = try flags(.option, time)
+                _ = hold.handle(press, external: false)
+                hold.isShowing = true
+                heldPresentation = held
+                let keeps = held || pinned
+                guard hold.optionDown, dismissesFollowingOptionHold(.windowSelection) == !keeps,
+                      dismissesFollowingOptionHold(.spaceChange) == !keeps,
+                      dismissesFollowingOptionHold(.escape) else {
+                    throw NSError(domain: "TileLauncher.Preview", code: 68, userInfo: [NSLocalizedDescriptionKey:
+                        "Option hold decision: held=\(held), pinned=\(pinned)"])
+                }
+                time += 1
+                let release = try flags([], time)
+                _ = hold.handle(release, external: false)
+                // Manual release only abandons the gesture; held release closes
+                // through onHide unless pinned. Either way Option is now up.
+                let closed = held && !pinned
+                guard !hold.optionDown, hold.isShowing == !closed, abandons == (held ? 0 : 1),
+                      presentation.isPinned == pinned,
+                      dismissesFollowingOptionHold(.windowSelection) == !pinned,
+                      dismissesFollowingOptionHold(.spaceChange) == !pinned else {
+                    throw NSError(domain: "TileLauncher.Preview", code: 69, userInfo: [NSLocalizedDescriptionKey:
+                        "Option release: held=\(held), pinned=\(pinned), showing=\(hold.isShowing), abandons=\(abandons)"])
+                }
+            }
+        }
+        print("AppDelegate: Option keeps window/Space transitions only for Option-held overlays; manual overlays abandon on release, held overlays close unless pinned, Escape always closes.")
     }
     #endif
     private func refreshFocus(completion: (() -> Void)? = nil) {
@@ -899,8 +969,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
-        let keepOverlay = window.isApplication
-            || !presentation.dismisses(for: .windowSelection, optionHeld: hold.optionDown)
+        let keepOverlay = window.isApplication || !dismissesFollowingOptionHold(.windowSelection)
         performImmediately(overlay: keepOverlay ? .preserve : .dismissUnlessPinned) { [weak self] in
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }

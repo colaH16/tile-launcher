@@ -29,10 +29,14 @@ public final class OverlayPresentation: ObservableObject {
     public func clearExecution(id: UUID? = nil) {
         if id == nil || execution?.id == id { execution = nil }
     }
-    public func dismisses(for reason: OverlayDismissal, optionHeld: Bool = false) -> Bool {
+    /// Window/desktop transitions keep only an overlay that Option itself is
+    /// still holding open. A manually opened overlay ignores a coincidental
+    /// Option key, because releasing it will not close that overlay.
+    public func dismisses(for reason: OverlayDismissal, heldPresentation: Bool = false,
+                          optionDown: Bool = false) -> Bool {
         switch reason {
         case .escape: return true
-        case .windowSelection, .spaceChange: return !isPinned && !optionHeld
+        case .windowSelection, .spaceChange: return !isPinned && !(heldPresentation && optionDown)
         default: return !isPinned
         }
     }

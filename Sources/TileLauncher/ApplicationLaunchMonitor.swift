@@ -24,7 +24,6 @@ final class ApplicationLaunchMonitor: ObservableObject {
         let id = UUID()
         let key: String
         let title: String
-        let bundleID: String?
         let identity: ApplicationLaunchIdentity
         let previousPIDs: Set<pid_t>
         var gate: ApplicationLaunchGate
@@ -34,8 +33,7 @@ final class ApplicationLaunchMonitor: ObservableObject {
             key = ApplicationLaunchMonitor.key(url)
             self.title = title
             let bundle = Bundle(url: url)
-            bundleID = bundle?.bundleIdentifier
-            identity = ApplicationLaunchIdentity(bundlePath: key, bundleID: bundleID,
+            identity = ApplicationLaunchIdentity(bundlePath: key, bundleID: bundle?.bundleIdentifier,
                 executablePath: bundle?.executableURL.map(ApplicationLaunchMonitor.key))
             previousPIDs = Set(running.map(\.processIdentifier))
             gate = ApplicationLaunchGate(now: now)
@@ -75,7 +73,8 @@ final class ApplicationLaunchMonitor: ObservableObject {
     /// an in-flight request bound to this exact living process.
     func confirmWindowReady(pid: pid_t) {
         precondition(Thread.isMainThread)
-        guard let running = NSRunningApplication(processIdentifier: pid), !running.isTerminated else { return }
+        guard !requests.isEmpty,
+              let running = NSRunningApplication(processIdentifier: pid), !running.isTerminated else { return }
         for request in Array(requests.values) {
             guard let bound = request.app, !bound.isTerminated, bound.isEqual(running) else { continue }
             let status = request.gate.update(processFound: true, finished: running.isFinishedLaunching,
@@ -145,17 +144,17 @@ final class ApplicationLaunchMonitor: ObservableObject {
         let running = running()
         for request in Array(requests.values) {
             if request.app == nil {
-                let exact = running.first {
-                    !$0.isTerminated && request.identity.matches(bundlePath: $0.bundleURL.map(Self.key),
-                        bundleID: $0.bundleIdentifier, executablePath: $0.executableURL.map(Self.key))
+                // Canonicalize paths only for processes with the expected identifier.
+                let exact = running.first { app in
+                    !app.isTerminated && request.identity.matches(bundleID: app.bundleIdentifier,
+                        bundlePath: { app.bundleURL.map(Self.key) }, executablePath: { app.executableURL.map(Self.key) })
                 }
-                let executableName = request.identity.executablePath.map { URL(fileURLWithPath: $0).lastPathComponent }
-                let newlyLaunched = running.first {
-                    !$0.isTerminated && request.bundleID != nil && $0.bundleIdentifier == request.bundleID
-                        && !request.previousPIDs.contains($0.processIdentifier)
-                        && (executableName == nil || $0.executableURL?.lastPathComponent == executableName)
+                let found = exact ?? running.first { app in
+                    !app.isTerminated && !request.previousPIDs.contains(app.processIdentifier)
+                        && request.identity.admitsNewProcess(bundleID: app.bundleIdentifier,
+                                                             executableName: { app.executableURL?.lastPathComponent })
                 }
-                if let app = exact ?? newlyLaunched { attach(app, to: request) }
+                if let found { attach(found, to: request) }
             }
             let status = request.gate.update(processFound: request.app != nil,
                 finished: request.app?.isFinishedLaunching == true, terminated: request.app?.isTerminated == true,
@@ -270,12 +269,43 @@ final class ApplicationLaunchMonitor: ObservableObject {
         pending.app = NSRunningApplication.current
         verified.confirmWindowReady(pid: -1)
         guard verified.isBlocked(url) else { throw NSError(domain: "TileLauncher.Preview", code: 95) }
+        // A focused window of another living process is read only, never
+        // activated, and cannot release a request bound to this process.
+        if let other = NSWorkspace.shared.runningApplications.first(where: {
+            !$0.isTerminated && $0.processIdentifier != getpid()
+        }) {
+            verified.confirmWindowReady(pid: other.processIdentifier)
+            guard verified.isBlocked(url) else { throw NSError(domain: "TileLauncher.Preview", code: 99) }
+        }
+        // The native completion signal keeps its own meaning; window evidence
+        // only releases a process that has not reported finished launching.
+        let finishedBeforeWindow = NSRunningApplication.current.isFinishedLaunching
         verified.confirmWindowReady(pid: NSRunningApplication.current.processIdentifier)
+        guard verified.statusText == "테스트 · \(finishedBeforeWindow ? "실행 완료" : "창 준비 완료")" else {
+            throw NSError(domain: "TileLauncher.Preview", code: 100, userInfo: [NSLocalizedDescriptionKey:
+                "Window readiness status: finished=\(finishedBeforeWindow), text=\(verified.statusText ?? "nil")"])
+        }
         verifiedCompletion?(nil, NSError(domain: "LateAfterVerifiedWindow", code: 1)); drain()
         guard !verified.isBlocked(url), verified.requests.isEmpty, verifiedErrors == 0 else {
             throw NSError(domain: "TileLauncher.Preview", code: 96)
         }
-        print("Launch monitor: duplicate suppression, unrelated process rejection, verified window readiness, start timeout, stale callback, error retry and native launch state passed without launching apps.")
+        // Requests are keyed by the resolved bundle: a symlink shares the real
+        // app's gate, while a separate copy keeps its own.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TileLaunchKey-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let real = root.appendingPathComponent("Real.app", isDirectory: true)
+        let copy = root.appendingPathComponent("Copy.app", isDirectory: true)
+        let link = root.appendingPathComponent("Link.app")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: copy, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        let aliases = ApplicationLaunchMonitor(now: { 0 }, running: { [] }, observesSystem: false, open: { _, _ in })
+        guard aliases.launch(at: link, title: "테스트", failure: { _ in }), aliases.isBlocked(real),
+              !aliases.isBlocked(copy), !aliases.launch(at: real, title: "테스트", failure: { _ in }) else {
+            throw NSError(domain: "TileLauncher.Preview", code: 101)
+        }
+        print("Launch monitor: duplicate suppression, unrelated process rejection, other live PID rejection, verified window readiness vs native completion, symlink/copy keys, start timeout, stale callback, error retry and native launch state passed without launching apps.")
     }
     #endif
     deinit { timer?.invalidate() }

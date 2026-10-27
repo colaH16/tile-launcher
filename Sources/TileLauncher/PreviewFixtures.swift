@@ -496,6 +496,9 @@ enum PreviewExport {
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_LAUNCH_REFRESH_ONLY"] == "1" {
             try ApplicationLaunchMonitor.verifyForPreview()
             try verifyLaunchFeedbackRefresh()
+            let holdFixture = PreviewFixture(theme: .classic)
+            try AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
+                            settings: holdFixture.settings).verifyOptionHoldDismissalForPreview()
             return
         }
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_OPTION_ONLY"] == "1" {
@@ -603,6 +606,7 @@ enum PreviewExport {
         let delegate = AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
                                    settings: verification.settings)
         try delegate.verifyClickExecutionForPreview()
+        try delegate.verifyOptionHoldDismissalForPreview()
         try ApplicationLaunchMonitor.verifyForPreview()
         try verifySettingsNavigation()
         try verifyGroupedWindowContent()

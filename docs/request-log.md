@@ -2539,3 +2539,10 @@ main소스를정상푸시하고정확한소스v2.1.7태그와3개자산으로202
 R339 인증상태: 기존Claude세션을Opus5.5/high·RemoteControl·read-only도구로재개했지만실제요청이Login expired로끝나리뷰는시작되지않았다.저장된로그인표시만으로성공으로취급하지않고기존구독재인증을요청했다.모델실행/RemoteControl성공은아직확인하지않았으며다른모델을사용하지않는다.
 
 R339 검토 완료: 사용자가 재로그인한 뒤 실제Claude Opus5.5/high 응답·RemoteControl을확인해오늘변경을읽기전용리뷰했다.새중대결함은미확인이고수동호출후Option유지에서패널이남는낮은우선순위경계동작을Codex의실제HoldMonitor격리검사로대조했다.앱ID선필터는준비실행제외/교차각40회에서현재탐색평균5.30ms→후보0.27ms,같은본체선택이었다.전체실행·프레임성능과nil-ID실제앱검증은아니다.Claude가재검토해일치확인했다.설정창다른Space활성화부작용은가설로남기고제품에적용하지않는다.상세제안은docs/reviews/2.1.7-claude-peer-review.md이며제품/설치/공개72는유지하고추가iCloud전달없다.
+
+
+## 2026-10-27 · R340 Claude 구현·테스트 보강·상호 검증 후 로컬 시험 설치
+
+사용자는 R339의 앞 두 항목(수동 호출 후 Option 잔류 경계 수정, 앱 식별자 선필터 성능 개선)을 Claude가 구현하고 회귀 테스트를 보강하도록 요청했다. Claude의 제안 코드와 Codex 검토/검사 결과를 다시 Claude와 대조한 뒤 이 Mac에 시험본을 설치한다. 사용자 실기 확인·오케이 후에만 GitHub 소스·릴리스와 Homebrew cask를 갱신한다. 그 전에는 소스 푸시·공개를 하지 않는다. iCloud 빌드 전달 중단도 유지한다. 미재현 NSApp.activate/설정 Space 가설은 이번 수정에 포함하지 않는다. 후보는 bug/performance patch2.1.8(73)이다.
+
+R340 Claude 구현 수신: Opus5.5/high가수동/Option닫힘공통판정과두생산호출부,ID선필터의지연경로공급자,exact성공시fallback생략,요청없을때확인생략을구현했다.실제HoldMonitor의수동/held·고정native검사와lazy identity/fallback·다른생존PID·symlink/copy검사를추가했다.Codex는fallback에서ID확인전executableURL이평가되는작은성능역행을발견해Claude에돌려보냈고,Claude가이를지연공급자로정정하고0회호출검사를추가했다.활성화/Space엔진은미변경이며이제Codex검사를진행한다.아직통과·설치를주장하지않는다.
