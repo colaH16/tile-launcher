@@ -2546,3 +2546,5 @@ R339 검토 완료: 사용자가 재로그인한 뒤 실제Claude Opus5.5/high �
 사용자는 R339의 앞 두 항목(수동 호출 후 Option 잔류 경계 수정, 앱 식별자 선필터 성능 개선)을 Claude가 구현하고 회귀 테스트를 보강하도록 요청했다. Claude의 제안 코드와 Codex 검토/검사 결과를 다시 Claude와 대조한 뒤 이 Mac에 시험본을 설치한다. 사용자 실기 확인·오케이 후에만 GitHub 소스·릴리스와 Homebrew cask를 갱신한다. 그 전에는 소스 푸시·공개를 하지 않는다. iCloud 빌드 전달 중단도 유지한다. 미재현 NSApp.activate/설정 Space 가설은 이번 수정에 포함하지 않는다. 후보는 bug/performance patch2.1.8(73)이다.
 
 R340 Claude 구현 수신: Opus5.5/high가수동/Option닫힘공통판정과두생산호출부,ID선필터의지연경로공급자,exact성공시fallback생략,요청없을때확인생략을구현했다.실제HoldMonitor의수동/held·고정native검사와lazy identity/fallback·다른생존PID·symlink/copy검사를추가했다.Codex는fallback에서ID확인전executableURL이평가되는작은성능역행을발견해Claude에돌려보냈고,Claude가이를지연공급자로정정하고0회호출검사를추가했다.활성화/Space엔진은미변경이며이제Codex검사를진행한다.아직통과·설치를주장하지않는다.
+
+R340 시험 설치 완료: Claude Opus5.5/high 구현과Codex대조·306XCTest/30Python·반례실패/복원·native131개검사를통과했다.기존native0.5pt창정렬가정실패는독립AppKit반례확인뒤Debug검사만정정하고재통과했다.Claude최종읽기전용대조에서로컬시험차단이슈없음을확인했다.소스40aa95f의73을격리Release/Developer ID CloudKit서명·원본/ZIP검증후현재Mac에설치/실행해실제PID·버전/BuildID·해시를확인했고공증72는정상종료·백업했다.미공증시험73/공개72이며사용자오케이전소스푸시·공증·릴리스·cask갱신보류,iCloud빌드전달없음.확인항목과코드제안은docs/reviews/2.1.8-claude-implementation.md.
