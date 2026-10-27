@@ -292,7 +292,6 @@ struct OverlayDragHandle: NSViewRepresentable {
         func begin(_ event: NSEvent, id: String) {
             cancelPress()
             guard enabled, let window, event.window === window, controls[id] != nil else { return }
-            WindowLaunchDiagnostics.record("tile_mouse_down", ["kind": String(id.prefix { $0 != ":" }), "actionable": controls[id]?.action != nil])
             pressedID = id
             motion = OverlayDragMotion(start: window.convertPoint(toScreen: event.locationInWindow),
                                        origin: window.frame.origin, backingScale: window.backingScaleFactor)
@@ -321,7 +320,6 @@ struct OverlayDragHandle: NSViewRepresentable {
             #endif
             let action = motion?.committed == false && controls[id]?.frame.contains(local) == true
                 && nativeTarget(at: local) === controls[id] && canExecute ? controls[id]?.action : nil
-            WindowLaunchDiagnostics.record("tile_mouse_up", ["kind": String(id.prefix { $0 != ":" }), "actionable": controls[id]?.action != nil, "execute": action != nil, "dragged": motion?.committed ?? false])
             cancelPress() // Clear tracking before an action hides/rebuilds the overlay.
             action?()
         }

@@ -2,6 +2,8 @@
 
 ## 현재 단계: R338 STP 보조 프로세스 오인 수정 · 2.1.7(71) 실기 검증 대기
 
+- 사용자가71의STP등록로딩해제/Option유지첫창전환/overlay유지모두확인했다.로그에서도본체PID추적/finished와workspace source확인후정확한창confirmed를확인했다.72는검증된기능을보존하고기승인임시진단만제거해정식준비한다.새UI동작변경없이검증·서명·공증/릴리스와이Mac설치를계속한다.현재설치는아직71이고완료전공개는67이다.
+
 - 현재 설치는71 시험본(46db75c)이다.301XCTest/30Python·native검사와실제STP본체/보조프로세스판별을검증한후Release/Developer ID CloudKit서명·원본/ZIP검증해설치했다.70은정상종료·백업했고71의실제PID/BuildID·해시와로그시작을확인했다.사용자실기에서등록로딩해제/최근창첫선택/Option중overlay유지를확인중이다.임시진단제거·정식공증/공개는아직이다.아래70·69현재표시는이전기록이다.
 
 - 70 실기원인: 같은STP.app경로를보고하는AuthenticationServicesAgent-STP PID2271을실행대상으로오인했고,정상open콜백83143을기존attach guard로무시했다.정확한창포커스확인도PID불일치로대기를해제못했다.71에서재고의ID·주실행파일대조와authoritative callback정정,source활성화는workspace확인후handoff를적용한다.첫실패/두번째성공은로그로확인했으나전환내부원인은확정하지않으며71실기확인이필요하다.기존오버레이유지/키상태/상한보존,임시진단은정식공증전제거한다.

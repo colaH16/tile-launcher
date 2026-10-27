@@ -67,3 +67,10 @@ Option 키 합성·해제, 패널 닫기·자동 고정, 앱 재실행, Space �
 
 
 71 설치 확인: 소스46db75cd15ffa53cbe3fab1039e08fd692b6a00b/tree082c24f2a6acf18e95819fdf5c6ed74e9b64fc8f의격리Release빌드·Developer ID CloudKit서명·원본/ZIP재추출검증후이Mac에설치했다.70을정상종료·백업하고71실제PID/BuildID/해시와private진단로그의build71시작기록을확인했다.단위검사301/Python30·native콜백정정/동일hostingview타일해제검사가통과했다.현재실행중인STP인증보조프로세스는새identity규칙에서제외되고본체는포함됨을읽기전용실물검사로확인했다.사용자에게STP종료후등록실행로딩해제/Option유지최근창첫선택전환/오버레이유지의실기확인을요청했다.전환개선은아직실기대기이며공증/공개는보류한다.
+
+
+## 71 사용자 확인 · 72 정식 준비
+
+사용자는STP등록실행뒤로딩이풀리고Option을놓지않은상태로최근창첫선택이전환되며오버레이도유지됨을확인했다.71로그의두실행요청은각각본체PID84842/84906에연결돼finished로종료됐다.각전환은초기frontmost가대상인상태에서1턴약26ms뒤workspace.frontmost가런처이고targetActive=false임을확인한뒤cooperative요청을했고정확한창13689/13766의focused/confirmed가Option=true로기록됐다.표시화면의실제오버레이유지는사용자확인이다.
+
+72는사용자검증된기능코드를보존하고임시WindowLaunchDiagnostics/호출·추가조회·요청로그ID를제거한다.주실행파일판별/정상콜백정정/활성화대기/Option유지정책은동일하다.기능재변경이없는기승인진단제거와빌드번호·릴리스노트정리이므로새UI시험승인을요청하지않고기존사용자공증·패치/릴리스승인에따라검증/서명/공증·공개·기존Mac설치를진행한다.최종검사/서명/공증결과는실제완료후기록한다.
