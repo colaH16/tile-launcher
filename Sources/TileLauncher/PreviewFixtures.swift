@@ -493,6 +493,11 @@ struct FittedSettingsPreview: View {
 enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if ProcessInfo.processInfo.environment["TILE_PREVIEW_LAUNCH_REFRESH_ONLY"] == "1" {
+            try ApplicationLaunchMonitor.verifyForPreview()
+            try verifyLaunchFeedbackRefresh()
+            return
+        }
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_OPTION_ONLY"] == "1" {
             try verifyScaledDragTargets(to: directory)
             try verifyScaledDragTargets(to: directory, theme: .glass)
@@ -772,6 +777,50 @@ enum PreviewExport {
         print("Exported overlay/settings panes; unordered native tab controls and desktop Glass composition require separate visual checks.")
     }
 
+    @MainActor private static func verifyLaunchFeedbackRefresh() throws {
+        let fixture = PreviewFixture(theme: .classic, registeredCount: 8)
+        var complete: ((NSRunningApplication?, Error?) -> Void)?
+        let launches = ApplicationLaunchMonitor(running: { [] }, observesSystem: false,
+                                                open: { _, done in complete = done })
+        let pin = fixture.settings.pins.first!
+        let layout = fixture.content.snapshot.layout
+        let view = DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
+            presentation: fixture.presentation, launches: launches,
+            selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
+            changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
+            openInFinder: { _ in }, openTrash: {}, showSettings: { _ in }, requestPermission: {}, pinOverlay: {}, dismiss: {})
+        let hosting = NSHostingView(rootView: view.environment(\.colorScheme, .dark))
+        let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
+        let window = NSWindow(contentRect: surface.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = surface
+        func settle() {
+            surface.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            surface.layoutSubtreeIfNeeded()
+        }
+        func drags(_ view: NSView) -> [OverlayDragHandle.DragView] {
+            (view as? OverlayDragHandle.DragView).map { [$0] } ?? view.subviews.flatMap(drags)
+        }
+        func actionable() -> Bool? {
+            drags(surface).first?.targetsForValidation.first { $0.id == "pin:\(pin.id)" }.map { $0.action != nil }
+        }
+        settle()
+        guard actionable() == true else { throw NSError(domain: "TileLauncher.LaunchRefresh", code: 1) }
+        launches.launch(at: pin.url, title: pin.name, failure: { _ in })
+        settle()
+        print("Registered tile pending: blocked=\(launches.isBlocked(pin.url)), actionable=\(String(describing: actionable()))")
+        guard launches.isBlocked(pin.url), actionable() == false else {
+            throw NSError(domain: "TileLauncher.LaunchRefresh", code: 2)
+        }
+        complete?(nil, NSError(domain: "Synthetic", code: 1))
+        settle()
+        print("Registered tile released: blocked=\(launches.isBlocked(pin.url)), actionable=\(String(describing: actionable()))")
+        guard !launches.isBlocked(pin.url), actionable() == true else {
+            throw NSError(domain: "TileLauncher.LaunchRefresh", code: 3)
+        }
+        print("Registered tile loading/input updates on the same live hosting view passed without opening an app.")
+    }
     @MainActor private static func verifyScaledDragTargets(to output: URL, theme: DeckTheme = .classic, selected: Bool = false) throws {
         let directory = theme == .classic ? output : output.appendingPathComponent(selected ? "feedback-glass-selected" : "feedback-glass")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

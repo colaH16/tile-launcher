@@ -81,6 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for item in menu.items { item.target = self }
         statusItem.menu = menu
 
+        tracker.onFocusConfirmed = { [weak self] window in
+            self?.launches.confirmWindowReady(pid: window.pid)
+        }
         tracker.onChange = { [weak self] windows in
             guard let self else { return }
             self.windows = windows
@@ -209,8 +212,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
                                             object: nil, queue: .main) { [weak self] _ in
-            if self?.presentation.isPinned != true { self?.hide() }
-            self?.refreshWindows()
+            guard let self else { return }
+            if self.presentation.dismisses(for: .spaceChange, optionHeld: self.hold.optionDown) {
+                self.hide(reason: .spaceChange)
+            }
+            self.refreshWindows()
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                 object: nil, queue: .main) { [weak self] _ in
@@ -893,7 +899,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
-        performImmediately(overlay: window.isApplication ? .preserve : .dismissUnlessPinned) { [weak self] in
+        let keepOverlay = window.isApplication
+            || !presentation.dismisses(for: .windowSelection, optionHeld: hold.optionDown)
+        performImmediately(overlay: keepOverlay ? .preserve : .dismissUnlessPinned) { [weak self] in
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
             }

@@ -2,6 +2,23 @@ import XCTest
 @testable import DeckCore
 
 final class OverlayPresentationTests: XCTestCase {
+    func testHeldWindowSelectionAndSpaceChangeKeepOverlayWithoutPinning() {
+        let presentation = OverlayPresentation()
+        XCTAssertFalse(presentation.dismisses(for: .windowSelection, optionHeld: true))
+        XCTAssertFalse(presentation.dismisses(for: .spaceChange, optionHeld: true))
+        XCTAssertFalse(presentation.isPinned)
+        XCTAssertTrue(presentation.dismisses(for: .release))
+        XCTAssertTrue(presentation.dismisses(for: .escape, optionHeld: true))
+    }
+    func testUnheldWindowSelectionAndSpaceChangeKeepExistingDismissalPolicy() {
+        let presentation = OverlayPresentation()
+        XCTAssertTrue(presentation.dismisses(for: .windowSelection))
+        XCTAssertTrue(presentation.dismisses(for: .spaceChange))
+        presentation.pin()
+        XCTAssertFalse(presentation.dismisses(for: .windowSelection))
+        XCTAssertFalse(presentation.dismisses(for: .spaceChange))
+        XCTAssertTrue(presentation.dismisses(for: .escape))
+    }
     func testFeedbackSurvivesSelectionClearButCannotClearANewerRequest() {
         let presentation = OverlayPresentation()
         presentation.selection = "pin:a"

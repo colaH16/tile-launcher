@@ -18,6 +18,7 @@ private final class WindowFocusRequest {
 /// different Space is not a closed-window notification.
 final class WindowTracker {
     var onChange: (([WindowItem]) -> Void)?
+    var onFocusConfirmed: ((WindowItem) -> Void)?
     private let queue = DispatchQueue(label: "TileLauncher.accessibility", qos: .userInitiated)
     private let desktops = DesktopWindows()
     private var apps: [pid_t: AppItem] = [:]
@@ -211,7 +212,11 @@ final class WindowTracker {
             frontmost: value(app, kAXFrontmostAttribute) as? Bool == true, focused: matches,
             desktop: desktops.desktop(for: item.windowID), attempt: attempt)
         switch status {
-        case .confirmed: DispatchQueue.main.async { completion(nil) }
+        case .confirmed: DispatchQueue.main.async { [weak self] in
+            guard request.active else { return }
+            self?.onFocusConfirmed?(item)
+            completion(nil)
+        }
         case .closed: DispatchQueue.main.async { completion("이 창이 닫혔습니다.") }
         case .unconfirmed:
             DispatchQueue.main.async {

@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-public enum OverlayDismissal { case release, interruption, outsideClick, escape }
+public enum OverlayDismissal { case release, interruption, outsideClick, escape, windowSelection, spaceChange }
 
 public struct ShortcutExecution: Equatable {
     public let id = UUID()
@@ -29,7 +29,11 @@ public final class OverlayPresentation: ObservableObject {
     public func clearExecution(id: UUID? = nil) {
         if id == nil || execution?.id == id { execution = nil }
     }
-    public func dismisses(for reason: OverlayDismissal) -> Bool {
-        reason == .escape || !isPinned
+    public func dismisses(for reason: OverlayDismissal, optionHeld: Bool = false) -> Bool {
+        switch reason {
+        case .escape: return true
+        case .windowSelection, .spaceChange: return !isPinned && !optionHeld
+        default: return !isPinned
+        }
     }
 }

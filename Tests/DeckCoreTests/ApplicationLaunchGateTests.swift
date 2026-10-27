@@ -2,6 +2,22 @@ import XCTest
 @testable import DeckCore
 
 final class ApplicationLaunchGateTests: XCTestCase {
+    func testVerifiedWindowReleasesGateWithoutClaimingLaunchNotification() {
+        var gate = ApplicationLaunchGate(now: 0)
+        _ = gate.update(processFound: true, now: 1)
+        XCTAssertEqual(gate.update(processFound: true, windowReady: true, now: 2), .windowReady)
+        XCTAssertFalse(gate.status.blocksLaunch)
+    }
+    func testWindowEvidenceNeedsLivingProcessAndCannotOverrideTermination() {
+        var waiting = ApplicationLaunchGate(now: 0)
+        XCTAssertEqual(waiting.update(processFound: false, windowReady: true, now: 1), .waiting)
+        var stopped = ApplicationLaunchGate(now: 0)
+        XCTAssertEqual(stopped.update(processFound: true, windowReady: true, terminated: true, now: 1), .stopped)
+    }
+    func testLaunchCompletionKeepsItsOwnMeaningWhenBothSignalsExist() {
+        var gate = ApplicationLaunchGate(now: 0)
+        XCTAssertEqual(gate.update(processFound: true, finished: true, windowReady: true, now: 1), .finished)
+    }
     func testNoProcessReleasesAfterStartWindow() {
         var gate = ApplicationLaunchGate(now: 10)
         XCTAssertEqual(gate.update(processFound: false, now: 12.99), .waiting)

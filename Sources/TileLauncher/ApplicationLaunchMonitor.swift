@@ -66,6 +66,20 @@ final class ApplicationLaunchMonitor: ObservableObject {
     static func key(_ url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
     func isBlocked(_ url: URL) -> Bool { states[Self.key(url)]?.blocksLaunch == true }
 
+    /// Stronger evidence than an elapsed timer or menu-bar activation: the tracker
+    /// confirmed a specific focused window on the current desktop. Only release
+    /// an in-flight request bound to this exact living process.
+    func confirmWindowReady(pid: pid_t) {
+        precondition(Thread.isMainThread)
+        guard let running = NSRunningApplication(processIdentifier: pid), !running.isTerminated else { return }
+        for request in Array(requests.values) {
+            guard let bound = request.app, !bound.isTerminated, bound.isEqual(running) else { continue }
+            let status = request.gate.update(processFound: true, finished: running.isFinishedLaunching,
+                                             windowReady: true, now: now())
+            finish(request, status: status)
+        }
+    }
+
     @discardableResult func launch(at url: URL, title: String, failure: @escaping (String) -> Void) -> Bool {
         precondition(Thread.isMainThread)
         let key = Self.key(url)
@@ -148,10 +162,15 @@ final class ApplicationLaunchMonitor: ObservableObject {
         requests[request.key] = nil
         states[request.key] = nil
         request.observations.removeAll()
+        if status == .finished || status == .windowReady {
+            // A late launch callback cannot undo an already verified success.
+            generations[request.key] = nil
+        }
         if latestKey == request.key {
             let suffix: String
             switch status {
             case .finished: suffix = "실행 완료"
+            case .windowReady: suffix = "창 준비 완료"
             case .notStarted: suffix = "시작을 확인하지 못해 대기를 해제했어요"
             case .stopped: suffix = "앱이 종료되어 대기를 해제했어요"
             case .timedOut: suffix = "완료 신호가 없어 대기를 해제했어요"
@@ -210,7 +229,21 @@ final class ApplicationLaunchMonitor: ObservableObject {
             throw NSError(domain: "TileLauncher.Preview", code: 94, userInfo: [NSLocalizedDescriptionKey:
                 "Native launch fixture: blocked=\(blocked), finished=\(finished), terminated=\(terminated), attached=\(attached), errors=\(errors), completions=\(completions.count)"])
         }
-        print("Launch monitor: duplicate suppression, unrelated app access, start timeout, stale callback, error retry and native launch state passed without launching apps.")
+        var verifiedCompletion: ((NSRunningApplication?, Error?) -> Void)?
+        var verifiedErrors = 0
+        let verified = ApplicationLaunchMonitor(now: { 0 }, running: { [] }, observesSystem: false,
+                                                open: { _, done in verifiedCompletion = done })
+        verified.launch(at: url, title: "테스트", failure: { _ in verifiedErrors += 1 })
+        let pending = verified.requests[Self.key(url)]!
+        pending.app = NSRunningApplication.current
+        verified.confirmWindowReady(pid: -1)
+        guard verified.isBlocked(url) else { throw NSError(domain: "TileLauncher.Preview", code: 95) }
+        verified.confirmWindowReady(pid: NSRunningApplication.current.processIdentifier)
+        verifiedCompletion?(nil, NSError(domain: "LateAfterVerifiedWindow", code: 1)); drain()
+        guard !verified.isBlocked(url), verified.requests.isEmpty, verifiedErrors == 0 else {
+            throw NSError(domain: "TileLauncher.Preview", code: 96)
+        }
+        print("Launch monitor: duplicate suppression, unrelated process rejection, verified window readiness, start timeout, stale callback, error retry and native launch state passed without launching apps.")
     }
     #endif
     deinit { timer?.invalidate() }
