@@ -2528,3 +2528,14 @@ R338 69 실기 재발: 사용자는 ①② 동작 및 오버레이 유지와 별
 사용자확인71과기능이동일하고임시진단만제거된72(소스9aaabb807dd2baa1ce6dcc6780e0a2fd36f057be)를301XCTest/30Python·native검사후Release/Developer ID CloudKit서명했다.노트버전섹션검사실패는문서형식만수정후30개모두재통과했다.임시logger/preview명령이Release실행파일에없음을확인했다.Apple제출하나cc21fd56-fabb-4521-9d35-489dc0300840가Accepted이고티켓·Gatekeeper·원본/ZIP검증을완료했다.71은정상종료·백업후같은사용자Applications경로에공증72를설치해실제PID/BuildID/최종번들해시를확인했다.
 
 main소스를정상푸시하고정확한소스v2.1.7태그와3개자산으로2026-10-27 15:17:40 KST에최신정식릴리스를공개했다.공개자산전체익명재다운로드·본문·태그/소스·서명·공증/해시를확인했다.기존v2.1.3초안/태그·이전공개/백업은보존했다.기존상위iCloud공유폴더의Tile-Launcher-2.1.7-arm64.zip복사/해시를확인했고서버업로드/집Mac수신은별도다.ZIPSHA256은36679350b1bac3fd6ad3689e829fecbe0461ae9a556ba142838a2c1509947bad다.기존homebrew-tap의TileLauncher만2.1.7/동일SHA로갱신하고원격내용을재확인했다.다른앱cask는변경하지않았다.영수증/로그는ignored evidence stp-window-20261027/release-20261027에보존했다.
+
+
+## 2026-10-27 · R339 오늘 변경의 Claude 검토 · iCloud 빌드 전달 중단
+
+사용자는오늘작업을Claude Opus5.5/high로검토해다른오류·부작용·성능과코드개선/수정제안을받은뒤결과를알려달라고요청했다.우선2.1.6공개소스대비2.1.7배포소스와호출부/검사·실기근거를읽기전용으로대조하고,확인된결함과가설을구분해Codex가재검증한다.현재공개/설치2.1.7(72)를리뷰중에임의로교체하거나새릴리스를게시하는요청으로확대하지않는다.
+
+추가로사용자는앞으로집Mac도Homebrew update/upgrade로설치하므로iCloud에빌드ZIP을더올리지말라고명시했다.이는배포파일전달정책변경이며앱의iCloud설정동기화기능을끄는요청이아니다.기존전달파일은삭제하지않는다.
+
+R339 인증상태: 기존Claude세션을Opus5.5/high·RemoteControl·read-only도구로재개했지만실제요청이Login expired로끝나리뷰는시작되지않았다.저장된로그인표시만으로성공으로취급하지않고기존구독재인증을요청했다.모델실행/RemoteControl성공은아직확인하지않았으며다른모델을사용하지않는다.
+
+R339 검토 완료: 사용자가 재로그인한 뒤 실제Claude Opus5.5/high 응답·RemoteControl을확인해오늘변경을읽기전용리뷰했다.새중대결함은미확인이고수동호출후Option유지에서패널이남는낮은우선순위경계동작을Codex의실제HoldMonitor격리검사로대조했다.앱ID선필터는준비실행제외/교차각40회에서현재탐색평균5.30ms→후보0.27ms,같은본체선택이었다.전체실행·프레임성능과nil-ID실제앱검증은아니다.Claude가재검토해일치확인했다.설정창다른Space활성화부작용은가설로남기고제품에적용하지않는다.상세제안은docs/reviews/2.1.7-claude-peer-review.md이며제품/설치/공개72는유지하고추가iCloud전달없다.
