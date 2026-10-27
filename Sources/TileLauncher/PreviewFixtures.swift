@@ -1021,12 +1021,25 @@ enum PreviewExport {
         let backgroundStart = inputWindow.convertPoint(toScreen: input.convert(CGPoint(x: 280, y: 210), to: nil))
         let backgroundOrigin = inputWindow.frame.origin
         input.beginBackground(event(backgroundStart, type: .leftMouseDown))
-        let onePixel = CGPoint(x: backgroundStart.x + 1 / scale, y: backgroundStart.y)
-        input.drag(event(onePixel, type: .leftMouseDragged))
-        guard inputWindow.frame.origin == CGPoint(x: backgroundOrigin.x + 1 / scale, y: backgroundOrigin.y) else {
-            throw NSError(domain: "TileLauncher.Preview", code: 91)
+        // The zero-threshold half-point motion is covered by OverlayDragMotionTests.
+        // A native window frame is aligned to whole points here (5.5 → 5.0 at 2x),
+        // so this end-to-end check moves one point: 2 physical pixels on Retina,
+        // still below the 7-pixel tile threshold, compared exactly.
+        let onePoint = CGPoint(x: backgroundStart.x + 1, y: backgroundStart.y)
+        input.drag(event(onePoint, type: .leftMouseDragged))
+        let expected = CGPoint(x: backgroundOrigin.x + 1, y: backgroundOrigin.y)
+        guard inputWindow.frame.origin == expected else {
+            let actual = inputWindow.frame.origin
+            throw NSError(domain: "TileLauncher.Preview", code: 91, userInfo: [NSLocalizedDescriptionKey:
+                "Background 1pt move: origin before=\(backgroundOrigin), expected=\(expected), actual=\(actual), "
+                + "delta=(\(actual.x - backgroundOrigin.x), \(actual.y - backgroundOrigin.y)), "
+                + "windowScale=\(scale), screenScale=\(String(describing: inputWindow.screen?.backingScaleFactor)), "
+                + "event screen start=\(backgroundStart) moved=\(onePoint), "
+                // Events were built against the pre-move borderless frame.
+                + "event window start=\(CGPoint(x: backgroundStart.x - backgroundOrigin.x, y: backgroundStart.y - backgroundOrigin.y)) "
+                + "moved=\(CGPoint(x: onePoint.x - backgroundOrigin.x, y: onePoint.y - backgroundOrigin.y))"])
         }
-        input.release(event(onePixel, type: .leftMouseUp))
+        input.release(event(onePoint, type: .leftMouseUp))
         guard clicks == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 92) }
         let circle = OverlayDragHandle.DragView.TileView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
         circle.circular = true; circle.pressed = true
