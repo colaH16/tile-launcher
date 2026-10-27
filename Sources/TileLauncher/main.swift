@@ -183,6 +183,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                    let url = self?.item(app)?.url { self?.iconReadAhead?.prepareApp(url) }
                 self?.updateApps()
                 self?.refreshWindows()
+                // Queued after that synchronize: bounded rereads of the new process only.
+                // Regular apps only: a registered accessory helper can report its parent
+                // bundle URL (e.g. AuthenticationServicesAgent-STP) and must not settle.
+                if name == NSWorkspace.didLaunchApplicationNotification,
+                   let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                   self?.item(app) != nil {
+                    self?.tracker.settle(pid: app.processIdentifier, process: app)
+                }
                 self?.checkPermission()
                 if name == NSWorkspace.didLaunchApplicationNotification,
                    let self, self.settings.showAppSettingsTile,
@@ -203,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.updateApps()
             self.checkPermission()
             self.tracker.activate(item)
+            self.tracker.settle(pid: app.processIdentifier, process: app)
             self.iconReadAhead?.activate(item)
             self.refreshAppSettingsMenu()
             self.scheduleOverlayRefresh()

@@ -2548,3 +2548,10 @@ R339 검토 완료: 사용자가 재로그인한 뒤 실제Claude Opus5.5/high �
 R340 Claude 구현 수신: Opus5.5/high가수동/Option닫힘공통판정과두생산호출부,ID선필터의지연경로공급자,exact성공시fallback생략,요청없을때확인생략을구현했다.실제HoldMonitor의수동/held·고정native검사와lazy identity/fallback·다른생존PID·symlink/copy검사를추가했다.Codex는fallback에서ID확인전executableURL이평가되는작은성능역행을발견해Claude에돌려보냈고,Claude가이를지연공급자로정정하고0회호출검사를추가했다.활성화/Space엔진은미변경이며이제Codex검사를진행한다.아직통과·설치를주장하지않는다.
 
 R340 시험 설치 완료: Claude Opus5.5/high 구현과Codex대조·306XCTest/30Python·반례실패/복원·native131개검사를통과했다.기존native0.5pt창정렬가정실패는독립AppKit반례확인뒤Debug검사만정정하고재통과했다.Claude최종읽기전용대조에서로컬시험차단이슈없음을확인했다.소스40aa95f의73을격리Release/Developer ID CloudKit서명·원본/ZIP검증후현재Mac에설치/실행해실제PID·버전/BuildID·해시를확인했고공증72는정상종료·백업했다.미공증시험73/공개72이며사용자오케이전소스푸시·공증·릴리스·cask갱신보류,iCloud빌드전달없음.확인항목과코드제안은docs/reviews/2.1.8-claude-implementation.md.
+
+
+## 2026-10-27 · R341 Option 유지 중 새 실행 창 목록 누락
+
+73 사용자 실기: Option으로 오버레이를 열고 앱을 실행하면 등록 타일 로딩은 풀리지만, 최근 창에 대상이 나타나지 않아 오버레이를 닫았다 다시 열어야 선택할 수 있다고 보고했다. 현재 맥락은 STP 시험이며 표시 갱신이 늦었는지 WindowTracker의 초기 수집/관찰이 누락됐는지는 아직 미확정이다. 먼저 경로를 구분하고 Claude와 근거를 대조한다. 공증·GitHub 소스푸시/릴리스·Homebrew 갱신과 iCloud 빌드 전달 보류를 유지한다.
+
+R341 분기확인: 사용자가끝까지스크롤해도STP가없다고확인했고스크린샷에서도STP앱문맥은맞으나최근창에는빠져있다.자동창개수설정은읽기전용확인에서true였다.동일시점독립WindowTracker는PID96510/창15155를other로즉시읽었다.순위상속문제G1은독립재현됐지만현재사용자증상의우선수정에서제외한다.G2초기알림등록실패캐시/G3정상빈AX후추가수집기회없음은소스로확인하나최초실패세부시점은미확정이다.이번에는대상앱만한정된초기수집회복과등록실패재시도를Claude에구현하도록맡기고74실기검증한다.

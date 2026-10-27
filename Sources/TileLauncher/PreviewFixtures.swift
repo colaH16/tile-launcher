@@ -495,6 +495,8 @@ enum PreviewExport {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_LAUNCH_REFRESH_ONLY"] == "1" {
             try ApplicationLaunchMonitor.verifyForPreview()
+            try WindowTracker.verifyRegistrationCodesForPreview()
+            try WindowTracker.verifySettlePublishForPreview()
             try verifyLaunchFeedbackRefresh()
             let holdFixture = PreviewFixture(theme: .classic)
             try AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
@@ -608,6 +610,8 @@ enum PreviewExport {
         try delegate.verifyClickExecutionForPreview()
         try delegate.verifyOptionHoldDismissalForPreview()
         try ApplicationLaunchMonitor.verifyForPreview()
+        try WindowTracker.verifyRegistrationCodesForPreview()
+        try WindowTracker.verifySettlePublishForPreview()
         try verifySettingsNavigation()
         try verifyGroupedWindowContent()
         try ApplicationSettingsValidation.verify()

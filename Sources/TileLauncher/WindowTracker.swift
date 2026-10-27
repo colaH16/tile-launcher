@@ -33,6 +33,16 @@ final class WindowTracker {
     private var focusRequest: WindowFocusRequest?
     private var readRetries: [pid_t: DispatchWorkItem] = [:]
     private var retryBudgets: [pid_t: AXReadRetryBudget] = [:]
+    private let applicationEvents = [kAXFocusedWindowChangedNotification, kAXWindowCreatedNotification]
+    /// App-level notifications that failed transiently and still need a retry.
+    private var observerPending: [pid_t: [String]] = [:]
+    private lazy var settles: WindowSettleScheduler = {
+        let queue = self.queue
+        return WindowSettleScheduler(
+            schedule: { delay, work in queue.asyncAfter(deadline: .now() + delay, execute: work) },
+            tracking: { [weak self] pid in self.map { $0.enabled && $0.apps[pid] != nil } ?? false },
+            read: { [weak self] pid in self?.settleRead(pid) ?? false })
+    }()
     private let windowEvents = [kAXUIElementDestroyedNotification, kAXTitleChangedNotification,
                                 kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
                                 kAXMovedNotification, kAXResizedNotification]
@@ -45,6 +55,7 @@ final class WindowTracker {
             for pid in Set(self.apps.keys).subtracting(newApps.keys) { self.remove(pid) }
             self.apps = newApps
             if !trusted {
+                self.settles.cancelAll()
                 for pid in Array(self.readRetries.keys) { self.cancelReadRetry(pid, reset: true) }
                 for pid in Array(self.observers.keys) { self.remove(pid) }
                 self.windows.removeAll()
@@ -71,6 +82,36 @@ final class WindowTracker {
             self.refresh(app.pid, focusEvent: true)
             self.publish()
         }
+    }
+    /// After this process launched or activated without a real window: a few
+    /// bounded rereads of it alone, even after a successful empty AX list.
+    /// One allowance per living process; repeated events do not extend it.
+    func settle(pid: pid_t, process: NSRunningApplication) {
+        guard process.processIdentifier == pid else { return }
+        queue.async {
+            // Alive means this same process still owns the PID, not merely a reused number.
+            self.settles.arm(pid, hasRealWindow: self.hasRealWindow(pid), isAlive: {
+                !process.isTerminated && NSRunningApplication(processIdentifier: pid)?.isEqual(process) == true
+            })
+        }
+    }
+    private func hasRealWindow(_ pid: pid_t) -> Bool {
+        windows[pid]?.contains { !$0.item.isApplication } == true
+    }
+    private func settleRead(_ pid: pid_t) -> Bool {
+        #if TILE_LAUNCHER_DIAGNOSTICS
+        // Debug validation only: replaces the AX/WindowServer read, keeps publish.
+        if let settleReadOverride {
+            windows[pid] = settleReadOverride(pid).map { TrackedWindow(element: nil, item: $0) }
+            publish()
+            return hasRealWindow(pid)
+        }
+        #endif
+        observe(pid)
+        refreshDesktops(target: pid)
+        refresh(pid, focusEvent: activePID == pid)
+        publish()
+        return hasRealWindow(pid)
     }
     func focus(id: UUID, completion: @escaping (String?) -> Void) {
         queue.async {
@@ -233,8 +274,11 @@ final class WindowTracker {
             }
         }
     }
-    private func refreshDesktops() {
-        desktops.trackedPIDs = Set(apps.keys)
+    /// One global WindowServer snapshot always rebuilds every record. `target`
+    /// limits only the per-window ordering queries to that process; readers of
+    /// `orderedIn` use the PID they refreshed and other paths refresh first.
+    private func refreshDesktops(target: pid_t? = nil) {
+        desktops.trackedPIDs = target.map { [$0] } ?? Set(apps.keys)
         desktops.knownWindowIDs = Set(windows.values.joined().compactMap(\.item.windowID))
         desktops.refresh()
     }
@@ -251,7 +295,12 @@ final class WindowTracker {
         return AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .invalidUIElement
     }
     private func observe(_ pid: pid_t) {
-        guard observers[pid] == nil else { return }
+        if let observer = observers[pid] {
+            // An observer object is not proof of subscription: a starting app may
+            // reject registration transiently. Retry only those names.
+            if let names = observerPending[pid] { register(names, pid: pid, observer: observer) }
+            return
+        }
         var observer: AXObserver?
         let callback: AXObserverCallback = { _, element, notification, context in
             guard let context else { return }
@@ -261,13 +310,19 @@ final class WindowTracker {
             owner.schedule(pid, element: element, notification: notification as String)
         }
         guard AXObserverCreate(pid, callback, &observer) == .success, let observer else { return }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.15)
-        for key in [kAXFocusedWindowChangedNotification, kAXWindowCreatedNotification] {
-            _ = AXObserverAddNotification(observer, app, key as CFString, Unmanaged.passUnretained(self).toOpaque())
-        }
         observers[pid] = observer
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+        register(applicationEvents, pid: pid, observer: observer)
+    }
+    private func register(_ names: [String], pid: pid_t, observer: AXObserver) {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.15)
+        let results = names.map { name in
+            (name: name, code: AXObserverAddNotification(observer, app, name as CFString,
+                                                         Unmanaged.passUnretained(self).toOpaque()).rawValue)
+        }
+        let pending = AXNotificationRegistration.pending(results)
+        observerPending[pid] = pending.isEmpty ? nil : pending
     }
     private func schedule(_ pid: pid_t, element: AXUIElement, notification: String) {
         queue.async { [self] in
@@ -450,6 +505,8 @@ final class WindowTracker {
         queue.asyncAfter(deadline: .now() + delay, execute: work)
     }
     private func remove(_ pid: pid_t) {
+        settles.cancel(pid)
+        observerPending[pid] = nil
         cancelReadRetry(pid, reset: true)
         pending.removeValue(forKey: pid)?.cancel()
         windows[pid] = nil
@@ -476,4 +533,60 @@ final class WindowTracker {
         let result = recency.sorted(all.map(\.id)).compactMap { index[$0] }
         DispatchQueue.main.async { [weak self] in self?.onChange?(result) }
     }
+    #if TILE_LAUNCHER_DIAGNOSTICS
+    private var settleReadOverride: ((pid_t) -> [WindowItem])?
+    /// Drives the production settle → scheduler → settleRead → publish → onChange
+    /// path with a synthetic read and this process as the live lifetime handle.
+    /// No AX, WindowServer, app launch or activation. The workspace launch/activate
+    /// observers in main and real OS window readiness remain user verification.
+    static func verifySettlePublishForPreview() throws {
+        let tracker = WindowTracker()
+        let process = NSRunningApplication.current
+        let pid = process.processIdentifier
+        let lock = NSLock()
+        var reads: [pid_t] = []
+        var published: [[WindowItem]] = []
+        let placeholder = WindowItem(id: UUID(), pid: pid, appName: "Settle", appURL: nil, title: "",
+                                     minimized: false, isApplication: true)
+        let late = WindowItem(id: UUID(), pid: pid, appName: "Settle", appURL: nil, title: "Synthetic", minimized: false)
+        tracker.settleReadOverride = { pid in
+            lock.lock(); defer { lock.unlock() }
+            reads.append(pid)
+            return reads.count >= 2 ? [late] : [placeholder]   // app-only first, real window later
+        }
+        tracker.onChange = { published.append($0) }
+        // Tracking state only; synchronize would perform real AX reads.
+        tracker.queue.sync {
+            tracker.enabled = true
+            tracker.apps[pid] = AppItem(id: "preview.settle", pid: pid, name: "Settle", url: nil)
+        }
+        tracker.settle(pid: pid, process: process)
+        tracker.settle(pid: pid, process: process)   // duplicate event: no extra work
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, !published.contains(where: { $0.contains { $0.id == late.id } }) {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        // Past where a duplicate sequence's next read (another 0.3 s) would land.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        let running = tracker.queue.sync { tracker.settles.isRunning(pid) }
+        lock.lock(); let observed = reads; lock.unlock()
+        guard observed == [pid, pid], !running,
+              published.first?.map(\.id) == [placeholder.id], published.last?.map(\.id) == [late.id] else {
+            throw NSError(domain: "TileLauncher.WindowSettle", code: 2, userInfo: [NSLocalizedDescriptionKey:
+                "Settle publish: reads=\(observed.count) running=\(running) published=\(published.map(\.count))"])
+        }
+        print("Window tracker: settle published a late synthetic window through onChange without synchronize/reopen; duplicate arm added no read and only the armed PID was read.")
+    }
+    /// Compares DeckCore's raw registration codes with the SDK enum; no AX call.
+    static func verifyRegistrationCodesForPreview() throws {
+        let expected: [(AXError, AXNotificationRegistration)] = [
+            (.success, .registered), (.notificationAlreadyRegistered, .registered),
+            (.notificationUnsupported, .unsupported), (.notImplemented, .unsupported),
+            (.cannotComplete, .transient), (.failure, .transient)]
+        guard expected.allSatisfy({ AXNotificationRegistration(errorCode: $0.0.rawValue) == $0.1 }) else {
+            throw NSError(domain: "TileLauncher.WindowSettle", code: 1)
+        }
+        print("Window tracker: AX notification registration codes match the SDK (registered/unsupported/transient).")
+    }
+    #endif
 }
