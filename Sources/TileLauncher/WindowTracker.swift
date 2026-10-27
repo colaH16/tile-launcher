@@ -8,10 +8,13 @@ private struct TrackedWindow {
 }
 
 private final class WindowFocusRequest {
+    let diagnosticID = UUID().uuidString
     private let lock = NSLock()
     private var cancelled = false
     var active: Bool { lock.lock(); defer { lock.unlock() }; return !cancelled }
-    func cancel() { lock.lock(); defer { lock.unlock() }; cancelled = true }
+    func cancel() { lock.lock(); defer { lock.unlock() }; cancelled = true
+        WindowLaunchDiagnostics.record("focus_cancel", ["request": diagnosticID])
+    }
 }
 
 /// AX and WindowServer reads stay off the main thread. A partial AX list on a
@@ -73,16 +76,22 @@ final class WindowTracker {
         }
     }
     func focus(id: UUID, completion: @escaping (String?) -> Void) {
+        WindowLaunchDiagnostics.record("focus_enqueued", ["id": id.uuidString])
         queue.async {
             self.focusRequest?.cancel()
             let request = WindowFocusRequest()
             self.focusRequest = request
-            let complete: (String?) -> Void = { if request.active { completion($0) } }
+            WindowLaunchDiagnostics.record("focus_start", ["request": request.diagnosticID, "id": id.uuidString])
+            let complete: (String?) -> Void = { message in
+                WindowLaunchDiagnostics.record("focus_end", ["request": request.diagnosticID, "active": request.active, "error": message != nil])
+                if request.active { completion(message) }
+            }
             guard self.enabled, AXIsProcessTrusted(),
                   let target = self.windows.values.joined().first(where: { $0.item.id == id }) else {
                 DispatchQueue.main.async { complete("창에 접근할 수 없습니다. 접근성 권한과 창 상태를 확인해 주세요.") }
                 return
             }
+            WindowLaunchDiagnostics.record("focus_target", ["request": request.diagnosticID, "pid": target.item.pid, "window": target.item.windowID ?? 0, "applicationOnly": target.item.isApplication, "hasElement": target.element != nil])
             self.refreshDesktops()
             if target.item.isApplication {
                 DispatchQueue.main.async {
@@ -121,8 +130,10 @@ final class WindowTracker {
                self.desktops.records[number]?.pid != target.item.pid {
                 DispatchQueue.main.async { completion("이 창이 닫혔습니다.") }; return
             }
+            WindowLaunchDiagnostics.record("resolve_begin", ["request": request.diagnosticID, "attempt": attempt])
             self.refresh(target.item.pid, focusEvent: false)
             let match = self.windows[target.item.pid]?.first { $0.item.id == target.item.id }
+            WindowLaunchDiagnostics.record("resolve_result", ["request": request.diagnosticID, "attempt": attempt, "matched": match != nil, "hasElement": match?.element != nil || target.element != nil])
             if let element = match?.element ?? target.element, !self.isInvalid(element) {
                 self.raise(element, item: target.item, request: request, completion: completion)
                 return
@@ -159,6 +170,7 @@ final class WindowTracker {
         // No panel close/pin, synthetic key release, app reopen or Space setter.
         guard request.active else { return }
         guard !app.isTerminated else { completion("앱이 종료되었습니다."); return }
+        WindowLaunchDiagnostics.record("handoff_source", ["request": request.diagnosticID, "attempt": attempt, "sourceActive": NSApp.isActive, "targetActive": app.isActive, "targetPID": app.processIdentifier])
         if !NSApp.isActive && attempt < 8 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self] in
                 self?.handoffForMissingWindow(app, target: target, request: request,
@@ -170,6 +182,7 @@ final class WindowTracker {
         let accepted = NSApp.isActive
             ? app.activate(from: NSRunningApplication.current, options: [])
             : app.activate(options: [])
+        WindowLaunchDiagnostics.record("handoff_requested", ["request": request.diagnosticID, "accepted": accepted, "sourceActive": NSApp.isActive])
         guard accepted else { completion("앱을 활성화하지 못했습니다."); return }
         resolveFocus(target, request: request, attempt: 1, delay: 0.2, completion: completion)
     }
@@ -182,8 +195,9 @@ final class WindowTracker {
         }
         // Establish the intended window before app activation so macOS does not
         // choose a different main window/Space for an app with several windows.
-        _ = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        _ = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        let mainCode = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        let raiseCode = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        WindowLaunchDiagnostics.record("raise_requested", ["request": request.diagnosticID, "mainCode": mainCode.rawValue, "raiseCode": raiseCode.rawValue])
         DispatchQueue.main.async {
             guard request.active else { return }
             guard let app = NSRunningApplication(processIdentifier: item.pid), !app.isTerminated else {
@@ -211,6 +225,7 @@ final class WindowTracker {
         let status = WindowFocusStatus.evaluate(targetExists: exists,
             frontmost: value(app, kAXFrontmostAttribute) as? Bool == true, focused: matches,
             desktop: desktops.desktop(for: item.windowID), attempt: attempt)
+        WindowLaunchDiagnostics.record("focus_verified", ["request": request.diagnosticID, "pid": item.pid, "window": item.windowID ?? 0, "attempt": attempt, "focused": matches, "status": String(describing: status)])
         switch status {
         case .confirmed: DispatchQueue.main.async { [weak self] in
             guard request.active else { return }

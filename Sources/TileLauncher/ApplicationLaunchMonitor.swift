@@ -72,7 +72,9 @@ final class ApplicationLaunchMonitor: ObservableObject {
     func confirmWindowReady(pid: pid_t) {
         precondition(Thread.isMainThread)
         guard let running = NSRunningApplication(processIdentifier: pid), !running.isTerminated else { return }
+        WindowLaunchDiagnostics.record("window_ready_signal", ["pid": pid, "requests": requests.count])
         for request in Array(requests.values) {
+            WindowLaunchDiagnostics.record("window_ready_candidate", ["request": request.id.uuidString, "boundPID": request.app?.processIdentifier ?? 0, "matches": request.app?.isEqual(running) ?? false])
             guard let bound = request.app, !bound.isTerminated, bound.isEqual(running) else { continue }
             let status = request.gate.update(processFound: true, finished: running.isFinishedLaunching,
                                              windowReady: true, now: now())
@@ -83,9 +85,11 @@ final class ApplicationLaunchMonitor: ObservableObject {
     @discardableResult func launch(at url: URL, title: String, failure: @escaping (String) -> Void) -> Bool {
         precondition(Thread.isMainThread)
         let key = Self.key(url)
+        WindowLaunchDiagnostics.record("launch_click", ["blocked": isBlocked(url), "requestExists": requests[key] != nil])
         guard requests[key] == nil else { return false }
         let request = Request(url: url, title: title, now: now(), running: running())
         requests[key] = request
+        WindowLaunchDiagnostics.record("launch_requested", ["request": request.id.uuidString])
         generations[key] = request.id
         latestKey = key
         noticeRevision = UUID()
@@ -104,7 +108,9 @@ final class ApplicationLaunchMonitor: ObservableObject {
         }
         open(url) { [weak self] app, error in
             DispatchQueue.main.async {
-                guard let self, self.generations[key] == request.id else { return }
+                guard let self else { return }
+                WindowLaunchDiagnostics.record("launch_callback", ["request": request.id.uuidString, "current": self.generations[key] == request.id, "pid": app?.processIdentifier ?? 0, "finished": app?.isFinishedLaunching ?? false, "error": (error as NSError?)?.code ?? 0])
+                guard self.generations[key] == request.id else { return }
                 if let error {
                     if self.requests[key]?.id == request.id { self.finish(request, status: .failed) }
                     failure("앱을 열지 못했습니다. \(error.localizedDescription)")
@@ -121,6 +127,7 @@ final class ApplicationLaunchMonitor: ObservableObject {
     private func attach(_ app: NSRunningApplication, to request: Request) {
         guard request.app == nil else { return }
         request.app = app
+        WindowLaunchDiagnostics.record("launch_attached", ["request": request.id.uuidString, "pid": app.processIdentifier, "finished": app.isFinishedLaunching, "terminated": app.isTerminated, "urlMatches": app.bundleURL.map(Self.key) == request.key])
         let changed: () -> Void = { [weak self, weak request] in
             DispatchQueue.main.async {
                 guard let self, let request, self.requests[request.key]?.id == request.id else { return }
@@ -144,6 +151,10 @@ final class ApplicationLaunchMonitor: ObservableObject {
                 }
                 if let app = exact ?? newlyLaunched { attach(app, to: request) }
             }
+            if WindowLaunchDiagnostics.enabled {
+                let fresh = request.app.flatMap { NSRunningApplication(processIdentifier: $0.processIdentifier) }
+                WindowLaunchDiagnostics.record("launch_poll", ["request": request.id.uuidString, "pid": request.app?.processIdentifier ?? 0, "boundFinished": request.app?.isFinishedLaunching ?? false, "freshFinished": fresh?.isFinishedLaunching ?? false, "boundTerminated": request.app?.isTerminated ?? false, "freshTerminated": fresh?.isTerminated ?? false, "inventoryMatches": running.contains { $0.bundleURL.map(Self.key) == request.key }, "state": String(describing: request.gate.status)])
+            }
             let status = request.gate.update(processFound: request.app != nil,
                 finished: request.app?.isFinishedLaunching == true, terminated: request.app?.isTerminated == true,
                 now: now())
@@ -159,6 +170,7 @@ final class ApplicationLaunchMonitor: ObservableObject {
 
     private func finish(_ request: Request, status: ApplicationLaunchStatus) {
         guard requests[request.key]?.id == request.id else { return }
+        WindowLaunchDiagnostics.record("launch_finished", ["request": request.id.uuidString, "pid": request.app?.processIdentifier ?? 0, "state": String(describing: status)])
         requests[request.key] = nil
         states[request.key] = nil
         request.observations.removeAll()

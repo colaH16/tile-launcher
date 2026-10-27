@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var profileChangeRevision = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        WindowLaunchDiagnostics.record("application_ready", ["pid": getpid()])
         settingsSync = SettingsSyncCoordinator(settings: settings)
         iconReadAhead = IconReadAhead(settings: settings)
         menuIcons = MenuIconService(settings: settings)
@@ -593,6 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         resizeOverlay(registeredCount: presentation.profile?.items.count ?? settings.activeProfile.items.count)
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
+        WindowLaunchDiagnostics.record("overlay_hide", ["reason": String(describing: reason), "held": hold.optionDown, "pinned": presentation.isPinned])
         clearKeyboardFeedback()
         // A held overlay can be dragged now; reopen where it actually is.
         let shownLayout = visibleSnapshot.map { layout in
@@ -892,6 +894,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     private func select(window: WindowItem) {
+        WindowLaunchDiagnostics.record("select_window", ["pid": window.pid, "window": window.windowID ?? 0, "applicationOnly": window.isApplication, "blocked": window.appURL.map(launches.isBlocked) ?? false, "held": hold.optionDown, "pinned": presentation.isPinned])
         if let handoff = window.handoff {
             performImmediately { [weak self] in
                 self?.dockHandoff.press(handoff) { message in if let message { self?.error(message) } }
@@ -925,6 +928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     private func launchApplication(at url: URL, title: String? = nil) {
+        WindowLaunchDiagnostics.record("select_registered", ["blocked": launches.isBlocked(url), "held": hold.optionDown])
         guard !launches.isBlocked(url) else { return }
         performImmediately(overlay: .preserve) { [weak self] in
             self?.launches.launch(at: url, title: title ?? url.deletingPathExtension().lastPathComponent) { [weak self] message in
