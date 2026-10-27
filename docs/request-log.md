@@ -2521,3 +2521,10 @@ R338 69 실기 재발: 사용자는 ①② 동작 및 오버레이 유지와 별
 사용자는STP등록실행뒤로딩이풀리고Option을놓지않은상태로최근창첫선택이전환되며오버레이도유지됨을확인했다.71로그의두실행요청은각각본체PID84842/84906에연결돼finished로종료됐다.각전환은초기frontmost가대상인상태에서1턴약26ms뒤workspace.frontmost가런처이고targetActive=false임을확인한뒤cooperative요청을했고정확한창13689/13766의focused/confirmed가Option=true로기록됐다.표시화면의실제오버레이유지는사용자확인이다.
 
 72는사용자검증된기능코드를보존하고임시WindowLaunchDiagnostics/호출·추가조회·요청로그ID를제거한다.주실행파일판별/정상콜백정정/활성화대기/Option유지정책은동일하다.기능재변경이없는기승인진단제거와빌드번호·릴리스노트정리이므로새UI시험승인을요청하지않고기존사용자공증·패치/릴리스승인에따라검증/서명/공증·공개·기존Mac설치를진행한다.최종검사/서명/공증결과는실제완료후기록한다.
+
+
+## 2.1.7(72) 공증·설치·공개 완료
+
+사용자확인71과기능이동일하고임시진단만제거된72(소스9aaabb807dd2baa1ce6dcc6780e0a2fd36f057be)를301XCTest/30Python·native검사후Release/Developer ID CloudKit서명했다.노트버전섹션검사실패는문서형식만수정후30개모두재통과했다.임시logger/preview명령이Release실행파일에없음을확인했다.Apple제출하나cc21fd56-fabb-4521-9d35-489dc0300840가Accepted이고티켓·Gatekeeper·원본/ZIP검증을완료했다.71은정상종료·백업후같은사용자Applications경로에공증72를설치해실제PID/BuildID/최종번들해시를확인했다.
+
+main소스를정상푸시하고정확한소스v2.1.7태그와3개자산으로2026-10-27 15:17:40 KST에최신정식릴리스를공개했다.공개자산전체익명재다운로드·본문·태그/소스·서명·공증/해시를확인했다.기존v2.1.3초안/태그·이전공개/백업은보존했다.기존상위iCloud공유폴더의Tile-Launcher-2.1.7-arm64.zip복사/해시를확인했고서버업로드/집Mac수신은별도다.ZIPSHA256은36679350b1bac3fd6ad3689e829fecbe0461ae9a556ba142838a2c1509947bad다.기존homebrew-tap의TileLauncher만2.1.7/동일SHA로갱신하고원격내용을재확인했다.다른앱cask는변경하지않았다.영수증/로그는ignored evidence stp-window-20261027/release-20261027에보존했다.
