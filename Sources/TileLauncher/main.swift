@@ -349,14 +349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let bottom = sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY
             statusMenu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: bottom), in: sender)
         } else {
-            openPinnedFromStatusItem()
+            show(held: false)
         }
-    }
-    private func openPinnedFromStatusItem() {
-        // Capture the source context and finish present/reset before pinning.
-        // show reuses an already visible panel; pinning also brings it forward.
-        show(held: false)
-        pinOverlay()
     }
     @objc private func reopenNotification(_ notification: Notification) {
         reopenExistingInterface(settings: notification.userInfo?["settings"] as? Bool == true, checkForUpdate: false)
@@ -411,9 +405,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         prepared?.panel.contentView = nil
         prepared = nil
     }
+    /// `held` is how the overlay was invoked, not the current Option key state.
+    /// Only the Option hold (and its quick reopen) closes on release; every other
+    /// invocation — status item, menu, --show, Finder/Dock or instance reopen —
+    /// opens pinned, and pins/raises an overlay that is already visible.
     private func show(held: Bool, restoring previousLayout: PanelLayout? = nil) {
         if MainActor.assumeIsolated({ settingsSync?.presentAccountChangeIfNeeded() == true }) { return }
-        guard panel?.isVisible != true else { return }
+        guard panel?.isVisible != true else {
+            if !held { pinOverlay() }
+            return
+        }
         optionReopen.cancel()
         checkPermission()
         updateApps()
@@ -425,6 +426,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             overlay = built
         }
         present(overlay, held: held)
+        // After present's reset, and after the source context was captured above,
+        // so activating the launcher cannot replace it.
+        if !held { pinOverlay() }
     }
     /// The prepared overlay if it still matches the cursor's screen, profile,
     /// permission and size; it is moved to the current cursor position.
@@ -707,7 +711,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     #if TILE_LAUNCHER_DIAGNOSTICS
     /// Synthetic button/menu and an offscreen panel; no status item, real menu
-    /// tracking, keyboard monitor or application launch is installed.
+    /// tracking, keyboard monitor or application launch is installed. Covers the
+    /// central show(held:) decision on an already visible panel; building a fresh
+    /// panel needs the real screen/AX/Dock path and is left to the app itself.
     func verifyStatusItemPinningForPreview() throws {
         final class MenuProbe: NSMenu {
             var presentations = 0
@@ -744,6 +750,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             handleStatusItemClick(.rightMouseUp, sender: button)
             try check(!presentation.isPinned && !button.isHighlighted,
                       "Right-click changed pin state or left button highlighted")
+            show(held: true)
+            try check(panel === window && window.isVisible && !presentation.isPinned
+                      && heldPresentation == held && presentation.dismisses(for: .release),
+                      "Option hold invocation pinned or replaced the visible overlay")
             handleStatusItemClick(.leftMouseUp, sender: button)
             try check(panel === window && window.isVisible && presentation.isPinned
                       && pendingAction == nil && presentation.selection == nil && !staleSelectionRan
@@ -754,6 +764,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             handleStatusItemClick(.leftMouseUp, sender: button)
             try check(panel === window && window.isVisible && presentation.isPinned,
                       "Repeated left-click toggled the pinned overlay closed")
+            redisplayProfile()
+            try check(panel === window && window.isVisible && presentation.isPinned,
+                      "Profile redisplay released the pin")
+            // Other manual entries share the same central show(held: false).
+            // Instance/Finder reopen also re-arms global monitors, so it is wired
+            // by reading reopenExistingInterface rather than invoked here.
+            presentation.reset()
+            openFromMenu()
+            try check(panel === window && window.isVisible && presentation.isPinned,
+                      "Menu Open did not pin the visible overlay")
+            presentation.reset()
+            show(held: false)
+            try check(panel === window && window.isVisible && presentation.isPinned
+                      && heldPresentation == held, "Manual show did not pin the visible overlay")
         }
         try check(menu.presentations == 2 && button.menu == nil,
                   "Left-click opened a menu or right-click left an attached menu")
@@ -763,7 +787,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                   "Control-click did not open only the menu")
         hide()
         try check(!window.isVisible && !presentation.isPinned, "Explicit close did not dismiss/reset the overlay")
-        print("Status item: right/left/right/left and control-click routing, existing manual/held panel pinning, reuse, queued selection cancellation and explicit close passed without Option input.")
+        print("Status item/manual show: right/left and control-click routing; status, menu Open and manual show pin an existing manual/held panel, Option hold invocation stays unpinned, profile redisplay keeps the pin; reuse, queued selection cancellation and explicit close passed without Option input.")
     }
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
     func verifyClickExecutionForPreview() throws {
