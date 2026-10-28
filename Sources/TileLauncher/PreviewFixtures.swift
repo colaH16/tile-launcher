@@ -494,6 +494,9 @@ enum PreviewExport {
     @MainActor static func render(to directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_LAUNCH_REFRESH_ONLY"] == "1" {
+            let statusFixture = PreviewFixture(theme: .classic)
+            try AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
+                            settings: statusFixture.settings).verifyStatusItemPinningForPreview()
             try ApplicationLaunchMonitor.verifyForPreview()
             try WindowTracker.verifyRegistrationCodesForPreview()
             try WindowTracker.verifySettlePublishForPreview()
@@ -607,6 +610,7 @@ enum PreviewExport {
         if ProcessInfo.processInfo.environment["TILE_PREVIEW_SETTINGS_EDIT_ONLY"] == "1" { return }
         let delegate = AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"),
                                    settings: verification.settings)
+        try delegate.verifyStatusItemPinningForPreview()
         try delegate.verifyClickExecutionForPreview()
         try delegate.verifyOptionHoldDismissalForPreview()
         try ApplicationLaunchMonitor.verifyForPreview()

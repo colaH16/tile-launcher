@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var windows: [WindowItem] = []
     private var lastContext: AppItem?
     private var statusItem: NSStatusItem!
+    private var statusMenu: NSMenu!
     private var panel: DeckPanel?
     private var preferences: NSWindow?
     private var preferencesEditor: SettingsEditingSession?
@@ -79,7 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "종료", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
-        statusItem.menu = menu
+        statusMenu = menu
+        // A permanently attached menu consumes both mouse buttons before the
+        // target/action can distinguish them. Keep it separate for right-click.
+        if let button = statusItem.button { configureStatusButton(button) }
 
         tracker.onFocusConfirmed = { [weak self] window in
             self?.launches.confirmWindowReady(pid: window.pid)
@@ -326,6 +330,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func openFromMenu() {
         show(held: false)
     }
+    private func configureStatusButton(_ button: NSStatusBarButton) {
+        button.target = self
+        button.action = #selector(statusItemClicked(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        handleStatusItemClick(NSApp.currentEvent?.type, modifiers: NSApp.currentEvent?.modifierFlags ?? [], sender: sender)
+    }
+    private func handleStatusItemClick(_ eventType: NSEvent.EventType?, modifiers: NSEvent.ModifierFlags = [],
+                                       sender: NSStatusBarButton) {
+        // Control-click is the standard secondary click and opened this menu
+        // before the split, so it keeps doing so.
+        if eventType == .rightMouseUp || modifiers.contains(.control) {
+            sender.highlight(true)
+            defer { sender.highlight(false) }
+            // Top-left of the menu at the button's bottom edge; NSButton is flipped.
+            let bottom = sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY
+            statusMenu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: bottom), in: sender)
+        } else {
+            show(held: false)
+        }
+    }
     @objc private func reopenNotification(_ notification: Notification) {
         reopenExistingInterface(settings: notification.userInfo?["settings"] as? Bool == true, checkForUpdate: false)
     }
@@ -379,9 +405,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         prepared?.panel.contentView = nil
         prepared = nil
     }
+    /// `held` is how the overlay was invoked, not the current Option key state.
+    /// Only the Option hold (and its quick reopen) closes on release; every other
+    /// invocation — status item, menu, --show, Finder/Dock or instance reopen —
+    /// opens pinned, and pins/raises an overlay that is already visible.
     private func show(held: Bool, restoring previousLayout: PanelLayout? = nil) {
         if MainActor.assumeIsolated({ settingsSync?.presentAccountChangeIfNeeded() == true }) { return }
-        guard panel?.isVisible != true else { return }
+        guard panel?.isVisible != true else {
+            if !held { pinOverlay() }
+            return
+        }
         optionReopen.cancel()
         checkPermission()
         updateApps()
@@ -393,6 +426,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             overlay = built
         }
         present(overlay, held: held)
+        // After present's reset, and after the source context was captured above,
+        // so activating the launcher cannot replace it.
+        if !held { pinOverlay() }
     }
     /// The prepared overlay if it still matches the cursor's screen, profile,
     /// permission and size; it is moved to the current cursor position.
@@ -674,6 +710,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         presentation.clearExecution()
     }
     #if TILE_LAUNCHER_DIAGNOSTICS
+    /// Synthetic button/menu and an offscreen panel; no status item, real menu
+    /// tracking, keyboard monitor or application launch is installed. Covers the
+    /// central show(held:) decision on an already visible panel; building a fresh
+    /// panel needs the real screen/AX/Dock path and is left to the app itself.
+    func verifyStatusItemPinningForPreview() throws {
+        final class MenuProbe: NSMenu {
+            var presentations = 0
+            override func popUp(positioning item: NSMenuItem?, at location: NSPoint, in view: NSView?) -> Bool {
+                presentations += 1
+                return false
+            }
+        }
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { throw NSError(domain: "TileLauncher.Preview", code: 70,
+                                          userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        let button = NSStatusBarButton(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+        configureStatusButton(button)
+        let mask = button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        try check(mask == Int(NSEvent.EventTypeMask([.leftMouseUp, .rightMouseUp]).rawValue)
+                  && button.target === self && button.action == #selector(statusItemClicked(_:))
+                  && button.menu == nil, "Status button lost split mouse routing")
+        let menu = MenuProbe()
+        statusMenu = menu
+        let window = DeckPanel(contentRect: NSRect(x: -20000, y: -20000, width: 32, height: 32),
+                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        panel = window
+        defer { hide(); window.close(); panel = nil; statusMenu = nil }
+        window.orderFront(nil)
+        try check(window.isVisible, "Offscreen status invocation fixture is not visible")
+        for held in [false, true] {
+            heldPresentation = held
+            presentation.reset()
+            var staleSelectionRan = false
+            pendingAction = { staleSelectionRan = true }
+            presentation.selection = "stale-number"
+            handleStatusItemClick(.rightMouseUp, sender: button)
+            try check(!presentation.isPinned && !button.isHighlighted,
+                      "Right-click changed pin state or left button highlighted")
+            show(held: true)
+            try check(panel === window && window.isVisible && !presentation.isPinned
+                      && heldPresentation == held && presentation.dismisses(for: .release),
+                      "Option hold invocation pinned or replaced the visible overlay")
+            handleStatusItemClick(.leftMouseUp, sender: button)
+            try check(panel === window && window.isVisible && presentation.isPinned
+                      && pendingAction == nil && presentation.selection == nil && !staleSelectionRan
+                      && !hold.optionDown && !presentation.dismisses(for: .release)
+                      && !dismissesFollowingOptionHold(.windowSelection)
+                      && !dismissesFollowingOptionHold(.spaceChange)
+                      && presentation.dismisses(for: .escape), "Status click did not reuse and pin the overlay")
+            handleStatusItemClick(.leftMouseUp, sender: button)
+            try check(panel === window && window.isVisible && presentation.isPinned,
+                      "Repeated left-click toggled the pinned overlay closed")
+            redisplayProfile()
+            try check(panel === window && window.isVisible && presentation.isPinned,
+                      "Profile redisplay released the pin")
+            // Other manual entries share the same central show(held: false).
+            // Instance/Finder reopen also re-arms global monitors, so it is wired
+            // by reading reopenExistingInterface rather than invoked here.
+            presentation.reset()
+            openFromMenu()
+            try check(panel === window && window.isVisible && presentation.isPinned,
+                      "Menu Open did not pin the visible overlay")
+            presentation.reset()
+            show(held: false)
+            try check(panel === window && window.isVisible && presentation.isPinned
+                      && heldPresentation == held, "Manual show did not pin the visible overlay")
+        }
+        try check(menu.presentations == 2 && button.menu == nil,
+                  "Left-click opened a menu or right-click left an attached menu")
+        handleStatusItemClick(.leftMouseUp, modifiers: .control, sender: button)
+        try check(menu.presentations == 3 && button.menu == nil && !button.isHighlighted
+                  && panel === window && window.isVisible && presentation.isPinned,
+                  "Control-click did not open only the menu")
+        hide()
+        try check(!window.isVisible && !presentation.isPinned, "Explicit close did not dismiss/reset the overlay")
+        print("Status item/manual show: right/left and control-click routing; status, menu Open and manual show pin an existing manual/held panel, Option hold invocation stays unpinned, profile redisplay keeps the pin; reuse, queued selection cancellation and explicit close passed without Option input.")
+    }
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
     func verifyClickExecutionForPreview() throws {
         hold.canTriggerHold = { false }

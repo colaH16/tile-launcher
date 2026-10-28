@@ -2566,3 +2566,83 @@ R341 74 설치 완료: Claude Opus 5.5/high가 유한 프로세스별 창 재조
 
 
 R342 완료: 74의 동일 실행 코드(소스947ed1f/BuildID 유지)를 Apple 공증 Accepted 및 티켓/Gatekeeper/원본·ZIP 검증 후 2026-10-27 17:38:32 KST에 v2.1.8 최신 정식으로 공개했다. main과 정확한 소스 태그를 정상 푸시했고 공개 자산 3개를 익명 재다운로드해 해시·서명·공증·최신 표시를 확인했다. 기존 Homebrew tap의 Tile Launcher cask만 2.1.8/최종 ZIP SHA256으로 갱신하고 원격 내용을 재확인했다. 기존 설치본은 백업 후 공증 티켓만 첨부했으며 실행 PID/BuildID와 기존 파일 유지·최종 번들 해시 일치를 확인했다. 기존 릴리스·초안·태그·백업을 보존했고 iCloud 빌드 전달은 하지 않았다. ZIP SHA256은 eee0c8ac41bf0e84342c0343bea65b3b1b273335d431c247226350f3c3f16f25. 운영 영수증은 ignored evidence release-2.1.8-20261027에 보존한다.
+
+
+## 2026-10-28 · R343 집 Mac용 메뉴 막대 좌·우클릭 변경 인계
+
+사용자는 현재 작업 폴더가 iCloud 안에 있어 집 Codex가 파일을 읽고 작업을 이어가도록 인계 문서 작성을 요청했다. 회사 Mac은 핫스팟이므로 여기서는 구현하지 않는다. 다음 작업은 메뉴 막대 아이콘 좌클릭으로 기존 오버레이를 Option 호출 후 고정한 것처럼 바로 열고, 우클릭은 현재 메뉴를 유지하는 것이다. 저장소 루트 HOME-HANDOFF-MENUBAR.md에 현재 정식 2.1.8(74) 배포 상태·소스 기준, 실제 관련 코드, 집 환경 확인·검증 범위와 사용자가 볼 UI 체크 항목을 작성했다. 새 제품 코드·버전·빌드·설치·공증/공개는 변경하지 않았으며 iCloud 서버 업로드나 집 Mac 수신 완료는 별도다. 인계 문서와 작업 기록만 로컬 작성했고 새 GitHub 푸시는 하지 않았다.
+
+
+## 2026-10-28 · R344 집 Mac 메뉴 막대 좌·우클릭 분리 구현
+
+사용자가 HOME-HANDOFF-MENUBAR.md를 읽고 이어서 좌클릭은 기존 오버레이를 고정 상태로 바로 열고 우클릭은 기존 메뉴를 표시하도록 요청했다. 중단은 실수였으며 계속 진행하라고 확인했다. 현재 메뉴의 열기는 Option 없이 열어도 핀 아이콘이어서 닫기에 두 번 클릭이 필요한 점을 설명했고, 좌클릭 직후 고정 상태와 닫기 버튼이 보여야 한다고 재확인했다. 우클릭 메뉴의 열기와 기존 Option 호출은 인계 범위대로 보존한다. 이미 보이면 기존 패널을 재사용해 고정하고 앞으로 가져오는 구현 가정을 따른다.
+
+집 설치본은 2.1.8(74)이며 기능 변경 후보는 2.2.0(75)이다. 메뉴를 statusItem에 상시 연결하지 않고 버튼의 leftMouseUp/rightMouseUp 액션으로 분리한다. 우클릭은 별도 보관한 기존 NSMenu를 공개 popUp API로 표시하고, 좌클릭은 show(held:false) 완료 뒤 기존 pinOverlay()를 호출해 present의 reset 이후 고정한다. 별도 UI/전역 모니터/합성 키는 추가하지 않는다. 집 Claude CLI는 설치됐지만 로그아웃 상태이므로 Claude 구현·리뷰 완료로 기록하지 않는다. Codex가 직접 구현·검증하며 새 공증/소스푸시/릴리스/cask 갱신과 iCloud 빌드 전달은 하지 않는다. 검증·시험본 준비 결과는 완료 후 덧붙인다.
+
+
+R344 후속: Codex 구현 후 XCTest316개/Python30개 및 전체 native 렌더(111 PNG)·신규 좌/우 라우팅 검사를 통과했다. 기존 설치본의 CloudKit 프로파일은 집 Mac Developer ID 인증서를 포함하지 않아 서명 준비 단계에서 안전하게 중단됐으며 기존 앱은 교체·종료하지 않았다. 사용자는 Claude 로그인 유지를 불편해했고 재로그인 뒤 Claude에게 작업을 맡기라고 명시했다. Codex의 추가 설치 진행은 멈추고 Claude Opus5.5/high에 현재 diff/검증 근거를 전달해 구현 확인·필요 수정과 재검토를 맡긴다. 실제 인증·모델 실행 성공은 확인 후 기록한다.
+
+
+R344 인증 판정 정정: 제한된 sandbox의 Claude auth status는 loggedIn=false였지만, Keychain 접근이 가능한 환경에서 다시 읽은 결과 loggedIn=true/claude.ai 구독 인증이었다. 따라서 실제 로그아웃이나 매일 인증 만료로 단정하지 않는다. 사용자는 직접 Claude가 정상 동작함을 확인했다. 앞으로 CLI 미인증 판정 전에 macOS Keychain 접근 제한 여부를 먼저 대조한다. 계정 식별자/세션 URL은 공개 문서에 기록하지 않는다.
+
+
+R344 Claude 재개 정책: 사용자는 기존 세션 우선을 요청했으나 집 Mac에서 Tile Launcher를 Claude로 작업한 적이 없음을 정정하고, 해당 세션이 없으면 새로 생성하도록 지시했다. 이 Mac의 관련 기존 세션 부재를 확인했으며 다른 프로젝트 세션은 재사용하지 않았다. 사용자가 새 세션의 폴더 신뢰를 명시 승인한 뒤 Opus5.5/high 새 세션의 실제 실행과 Remote Control active를 확인했다. 사용자가 폰에서 보기 위해 Remote Control을 명시 요청해 연결 링크를 전달했다. 세션/실행 식별자와 연결 정보는 ignored evidence에만 기록하고 이후 이 세션을 재사용한다. Bash/MCP 도구는 제외하고 읽기/검색/파일수정만 제공한다.
+
+
+R344 서명 프로파일 승인: 집 Developer ID 인증서가 기존 설치본의 회사 프로파일에 포함되지 않아 Xcode 프로파일 갱신 단계가 자동 승인 검토에서 차단됐다. 사용자는 “프로파일 갱신 허용”으로 기존 Tile Launcher App ID·iCloud 컨테이너를 그대로 쓰는 집 인증서용 프로파일 갱신을 명시 승인했다. 임시 앱 사본으로 Xcode export를 수행하며 새 인증서·컨테이너·schema 변경, 공증·공개는 포함하지 않는다. 결과는 실제 확인 뒤 기록한다.
+
+
+R344 Claude 구현 인수 결과: 실제 Opus5.5/high가 현재 구현을 읽고 핵심 좌클릭 show→present/reset→pin 순서와 문맥 보존을 확인했다. main.swift에서 우클릭 메뉴의 아래쪽 좌표를 flipped 여부에 맞추고 Control-클릭의 기존 메뉴 의미를 보존했으며 해당 Debug 검사를 추가했다. Codex가 이를 대조 후 재검증 중이다. Claude는 파일 도구만 사용했으므로 빌드/실행 검증을 수행했다고 주장하지 않는다. 원문은 ignored evidence에 보존한다.
+
+R344 Xcode 상태: 기본 Keychain은 readStatus=0/unlocked=true였지만 Xcode export가 missing Xcode-Username/No Accounts로 실패했다. 사용자에게 확인을 요청했고 사용자가 “계정 연결·재로그인 완료”로 답했다. 동일 App ID·컨테이너·집 인증서 범위의 승인된 프로파일 export를 재시도한다.
+
+
+R344 재검증 완료: Claude 수정 후 XCTest316/Python30, 빠른 native 라우팅/Control-클릭/고정·Option·늦은 창 갱신 검사, 전체 native111 PNG가 모두 통과했다. 임시 소스214개/Swift117개 해시가 workspace와 같고 로컬 스냅샷d8b85666의Release ad-hoc 후보·ZIP재추출검증을 완료했다. 기존 앱74는 그대로이며 Developer ID서명/설치는 프로파일 준비 후 진행한다. 상세는 docs/reviews/2.2.0-menubar-implementation.md.
+
+
+R344 최종 코드 대조: Codex 재검증 결과를 받은 Claude가 최종 읽기 전용으로 라우팅·호출순서·예외경로·검사연결을 확인하고 로컬 시험 차단 제품 코드 문제를 찾지 못했다. Release 실행 파일에는 새 fixture/preview 명령이 없다. Xcode GUI 계정은 정상이나 eligible profile이 없어 기존 App ID 프로파일을 Apple Developer 웹에서 준비한다. 사용자 웹 로그인 대기이며 기존 설치74와 설정은 보존한다.
+
+
+R344 프로파일 발급: 사용자가 Apple Developer 웹 로그인을 완료했다. 기존 팀/App ID를 선택하고 공개 인증서 두 개의 지문을 실제 Keychain 인증서와 대조해 집 인증서를 선택했다. 기존 회사 인증서·프로파일을 바꾸지 않고 집 전용 Developer ID 프로파일을 새로 생성·다운로드했다. 컨테이너/schema/앱 기능 권한은 새로 추가하지 않았다. 현재 이 프로파일의 전체 권한·인증서·만료를 배포 검사기로 확인한 뒤 최종 후보75 서명을 진행한다. 공증/업로드는 하지 않는다.
+
+
+R344 2.2.0(75) 시험 설치 완료: 집 전용 프로파일과 실제 Developer ID 개인 키 서명·원본/ZIP 재추출 검증을 통과했다. 기존 공증74를 NSRunningApplication의 정상 terminate 요청으로 종료·iCloud 밖 로컬 Library에 복구 가능하게 보존하고 같은 경로에 최종75를 설치·백그라운드 실행했다. 새 프로세스의 경로·초기화 완료·버전/BuildID·최종 번들 해시와 원본 일치를 확인했다. 설정 파일도 백업했으며 실제 설정값을 임의 변경하지 않았다. Claude Remote Control은 유지하고 첫 좌클릭 ×/고정·우클릭 메뉴·기존 Option 해제 동작의 사용자 실기를 기다린다. 새 공증/소스푸시/릴리스/cask 갱신/iCloud ZIP전달은 하지 않았다. 상세 검증 기록과 ignored install receipt를 보존한다.
+
+
+## 2026-10-28 · R345 패치 2.1.9 정정·Homebrew 개발 채널
+
+사용자는 이번 변경이 오버레이 버그와 사소한 좌/우 메뉴 막대 호출 보완이며 주로 화면 공유 원격 조작용이라며 마이너2.2.0 대신 패치2.1.9로 지정했다. 이어 정식 배포가 아니라 본인 Homebrew tap의 tilelauncher@dev 같은 별도 개발 cask에 올려 이 Mac에서 시험하고 싶다고 요청했다. 버전은2.1.9(75), 토큰은 기존 명명과 맞는 tile-launcher@dev로 준비한다. 정식tile-launcher2.1.8과 기존릴리스는 보존하며 새 공증/정식릴리스/iCloud전달은 하지 않는다. 개발 ZIP은 tap의 dev-builds 브랜치에 보관하고 cask는 불변 커밋 URL·정확한 SHA256을 사용한다. GitHub 연결 도구로 게시하고, 개발·정식은 같은 앱/설정을 사용하므로 Homebrew 설치 충돌을 명시하고 zap 없이 전환한다.
+
+
+R345 개발 채널 게시·설치 완료: tapdev-builds에2.1.9(75) DeveloperID서명/미공증ZIP과소스패치·메타데이터를불변커밋d275c9d로보관하고, tile-launcher@dev를main에게시했다. Homebrew7감사에서리터럴URL을unversioned로분류해동일불변URL을version.csv로보간하도록정리했으며체크섬은유지했다. deprecatedverified속성과stanza순서도맞춰최종main942dac0에서audit/style통과했다. 정식cask2.1.8/blob는그대로다. 익명ZIP재다운로드·SHA256/재추출서명·프로파일·버전/소스/해시가일치했고Homebrewfetch도통과했다. 이전2.2.0앱·설정·정식brew메타데이터를로컬백업한뒤정식cask를일반uninstall하고같은appdir에개발cask를설치했다. installed2.1.9,75/안정판관리기록없음/실제앱2.1.9(75)서명·번들해시일치를확인했다. 새실행요청이완료되지않았고CUA에서Mac화면잠금이확인돼사용자기동/첫UI는아직미확인이다. 격리속성제거/보안설정변경/새공증·정식릴리스는없다.
+
+## 2026-10-28 · R346 정식 복귀와 appdir 보존
+
+사용자가현재Mac에서beta같은별도cask를설치하면두개로잡히는지,시험·공증뒤정식으로돌아갈때정식upgrade만으로되는지와appdir유지를물었다. 현재이Mac은정식관리기록해제후같은폴더에dev2.1.9,75하나로전환했음을설명했다. 토큰은tile-launcher@dev이며beta가아니다. 별도cask는upgrade만으로자동전환되지않는다. 이후사용자테스트·공증을마친정식이tap에반영되면dev를 --zap 없이uninstall하고기존 ~/Applications/launch at login appdir을명시해정식을install한다. 이후정식upgrade는저장된appdir을유지한다. 지금정식2.1.8로돌아가거나공증을시작하는지시는아니다.
+
+
+## 2026-10-28 · R347 개발자 서명과 미공증 차단 확인
+
+사용자는 개발자 서명이 필요하다고 지적하고 본인이 서명한 앱을 본인이 열어도 보안 설정의 그래도 열기가 필요한지 물었다. 설치본을 제한 밖에서 다시 확인한 결과 Developer ID Application 체인/Team·강화런타임·타임스탬프와 codesign strict 검증은 정상이었다. Gatekeeper는 rejected/source=Unnotarized Developer ID로 판정했고 앱에Homebrew다운로드격리속성이있었다. 따라서서명누락이아니라미공증다운로드앱에대한Gatekeeper확인이남는상태다. 앞서화면잠금으로UI를확인하지못했던것과별개로이판정이추가확인됐음을설명한다. 개발자서명과공증은별개이며Apple공식문서를대조했다. 보안예외/격리제거/공증작업은새로실행하지않았다.
+
+
+## 2026-10-28 · R348 Option 호출 이외의 모든 오버레이 자동 고정
+
+사용자가 Option키를 누르지 않고 여는 오버레이는 무조건 고정하라고 요청했다. 75 실제사용에서 우클릭메뉴→열기와 백그라운드실행중 앱재실행도 오버레이를 띄우지만 고정되지 않는다고 보고했다. 이번명시요구가 R344의 메뉴열기 기존동작보존을대체한다. 호출방식 held:false인 모든진입(메뉴열기,좌클릭,Finder/Dock재실행,--show,재열기알림,교체handoff)을 중앙에서 고정하고, 이미떠있는 Option패널을 수동재호출해도 같은패널을고정·앞으로가져온다. Optionhold/quickreopen의 held:true는 고정하지않으며 해제닫힘/명시닫기·기존앱문맥을 보존한다. 패치2.1.9유지, 공개dev75를덮지않고build76으로검증·DeveloperID서명·devtap업데이트·같은appdir의Homebrewupgrade를진행한다. 공증/정식cask·릴리스/iCloudZIP전달은하지않는다. 기존 Opus5.5/high·Remote Control 세션이 제품수정/회귀검사를 맡고 Codex가독립대조·실행검증/서명·배포를담당한다.
+
+
+R348 구현·검증/개발76설치: Claude가중앙show(held:)의기존패널분기와새present/reset이후분기에서held:false만기존pinOverlay를적용하고좌클릭별도helper를제거했다. 메뉴열기·manualshow·held호출비고정·프로필핀유지검사를보강했다. Codex독립대조/214개소스해시/XCTest316/Python30/native111PNG·빠른검사/Release진단제외·DeveloperID서명/원본ZIP·공개익명재다운로드검증과Claude최종읽기전용대조를완료했다. 검증스냅샷4be7703b, dev자산4312a83f, tap0fe080d5로게시했고정식2.1.8caskblob는유지했다. Homebrewaudit/style/fetch통과후기존75앱·설정·brew메타데이터를로컬백업하고실제brewupgrade로76설치·앱버전/서명·번들해시·appdir전후동일을확인했다.
+
+R348 실행전환 보류: Homebrew quit가Terminal→SystemEvents자동화권한경고를남기며기존프로세스를종료하지못했다. 표준NSRunningApplication정상terminate도15초내완료되지않았다. PID62638은새76파일교체보다오래전에시작했고finished=false이며,1초스택표본은dyld시작단계에머문다. 인스턴스owner기록은이미종료된58445의옛2.2.0/75였다. 새앱실행완료로기록하지않고, requirements의정상종료/강제종료금지기준에따라해당이전프로세스만강제종료할지사용자승인을요청했다. 코드/개발cask업데이트및설치는완료이며실제76기동전환확인만남았다.
+
+
+R348 이전프로세스정리 승인·후속: 사용자가“Tile Launcher만 강제 종료하고 재실행”을명시승인했다. PID62638의앱ID·경로·시작시각을다시확인한뒤NSRunningApplication.forceTerminate로해당프로세스만종료했고terminationReported=true및기존PID소멸을확인했다. 이어76경로로실행요청해새PID69822가생겼지만finished=false/인스턴스owner미갱신이며UI확인에서는Mac화면잠금이확인됐다. 새프로세스를반복종료/기동하지않았다. 사용자는“나중에 직접 앱 열게”,“brew dev나 잘 해줘. 그러면 원격지에서 테스트 가능해.”로로컬기동확인을미루고원격지개발채널시험을원했다. 따라서추가로컬UI/실행조작없이개발cask2.1.9,76·원격blob45ccae8/공개ZIP체크섬·DeveloperID서명·정식2.1.8blob불변·로컬brewinstalled/appdir를최종재확인했다. 실제새76UI실행통과로기록하지않으며사용자원격지실기대기다.
+
+
+## 2026-10-28 · R349 비Option 진입 전체 감사와 정식 배포 승인
+
+사용자가 76에서 본인이 발견했던 문제들이 모두 해결됐음을 확인했다. 기존 Claude 세션과 함께 Option 이외의 오버레이 진입 경로를 전체 추적하고 신규/기존 패널 고정 여부를 검증하며, 문제없으면 공증·GitHub 정식 릴리스·Homebrew 정식 tile-launcher cask 갱신까지 진행하라고 명시 승인했다. 이 승인은 R348의 실기 확인 전 공증/정식 공개 보류를 해제한다. 패치 2.1.9(76)의 검증된 제품 소스·실행 파일·BuildID를 유지하며 추가 제품 수정은 감사에서 필요성이 확인될 때만 한다. 기존 dev 자산/이전 릴리스·백업과 iCloud 빌드 전달 중단을 유지한다.
+
+Codex와 기존 Claude가 독립 검토한 결과 중앙 show의 4개 비Option 호출처(좌클릭, 메뉴 열기, --show, reopenExistingInterface)와 Finder/Dock·단일 인스턴스 알림·빌드 교체 handoff를 모두 추적해 고정 누락을 찾지 못했다. held:true는 실제 Option hold/quick reopen 두 경로뿐이다. 신규 패널은 present/reset 이후 고정, 보이는 패널은 재사용·선택취소·고정한다. Option 대기 중 수동 고정 뒤 늦은 held 호출도 고정을 해제하지 않는다. 프로필/폴더/내용 갱신은 표시를 유지하며 pin을 reset하지 않는다. 설정창이 보이면 설정창을 앞으로 가져오고, 초기 일반 실행/로그인 실행은 상주만 한다. 계정 변경 안내·작은 화면 실패는 오버레이를 열지 않는 기존 예외다.
+
+코드·리소스·빌드 스크립트/설정 140개가 기존 4be7703b 서명 시험본 소스와 일치한다. 같은 빌드의 기존 XCTest316/Python30/native111PNG와 이번 빠른 native 고정/Option 검사 통과를 근거로 하며, 모든 외부 OS 진입을 자동으로 실물 실행했다고 주장하지 않는다. 공증 연결 사전 점검에서 기본/명시 login 키체인 모두 tile-launcher-notary 항목 부재를 반환했다. 별도 Security API는 기본 키체인 unlocked=true와 정상 metadataQuery를 반환했고 공증 항목 이름은 없었다. 비밀 데이터는 읽지 않았다. 공증 프로필 저장 또는 기존 다른 이름 확인을 사용자에게 요청했다. 실제 제출/공개 완료로 기록하지 않는다. 연결 GitHub 도구는 릴리스 생성/첨부를 지원하지 않고 브라우저는 로그아웃이므로 그 로그인도 묶어 요청했다. 소스/tap은 기존 연결을 사용한다.
