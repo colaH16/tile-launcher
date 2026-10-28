@@ -1,0 +1,175 @@
+import Foundation
+
+public struct MenuIdentity: Codable, Hashable {
+    public let appID: String
+    public let path: [String]
+    public init(appID: String, path: [String]) { self.appID = appID; self.path = path }
+}
+
+public struct MenuCapturePreferences: Codable, Equatable {
+    public var enabled = true
+    public var excludedApps: Set<String> = []
+    public var excludedMenus: Set<MenuIdentity> = []
+    public init() {}
+    public func allows(appID: String) -> Bool { enabled && !excludedApps.contains(appID) }
+    public static func restore(_ data: Data?) -> Self {
+        guard let data else { return Self() }
+        if let decoded = try? JSONDecoder().decode(Self.self, from: data) { return decoded }
+        var paused = Self()
+        paused.enabled = false
+        return paused
+    }
+}
+
+public struct CapturedMenu: Equatable {
+    public let identity: MenuIdentity
+    public let appName: String
+    public let shortcut: String
+    public let commandModifier: Bool
+    /// Raw AXMenuItemCmdModifiers; 0 is plain ⌘.
+    public let modifiers: Int
+    /// False when the shortcut could not be read; an empty `shortcut` then
+    /// means “unknown”, not “removed”.
+    public let shortcutKnown: Bool
+    public let fromHelpSearch: Bool
+    public let axIdentifier: String?
+    public let optionAction: MenuActionReference?
+    public init(appID: String, appName: String, path: [String], shortcut: String = "",
+                commandModifier: Bool = false, modifiers: Int = 0, shortcutKnown: Bool? = nil, fromHelpSearch: Bool = false,
+                axIdentifier: String? = nil, optionAction: MenuActionReference? = nil) {
+        identity = MenuIdentity(appID: appID, path: path); self.appName = appName
+        self.shortcut = shortcut; self.commandModifier = commandModifier; self.modifiers = modifiers
+        self.shortcutKnown = shortcutKnown ?? !shortcut.isEmpty
+        self.fromHelpSearch = fromHelpSearch
+        self.axIdentifier = MenuAXIdentifier.validated(axIdentifier)
+        self.optionAction = optionAction?.isValid == true ? optionAction : nil
+    }
+}
+
+public enum MenuCapturePolicy {
+    public static func isHelpMenuTitle(_ title: String) -> Bool {
+        ["help", "도움말", "aide", "hilfe", "ayuda", "aiuto", "ヘルプ", "帮助", "說明"].contains(normalize(title))
+    }
+    public static func isAppleMenuPath(_ path: [String]) -> Bool {
+        guard let root = path.first else { return false }
+        return ["apple", ""].contains(normalize(root))
+    }
+    public static func allows(_ menu: CapturedMenu, preferences: MenuCapturePreferences) -> Bool {
+        let path = menu.identity.path
+        guard preferences.allows(appID: menu.identity.appID), !preferences.excludedMenus.contains(menu.identity),
+              !isAppleMenuPath(path),
+              (2...12).contains(path.count), path.allSatisfy({ !$0.isEmpty && $0.count <= 256 }) else { return false }
+        let normalized = path.map(normalize)
+        let dynamicParents: Set<String> = ["open recent", "recent items", "recent documents", "recent folders",
+            "최근 항목 열기", "최근 사용", "최근 사용 항목", "최근 항목", "최근 문서", "최근 폴더"]
+        guard !normalized.dropLast().contains(where: dynamicParents.contains) else { return false }
+        // Unbound leaves directly in Window are commonly changing document/window titles.
+        if ["window", "윈도우", "창"].contains(normalized[0]), path.count == 2, menu.shortcut.isEmpty, menu.optionAction == nil { return false }
+        return true
+    }
+    public static func normalize(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "…", with: "")
+            .replacingOccurrences(of: "...", with: "").lowercased()
+    }
+    /// Resolve a Help result only when its label identifies one real menu path.
+    public static func resolveHelp(title: String, choices: [CapturedMenu]) -> CapturedMenu? {
+        let candidates = choices.filter { !isAppleMenuPath($0.identity.path) }
+        // A literal title may itself contain >. If it collides with a displayed
+        // breadcrumb, neither interpretation is safe without more evidence.
+        let exact = candidates.filter { normalize($0.identity.path.last ?? "") == normalize(title) }
+        let components = title.components(separatedBy: " > ").map(normalize)
+        var matches = exact
+        if components.count > 1, components.allSatisfy({ !$0.isEmpty }) {
+            matches += candidates.filter {
+                $0.identity.path.count >= components.count
+                    && Array($0.identity.path.suffix(components.count)).map(normalize) == components
+            }
+        }
+        let unique = Dictionary(grouping: matches, by: \.identity)
+        guard unique.count == 1, let group = unique.values.first, let match = group.first,
+              Set(group.map(\.axIdentifier)).count == 1 else { return nil }
+        return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
+                            shortcut: match.shortcut, commandModifier: match.commandModifier,
+                            modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true,
+                            axIdentifier: match.axIdentifier, optionAction: match.optionAction)
+    }
+}
+
+/// Notifications can describe highlighting. A physical release/Return must arm
+/// a short-lived gesture, and the native adapter must match its item/position.
+public struct MenuCaptureGate {
+    private var armedAt: TimeInterval?
+    private var consumed = false
+    public init() {}
+    public mutating func arm(time: TimeInterval) { armedAt = time; consumed = false }
+    public mutating func cancel() { armedAt = nil; consumed = false }
+    public mutating func take(_ menu: CapturedMenu, matchedUserSelection: Bool,
+                              time: TimeInterval, preferences: MenuCapturePreferences) -> CapturedMenu? {
+        guard let armedAt, !consumed, time >= armedAt, time - armedAt <= 0.8,
+              matchedUserSelection, MenuCapturePolicy.allows(menu, preferences: preferences) else { return nil }
+        consumed = true
+        return menu
+    }
+}
+
+public enum MenuCaptureKeyDecision: Equatable {
+    case cancel, confirm, clearHighlight
+    public static func resolve(keyCode: UInt16, shortcutModifier: Bool, repeating: Bool, menuWasOpen: Bool) -> Self {
+        if shortcutModifier || keyCode == 53 { return .cancel }
+        if [UInt16(36), 76].contains(keyCode), !repeating, menuWasOpen { return .confirm }
+        return .clearHighlight
+    }
+}
+
+public enum MenuCaptureHistory {
+    /// The saved command for this menu: the same path, or — after the app's
+    /// language changed — the single command whose language aliases match it.
+    public static func index(of identity: MenuIdentity, in commands: [MenuCommand]) -> Int? {
+        if let exact = commands.firstIndex(where: { $0.appID == identity.appID && $0.path == identity.path }) { return exact }
+        let aliased = commands.indices.filter { commands[$0].appID == identity.appID && MenuPathMatch.matches(identity.path, commands[$0]) }
+        return aliased.count == 1 ? aliased[0] : nil
+    }
+    public static func record(_ menu: CapturedMenu, in commands: [MenuCommand], at date: Date) -> [MenuCommand] {
+        guard !MenuCapturePolicy.isAppleMenuPath(menu.identity.path) else { return commands }
+        var result = commands
+        let shortcut = MenuShortcut(key: menu.shortcut, modifiers: menu.modifiers)
+        if let i = index(of: menu.identity, in: result) {
+            result[i].recordUse(at: date, observed: true)
+            // Only a confirmed reading may clear a shortcut the app removed.
+            if menu.shortcutKnown { result[i].shortcut = shortcut }
+            if let identifier = menu.axIdentifier {
+                if result[i].axIdentifier != identifier { result[i].optionAction = menu.optionAction }
+                result[i].axIdentifier = identifier
+            }
+            if let option = menu.optionAction { result[i].optionAction = option }
+        } else {
+            var command = MenuCommand(appID: menu.identity.appID, appName: menu.appName, path: menu.identity.path, isPinned: false)
+            command.isAutomatic = true; command.recordUse(at: date, observed: true)
+            command.shortcut = shortcut
+            command.axIdentifier = menu.axIdentifier
+            command.optionAction = menu.optionAction
+            result.append(command)
+        }
+        // Visibility uses the user-selected lookback OR the app-local recent five.
+        // Keep compact metadata so changing the lookback can restore older items.
+        return result
+    }
+}
+
+/// Where a click can start a menu-bar selection, in CG (top-left origin) global
+/// coordinates. Clicks elsewhere skip the AX hit test unless a menu is open.
+public enum MenuBarRegion {
+    /// `screens` are AppKit frames (bottom-left origin) with each screen's menu bar
+    /// height; the first frame is the primary screen. A generous minimum covers
+    /// notched and auto-hidden menu bars.
+    public static func bands(screens: [(frame: CGRect, menuBar: CGFloat)], minimum: CGFloat = 50) -> [CGRect] {
+        guard let primary = screens.first?.frame else { return [] }
+        return screens.map { screen in
+            CGRect(x: screen.frame.minX, y: primary.maxY - screen.frame.maxY,
+                   width: screen.frame.width, height: max(minimum, screen.menuBar))
+        }
+    }
+    public static func contains(_ point: CGPoint, bands: [CGRect]) -> Bool {
+        bands.contains { $0.contains(point) }
+    }
+}
