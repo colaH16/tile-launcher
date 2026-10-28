@@ -336,13 +336,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        handleStatusItemClick(NSApp.currentEvent?.type, sender: sender)
+        handleStatusItemClick(NSApp.currentEvent?.type, modifiers: NSApp.currentEvent?.modifierFlags ?? [], sender: sender)
     }
-    private func handleStatusItemClick(_ eventType: NSEvent.EventType?, sender: NSStatusBarButton) {
-        if eventType == .rightMouseUp {
+    private func handleStatusItemClick(_ eventType: NSEvent.EventType?, modifiers: NSEvent.ModifierFlags = [],
+                                       sender: NSStatusBarButton) {
+        // Control-click is the standard secondary click and opened this menu
+        // before the split, so it keeps doing so.
+        if eventType == .rightMouseUp || modifiers.contains(.control) {
             sender.highlight(true)
             defer { sender.highlight(false) }
-            statusMenu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: sender.bounds.minY), in: sender)
+            // Top-left of the menu at the button's bottom edge; NSButton is flipped.
+            let bottom = sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY
+            statusMenu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: bottom), in: sender)
         } else {
             openPinnedFromStatusItem()
         }
@@ -752,9 +757,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         try check(menu.presentations == 2 && button.menu == nil,
                   "Left-click opened a menu or right-click left an attached menu")
+        handleStatusItemClick(.leftMouseUp, modifiers: .control, sender: button)
+        try check(menu.presentations == 3 && button.menu == nil && !button.isHighlighted
+                  && panel === window && window.isVisible && presentation.isPinned,
+                  "Control-click did not open only the menu")
         hide()
         try check(!window.isVisible && !presentation.isPinned, "Explicit close did not dismiss/reset the overlay")
-        print("Status item: right/left/right/left routing, existing manual/held panel pinning, reuse, queued selection cancellation and explicit close passed without Option input.")
+        print("Status item: right/left/right/left and control-click routing, existing manual/held panel pinning, reuse, queued selection cancellation and explicit close passed without Option input.")
     }
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
     func verifyClickExecutionForPreview() throws {
