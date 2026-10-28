@@ -146,3 +146,16 @@ python3 scripts/release.py notarize --keychain-profile tile-launcher-notary
 ## 공증 제출 빈도 · R217
 
 2026-10-16 Apple의 [Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)에서 공증을 하루75건 이내로 제한하라는 안내를 확인했다. 이 프로젝트는 검증한 배포 빌드마다 한 번 제출하고, 진행 중에는 저장한 제출 ID의 상태만 조회한다. 실패/응답 중단 시 같은 파일을 반복 제출하지 않고 기존 ID를 복구한다. 공증 요청이 잦다는 이유로 성공/대기 시간을 보장하지 않으며 실제 상태를 확인한다.
+
+
+## 기존 CLI 인증 우선 · R350 (2026-10-28)
+
+이 Mac은 GitHub CLI와 기존 SSH 인증을 구성했으며, 2.1.9의 실제 정식 공개·자산 다운로드·정식 cask 갱신을 CLI로 완료했다. 다음 배포에서도 브라우저 로그인이나 화면 공유를 먼저 요청하지 않는다.
+
+1. `gh auth status`로 기존 키체인 인증을 확인한다. 토큰 자체를 출력하는 `gh auth token`은 사용하지 않는다.
+2. 이 저장소의 origin은 `git@github.com:colaH16/tile-launcher.git`을 사용한다. 기존 SSH 키로 `git push origin main`과 새 태그 push가 가능하다. 새 키를 업로드하거나 기존 공개 태그를 덮지 않는다.
+3. 기존 `scripts/release.py draft`/`publish` 흐름을 먼저 사용한다. 이미 만들어진 초안은 새로 만들지 말고 release ID·태그·자산·노트를 검증한 뒤 `publish`만 수행한다.
+4. cask 갱신은 검증된 공개 ZIP의 버전·해시만 바꾸고, JSON 요청 파일을 이용한 `gh api --method PUT ... --input 요청파일` 또는 검토된 Git 커밋으로 처리한다. 기존 blob SHA로 동시 변경을 검사하고 dev cask를 보존한다.
+5. 키체인 조회가 실패하면 제한 밖의 동일 사용자 환경과 화면/키체인 잠금 여부를 구분한다. 화면 잠금 뒤 공증 프로필이 안 보였던 실제 사례가 있으므로 바로 인증 삭제/로그인 만료로 단정하거나 재등록·화면 공유를 반복 요청하지 않는다. 암호·토큰·기기 코드는 문서/명령 이력에 저장하지 않는다.
+
+기존 공증 프로필 이름은 `tile-launcher-notary`다. 제출은 같은 앱 ZIP에 한 번만 하고, 저장된 ID로 결과를 조회한다. 사용자가 확인한 앱을 공증만 하는 경우 기존 소스/실행 파일/BuildID를 유지하고 티켓 추가 외 변경이 없는지 확인한다.
