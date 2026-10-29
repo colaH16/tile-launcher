@@ -2679,3 +2679,35 @@ R352 완료: Claude가Layout의safeArea공통식/centered와main의최종fitting
 ## 2026-10-29 · R353 수정본 설치 후 정식 배포 승인
 
 사용자가R352구현·반복검증결과를수락하고“설치 함 해바바. 그러고 괜춘 하면 git 에도 릴리즈 하고, brew tap도 올리고”라고명시지시했다. 기존2.1.9(76)를보존하고버그patch2.1.10(77)을별도소스/출력경로에서준비한다. 같은appdir의앱·설정/관리기록백업→정상종료→DeveloperID서명본설치·기동/가능한실기확인후문제가없으면동일빌드공증·GitHub정식·정식brew cask갱신을진행한다. 기존CLI/SSH/키체인인증을재사용하며dev자산/기존릴리스·태그와iCloud추가전달중단은유지한다. 강제종료나보안예외/격리제거는이요청으로추가승인된것으로확대하지않는다.
+
+
+R353 설치/공증결과 및 실기 대기: clean소스71dad1fa1cef527c2dd1780ebbcbaebf04c28cef의2.1.10(77)을DeveloperID서명·기존CloudKit프로파일·원본ZIP검증했다. 제품/검사입력은R352와같고release/config만새버전이다. 기존PID48370을정상종료하고2.1.9앱·설정/brew기록백업후같은~/Applications/launch at login경로에원자적으로교체했다. 새PID60791 finished=true·instanceowner77·BuildID9dedb43f96533ede5b24c234a3a5bebbfdf2bccd367c22011319cd833e39a6e1·정확한번들해시/서명을확인했다. 실제고정오버레이/닫기x/등록37개표시를캡처했다.
+
+자동Esc/닫기입력으로화면변화가확인되지않았고일반앱목록에accessoryTileLauncher가없어전달자체를확정하지못했다. 제품결함으로단정하거나실물닫기통과로기록하지않았다. 기존닫기/hide/입력코드가76과같음을Claude도읽기재대조했고새위치수정의닫기결함근거는찾지못했으나게시전사용자실기확인을권고했다. 화면위아래커서위치와한번닫기를직접확인하도록질문을남겼다.
+
+공증은동일77한번제출ID04980bf3-2620-4c13-ae1d-3144b03323fb의Accepted·티켓·Gatekeeper/ZIP검증을완료했다. 설치본에도같은티켓만추가해기존9파일/BuildID·PID불변,최종번들트리7ccbb084ecfb75e132ebcc01c475a240f17a28d6bb370887fe6a0c8842b034b5를확인했다. 최종ZIP SHA256은47e1f9c092e3760a5ecf24d9c4a1d6156046c76700bf12a2fb72379ac6c75f30. 소스bundle·공증산출물·설치영수증·정식cask변경안은로컬지속보관폴더에저장했다. 소스원격push/태그/정식릴리스/cask갱신은아직하지않았으며사용자실기응답을기다린다. 실제app77과기존brew기록2.1.9의일시차이는공개후실제brewupgrade로정합성을맞출예정이며관리기록을수동조작하지않았다.
+
+
+## 2026-10-29 · R354 회사 Mac 시험용 dev 게시
+
+사용자가 집 Mac에서는 지금 확인하기 어렵고 회사에서 ChatGPT remote로 작업 중이므로 tile-launcher@dev에 올리면 회사 Mac에서 확인하겠다고 명시 요청했다. 이를 실제 동작 정상 확인으로 해석하지 않고 정식 게시 조건은 유지했다. 재빌드·재서명 없이 기존 공증 2.1.10(77)의 동일 ZIP/메타데이터/체크섬과 복구 가능한 소스 bundle·patch를 tap dev-builds의 새 폴더에 게시했다. 기존75/76 자산은 보존했다. dev cask와 관련 README만 CLI 커밋으로 갱신했으며 정식 cask와 최신 정식 v2.1.9는 그대로다.
+
+R354 완료: 회사 Mac에서 시험할 수 있도록 공증된 동일 2.1.10(77)을 tile-launcher@dev에 게시했다. 개발 자산 커밋9fa1ae4e, tap main939359a0, ZIP SHA25647e1f9c092e3760a5ecf24d9c4a1d6156046c76700bf12a2fb72379ac6c75f30. 공개 세 자산 익명 다운로드·해시, 재추출 앱의 Developer ID/CloudKit 프로파일·번들트리/공증 티켓/Gatekeeper, 실제 Homebrew audit/style/fetch 모두 통과했다. 정식 cask blob d73f6e3c와 최신 GitHub v2.1.9는 보존했다. 회사 Mac의 실제 위치/한 번 닫기 확인은 사용자 시험 대기다. 앱 저장소 소스 push/새 태그·정식 릴리스와 집 Mac 추가 설치·기동은 수행하지 않았다. dev 업그레이드는 기존 appdir/설정을 유지하며 정식 배포는 사용자 확인 후 이어간다.
+
+회사 Mac에서 dev가 설치돼 있으면 `brew update` 후 `brew upgrade --cask colah16/tap/tile-launcher@dev`로 업데이트한다. 같은 채널 upgrade의 저장된 appdir와 앱 설정을 유지한다. 아직 정식 채널이면 채널 전환은 별도이며 일반 uninstall( --zap 없음 ) 후 기존 appdir를 명시해 dev install한다. 회사 Mac에 실제로 설치·실행됐다고 주장하지 않는다. 검토/배포 기록은 docs/reviews/overlay-cursor-placement-20261029.md.
+
+
+## 2026-10-29 · R355 회사 Mac dev 채널 유지와 공증본 갱신
+
+사용자가 공증이 끝나면 @dev도 공증본으로 바꾸고, 회사 Mac에는 정식 colah16/tap/tile-launcher 대신 colah16/tap/tile-launcher@dev만 설치해 두겠다고 명시했다. 공증된 동일 빌드를 dev cask에도 반영하는 것을 지속 배포 규칙으로 채택했다. 현재2.1.10(77)은 R354에서 이미 공증본으로 게시·검증했으므로 추가 공증이나 바이너리 교체는 필요 없다.
+
+R355 · 회사 Mac은 tile-launcher@dev 채널을 계속 사용한다. 개발 빌드의 공증이 완료되면 @dev도 동일 공증 ZIP/체크섬으로 갱신하고 공개 다운로드·서명·티켓/Gatekeeper를 확인한다. 정식 게시 후에도 회사 Mac에 정식 cask로 전환하도록 요구하지 않는다. 현재 dev 2.1.10(77)은 이미 공증 완료본이다. 이번 요청은 채널 운영 정책이며 회사 Mac의 위치/닫기 실기 통과나 정식 게시 승인을 대신하지 않는다.
+
+공증 전후에 version/build가 같고 ZIP/체크섬만 바뀐 경우, 이미 그 버전을 설치한 Mac은 brew upgrade만으로 교체되지 않을 수 있으므로 해당 경우에만 brew reinstall --cask colah16/tap/tile-launcher@dev를 안내한다. 버전이 증가한 일반 dev 갱신은 brew update와 brew upgrade를 사용하며 기존 appdir/설정 유지 규칙을 따른다. 회사 Mac을 이 작업에서 원격 설치하거나 실제 업그레이드 완료로 기록하지 않는다.
+
+
+## 2026-10-29 · R356 세로 모니터 실기 확인과 정식 게시 승인
+
+R356 진행: 사용자가 1080×1920 세로 모니터에서도 원하는 위치로 표시됨을 직접 확인하고, 검증한 공증 2.1.10(77)의 GitHub 정식 릴리스 및 일반 tile-launcher cask 갱신을 명시 승인했다. R353/R354의 실기 대기 조건을 이번 승인으로 해제한다. 닫기 동작을 별도로 명시 확인했다고 확대하지 않는다. 동일 소스71dad1fa/공증 ZIP47e1f9c를 재빌드·재서명 없이 게시하며 @dev의 동일 공증77과 기존 자산·설정은 보존한다.
+
+기존 SSH/GitHub CLI 인증과 공증 결과를 재사용한다. 정확한 소스/태그/노트 및 업로드 자산 재다운로드 검증 후 정식 게시하고 일반 cask를 갱신한다. 회사 Mac은 R355대로 @dev 채널을 유지한다. 아직 게시 결과 전이며 완료는 원격 재확인 뒤 기록한다.

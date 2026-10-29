@@ -103,3 +103,32 @@ Apple M4, 물리/논리10코어, macOS27.2에서 Release `-O`, arm64/macOS26 tar
 - 실제 영상 환경의 최종 화면 확인은 새 시험본 적용 후 필요하다. 위·아래 가장자리 근처에서 새 호출이 커서를 포함하며 안전 경계 안에 열리는지 확인하면 된다.
 
 버전/빌드설정과 기존 설치본·정식 공개2.1.9(76)는 유지했다. 새로운 설치·서명·공증·GitHub push/릴리스·Homebrew 갱신은 이번 요청에 따라 수행한 것으로 주장하지 않는다. 원본 인계 파일과 R351 기록을 보존했다.
+
+
+# R353 설치·공증과 게시 전 실기 확인
+
+사용자가77설치후문제없으면GitHub릴리스와brew tap갱신을승인했다. 2.1.10(77)/소스71dad1fa1cef527c2dd1780ebbcbaebf04c28cef를별도clean체크아웃에서빌드·DeveloperID서명했다. R352검증제품·검사입력은같고버전설정만변경했다. 기존76/설정·관리기록을백업하고정상종료뒤같은appdir에설치했다. 새PID60791의finished/owner77/BuildID·번들해시일치와실제오버레이/닫기x/등록37표시는확인했다.
+
+합성닫기입력으로UI변화가확인되지않아실제전달을확정하지못했다. 일반앱목록에서accessory앱이보이지않는도구제약가능성과제품실패를구분하고실물닫기통과로주장하지않는다. Claude도닫기/hide/입력소스가76과같고위치기하수정의새닫기결함근거는없다고재대조했으며,조건부게시전사용자위치/닫기실기확인을권고했다. 사용자에게확인질문을남겼고아직게시조건충족으로추정하지않았다.
+
+동일77의Apple공증Accepted·티켓/Gatekeeper·ZIP검증완료. 설치본에는티켓파일Contents/CodeResources만추가했고기존9파일/BuildID/PID는보존했다. 최종ZIP SHA256 47e1f9c092e3760a5ecf24d9c4a1d6156046c76700bf12a2fb72379ac6c75f30, 번들트리7ccbb084ecfb75e132ebcc01c475a240f17a28d6bb370887fe6a0c8842b034b5다. 산출물과정확한소스bundle을로컬지속보관했으며정식cask의버전/해시교체안도준비했다.
+
+현재GitHub소스push/새태그·정식릴리스/정식cask갱신은미실행이다. 사용자실기정상확인뒤기존CLI로게시하고이Mac도실제brewupgrade로2.1.9관리기록을2.1.10으로맞춘다. 기존dev자산/릴리스/태그는보존한다. 이번설치본은이미공증77이므로동일실행파일을다시빌드/서명하지않는다.
+
+
+# R354 공증 dev 77 게시와 회사 Mac 시험 대기
+
+사용자가 회사 Mac에서 확인하기 위해 dev 채널 게시를 요청했다. R353의 사용자 실기 통과 조건은 아직 충족되지 않았다. 서명/공증된 동일 ZIP을 다시 빌드하지 않고 아래 불변 자산 경로로 전달했다.
+
+- 개발 자산: `9fa1ae4e4fd5d59f1efd9ddb16d5464e5e8dce0d`, `tile-launcher/2.1.10-77/`. 원본 ZIP·메타데이터·체크섬과 release notes/소스 bundle·patch/빌드 요약을 포함한다.
+- tap main: `939359a0d7662322dd3c3e9249ec6b60090fe3c1`. dev cask `2.1.10,77`, 원본 공증 ZIP SHA256 `47e1f9c092e3760a5ecf24d9c4a1d6156046c76700bf12a2fb72379ac6c75f30`, 공증 완료 caveat와 README로 갱신했다.
+- 원격 자산 세 개를 인증 없이 다시 내려받아 원본 해시를 확인했다. 재추출 앱의 Developer ID 서명/CloudKit 프로파일·최종 번들트리 `7ccbb084ecfb75e132ebcc01c475a240f17a28d6bb370887fe6a0c8842b034b5`, stapler와 Gatekeeper `accepted / Notarized Developer ID`를 확인했다.
+- Homebrew audit/style/fetch가 모두 exit0이다. 정식 cask blob `d73f6e3c6a240c69d43191a045ce144024979fd0`과 최신 GitHub 정식 `v2.1.9`를 원격 재조회해 불변을 확인했다.
+- 집 Mac 앱 재설치/재기동은 하지 않았다. 회사 Mac 설치·실행과 상하단 위치/닫기 실기는 사용자 확인 대기다. 앱 저장소 소스 push/태그/정식 릴리스는 아직 하지 않았다.
+
+회사 Mac에 dev가 이미 설치됐으면 `brew update`와 `brew upgrade --cask colah16/tap/tile-launcher@dev`를 사용한다. 같은 채널은 저장된 appdir/설정을 유지한다. 사용자가 실기 정상 확인하면 보관한 동일 공증 ZIP과 정확한 소스를 사용해 정식 게시를 이어간다. 공개 다운로드/서명·공증/Homebrew 검증 영수증은 ignored evidence의 `dev77-publication/` 및 로컬 지속 보관 산출물에 저장했다.
+
+
+# R356 사용자 세로 모니터 확인과 정식 게시 승인
+
+R356 진행: 사용자가 1080×1920 세로 모니터에서도 원하는 위치로 표시됨을 직접 확인하고, 검증한 공증 2.1.10(77)의 GitHub 정식 릴리스 및 일반 tile-launcher cask 갱신을 명시 승인했다. R353/R354의 실기 대기 조건을 이번 승인으로 해제한다. 닫기 동작을 별도로 명시 확인했다고 확대하지 않는다. 동일 소스71dad1fa/공증 ZIP47e1f9c를 재빌드·재서명 없이 게시하며 @dev의 동일 공증77과 기존 자산·설정은 보존한다.

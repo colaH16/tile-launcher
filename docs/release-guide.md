@@ -1,5 +1,14 @@
 # Apple 개발자 등록과 GitHub 공개 배포 준비
 
+## Homebrew dev 채널의 공증본 유지 · R355
+
+회사 Mac은 `colah16/tap/tile-launcher@dev`만 유지한다. 개발 빌드의 Apple 공증이 끝나면 dev cask도 해당 빌드의 최종 공증 ZIP·SHA256으로 갱신한다. 정식 배포 후에도 dev를 유지할 수 있게 하며 채널 전환을 요구하지 않는다. 2026-10-29 기준 dev 2.1.10(77)은 이미 공증 완료본이다.
+
+- 공증된 기존 앱을 재빌드·재서명하지 않고 Accepted/티켓/Gatekeeper 검증 후 최종 ZIP을 사용한다. 이전 dev 자산을 덮어쓰지 않고 불변 경로에 보존하며 cask의 공증 안내도 실제 상태에 맞춘다.
+- 공개 ZIP 재다운로드 해시·서명/프로파일·티켓/Gatekeeper와 Homebrew audit/style/fetch를 확인한다. 회사 Mac 실기 확인과 정식 게시 조건은 별도로 충족한다.
+- 새 version/build는 `brew update` 뒤 `brew upgrade --cask colah16/tap/tile-launcher@dev`로 받는다. 공증 전후 version/build가 같아 ZIP/체크섬만 바뀌면 기존 설치에 upgrade가 적용되지 않을 수 있으므로 이 경우 `brew reinstall --cask colah16/tap/tile-launcher@dev`를 안내하고 기존 appdir를 확인한다. 공증만으로 새 앱 빌드 번호를 소비하거나 Homebrew 관리기록을 수동 변경하지 않는다.
+
+
 ## 현재 공개 상태 · 2026-10-19
 
 [v2.0.0](https://github.com/colaH16/tile-launcher/releases/tag/v2.0.0)을 Developer ID/CloudKit 서명·Apple 공증·티켓·Gatekeeper·ZIP 검증 후 최신 정식으로 공개했다. 앱 소스는32874b833eb9이며 원격 main에는 배포 도구와 최종 문서도 반영했다. 공개 자산3개 익명 다운로드 해시 검증, 사용자 응용 프로그램 폴더 설치·실행 지문 일치, 기존iCloud공유폴더 최종ZIP 해시 일치를 확인했다. 실제 CloudKit 프로파일/schema 준비와 첫 전송 실패 회복은 [CloudKit 서명 준비 기록](../tools/cloud-signing/README.md), 상세 배포 결과는 [버전 이력](../CHANGELOG.md)을 따른다. 아래 버전별 ‘현재’ 문구는 당시 기록이다.
