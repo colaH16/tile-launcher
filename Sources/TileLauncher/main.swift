@@ -449,6 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let old = ready.content.snapshot.layout
         let moved = PanelLayout.calculate(visibleFrame: screen.visibleFrame, cursor: point, scale: PanelLayout.preferredScale)
             .fittingContent(registeredCount: settings.activeProfile.items.count, workRows: ready.content.snapshot.workRows())
+            .centered(on: point, visibleFrame: screen.visibleFrame)
         guard moved.compact == old.compact, moved.scale == old.scale else { return nil }
         if moved != old {
             ready.content.snapshot.layout = moved
@@ -495,6 +496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ? layout.refittingContent(registeredCount: settings.activeProfile.items.count, visibleFrame: layoutScreen.visibleFrame,
                                       workRows: snapshot.workRows())
             : layout.fittingContent(registeredCount: settings.activeProfile.items.count, workRows: snapshot.workRows())
+                .centered(on: point, visibleFrame: layoutScreen.visibleFrame)
         snapshot.layout = layout
         snapshot.menuContextWindow = windows.first { $0.pid == lastContext?.pid && !$0.isApplication && $0.handoff == nil }
 

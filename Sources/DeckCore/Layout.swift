@@ -19,11 +19,14 @@ public struct PanelLayout: Equatable {
     }
     public var capacity: Int { columns * 3 }
 
+    /// The 24pt outer margin, reduced on very small screens.
+    static func safeArea(in visibleFrame: CGRect) -> CGRect {
+        visibleFrame.insetBy(dx: min(24, visibleFrame.width / 8), dy: min(24, visibleFrame.height / 8))
+    }
+
     /// All coordinates are AppKit points, including negative monitor origins.
     public static func calculate(visibleFrame: CGRect, cursor: CGPoint, scale requestedScale: CGFloat = 1) -> Self {
-        let margin: CGFloat = 24
-        let v = visibleFrame.insetBy(dx: min(margin, visibleFrame.width / 8),
-                                     dy: min(margin, visibleFrame.height / 8))
+        let v = safeArea(in: visibleFrame)
         if requestedScale.isFinite && requestedScale > 1 {
             let compact = v.height < 620 || v.width < 840
             let targetWidth = min(compact ? 850 : 1120, v.width)
@@ -70,6 +73,20 @@ public struct PanelLayout: Equatable {
                     compact: compact, supported: supported, scale: scale)
     }
 
+    /// A fresh invocation: center the final, content-fitted frame on the cursor
+    /// within the safe area. `calculate` clamps the taller ceiling frame, and
+    /// `fittingContent` keeps that clamped center, which leaves up to half the
+    /// trimmed height between a short panel and an edge cursor. Size, scale and
+    /// support are unchanged. Restored/dragged/refitted panels do not use this.
+    /// Expects a frame from `calculate`/fitting on this same `visibleFrame`, so it fits the safe area.
+    public func centered(on cursor: CGPoint, visibleFrame: CGRect) -> Self {
+        let safe = Self.safeArea(in: visibleFrame)
+        let x = min(max(cursor.x - frame.width / 2, safe.minX), safe.maxX - frame.width)
+        let y = min(max(cursor.y - frame.height / 2, safe.minY), safe.maxY - frame.height)
+        return Self(frame: CGRect(origin: CGPoint(x: x, y: y), size: frame.size),
+                    compact: compact, supported: supported, scale: scale)
+    }
+
     /// Profile changes retain the top edge/dragged position and clamp to the screen.
     /// Rebuild from the screen ceiling so a smaller profile can grow again.
     public func refittingContent(registeredCount: Int, visibleFrame: CGRect, workRows: CGFloat = 3.3) -> Self {
@@ -78,7 +95,7 @@ public struct PanelLayout: Equatable {
                                       height: ceiling.frame.height), compact: ceiling.compact, supported: ceiling.supported,
                          scale: ceiling.scale)
         let fitted = upper.fittingContent(registeredCount: registeredCount, workRows: workRows)
-        let safe = visibleFrame.insetBy(dx: min(24, visibleFrame.width / 8), dy: min(24, visibleFrame.height / 8))
+        let safe = Self.safeArea(in: visibleFrame)
         let x = min(max(frame.minX, safe.minX), safe.maxX - fitted.frame.width)
         let y = min(max(frame.maxY - fitted.frame.height, safe.minY), safe.maxY - fitted.frame.height)
         return Self(frame: CGRect(x: x, y: y, width: fitted.frame.width, height: fitted.frame.height),

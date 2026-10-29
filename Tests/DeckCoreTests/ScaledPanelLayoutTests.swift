@@ -68,6 +68,78 @@ final class ScaledPanelLayoutTests: XCTestCase {
         XCTAssertEqual(restored.frame.height, original.frame.height, accuracy: 0.001)
     }
 
+    /// R351: the ceiling frame was clamped before trimming, so an edge cursor left
+    /// up to half the trimmed height between it and a short panel.
+    func testEdgeCursorPlacementUsesFinalHeightInsteadOfClampedCeiling() {
+        let screen = CGRect(x: 0, y: 0, width: 2560, height: 1415)
+        func fitted(_ y: CGFloat) -> PanelLayout {
+            PanelLayout.calculate(visibleFrame: screen, cursor: CGPoint(x: 1280, y: y), scale: 1.4)
+                .fittingContent(registeredCount: 20, workRows: 3)
+        }
+        XCTAssertEqual(fitted(1350).frame.height, 816, accuracy: 0.001)
+        for (cursor, minY, shift) in [(CGFloat(60), CGFloat(24), CGFloat(-180)), (260, 24, -180), (600, 192, -12),
+                                      (707.5, 299.5, 0), (1100, 575, 180), (1350, 575, 180)] {
+            let base = fitted(cursor)
+            let placed = base.centered(on: CGPoint(x: 1280, y: cursor), visibleFrame: screen)
+            XCTAssertEqual(placed.frame.minY, minY, accuracy: 0.001, "cursor y \(cursor)")
+            XCTAssertEqual(placed.frame.minY - base.frame.minY, shift, accuracy: 0.001, "cursor y \(cursor)")
+            XCTAssertEqual(placed.frame.size, base.frame.size)
+            XCTAssertEqual(placed.frame.minX, base.frame.minX, accuracy: 0.001)
+        }
+    }
+
+    func testFreshPlacementCentersFinalSizeOnCursorOrMovesOnlyToTheSafeEdge() {
+        let screens = [CGRect(x: 0, y: 0, width: 2560, height: 1415), CGRect(x: 0, y: 0, width: 1512, height: 945),
+                       CGRect(x: -2560, y: -200, width: 2560, height: 1440), CGRect(x: -3440, y: -600, width: 1440, height: 900),
+                       CGRect(x: 0, y: 0, width: 560, height: 600), CGRect(x: 0, y: 0, width: 400, height: 300)]
+        let fractions: [CGFloat] = [0, 0.02, 0.25, 0.5, 0.75, 0.98, 1]
+        for screen in screens {
+            let safe = screen.insetBy(dx: min(24, screen.width / 8), dy: min(24, screen.height / 8))
+            for count in [0, 20, 39] {
+                for rows in [CGFloat(1), 3, 3.3] {
+                    for fx in fractions {
+                        for fy in fractions {
+                            let cursor = CGPoint(x: screen.minX + screen.width * fx, y: screen.minY + screen.height * fy)
+                            let base = PanelLayout.calculate(visibleFrame: screen, cursor: cursor, scale: 1.4)
+                                .fittingContent(registeredCount: count, workRows: rows)
+                            let placed = base.centered(on: cursor, visibleFrame: screen)
+                            let label = "\(screen) count \(count) rows \(rows) cursor \(cursor)"
+                            XCTAssertEqual(placed.frame.size, base.frame.size, label)
+                            XCTAssertEqual(placed.scale, base.scale, label)
+                            XCTAssertEqual(placed.compact, base.compact, label)
+                            XCTAssertEqual(placed.supported, base.supported, label)
+                            XCTAssertTrue(safe.insetBy(dx: -0.001, dy: -0.001).contains(placed.frame), label)
+                            // Off-center only as far as the safe edge on the cursor's side requires.
+                            if cursor.x > placed.frame.midX + 0.001 { XCTAssertEqual(placed.frame.maxX, safe.maxX, accuracy: 0.001, label) }
+                            if cursor.x < placed.frame.midX - 0.001 { XCTAssertEqual(placed.frame.minX, safe.minX, accuracy: 0.001, label) }
+                            if cursor.y > placed.frame.midY + 0.001 { XCTAssertEqual(placed.frame.maxY, safe.maxY, accuracy: 0.001, label) }
+                            if cursor.y < placed.frame.midY - 0.001 { XCTAssertEqual(placed.frame.minY, safe.minY, accuracy: 0.001, label) }
+                            XCTAssertLessThanOrEqual(abs(placed.frame.midY - cursor.y), abs(base.frame.midY - cursor.y) + 0.001, label)
+                            XCTAssertLessThanOrEqual(abs(placed.frame.midX - cursor.x), abs(base.frame.midX - cursor.x) + 0.001, label)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Quick reopen, drag restore and profile/content refits keep their top-edge
+    /// rule after a cursor-centered fresh placement; nothing recenters them.
+    func testRefitAfterCenteredPlacementKeepsPositionAndTopEdge() {
+        let screen = CGRect(x: -2560, y: -200, width: 2560, height: 1440)
+        let cursor = CGPoint(x: -300, y: 1180)
+        let placed = PanelLayout.calculate(visibleFrame: screen, cursor: cursor, scale: 1.4)
+            .fittingContent(registeredCount: 20, workRows: 3).centered(on: cursor, visibleFrame: screen)
+        let reopened = placed.refittingContent(registeredCount: 20, visibleFrame: screen, workRows: 3)
+        XCTAssertEqual(reopened.frame.origin.x, placed.frame.origin.x, accuracy: 0.001)
+        XCTAssertEqual(reopened.frame.origin.y, placed.frame.origin.y, accuracy: 0.001)
+        XCTAssertEqual(reopened.frame.size, placed.frame.size)
+        let smaller = placed.refittingContent(registeredCount: 0, visibleFrame: screen, workRows: 1)
+        XCTAssertEqual(smaller.frame.maxY, placed.frame.maxY, accuracy: 0.001)
+        XCTAssertEqual(smaller.frame.minX, placed.frame.minX, accuracy: 0.001)
+        XCTAssertLessThan(smaller.frame.height, placed.frame.height)
+    }
+
     func testReopenOnSmallerScreenClampsAndRetainsEveryWindow() {
         let large = PanelLayout.calculate(visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440), cursor: .zero, scale: 1.4)
             .fittingContent(registeredCount: 36)
