@@ -9,7 +9,11 @@
 - 새 version/build는 `brew update` 뒤 `brew upgrade --cask colah16/tap/tile-launcher@dev`로 받는다. 공증 전후 version/build가 같아 ZIP/체크섬만 바뀌면 기존 설치에 upgrade가 적용되지 않을 수 있으므로 이 경우 `brew reinstall --cask colah16/tap/tile-launcher@dev`를 안내하고 기존 appdir를 확인한다. 공증만으로 새 앱 빌드 번호를 소비하거나 Homebrew 관리기록을 수동 변경하지 않는다.
 
 
-## 현재 공개 상태 · 2026-10-19
+## 현재 공개 상태 · 2026-10-29
+
+[v2.1.10](https://github.com/colaH16/tile-launcher/releases/tag/v2.1.10)을 공증된2.1.10(77)/소스71dad1fa의동일ZIP으로최신정식공개했다. 사용자1080×1920세로모니터배치확인후승인받았고공개세자산익명재다운로드·서명/프로파일·티켓/Gatekeeper와일반Homebrew감사/style/fetch를통과했다. 일반cask2.1.10, dev동일공증2.1.10,77을유지한다. 회사Mac은dev를계속사용한다. 자세한결과는 [검토·배포 기록](reviews/overlay-cursor-placement-20261029.md)을따른다.
+
+## 이전 공개 기록 · 2026-10-19
 
 [v2.0.0](https://github.com/colaH16/tile-launcher/releases/tag/v2.0.0)을 Developer ID/CloudKit 서명·Apple 공증·티켓·Gatekeeper·ZIP 검증 후 최신 정식으로 공개했다. 앱 소스는32874b833eb9이며 원격 main에는 배포 도구와 최종 문서도 반영했다. 공개 자산3개 익명 다운로드 해시 검증, 사용자 응용 프로그램 폴더 설치·실행 지문 일치, 기존iCloud공유폴더 최종ZIP 해시 일치를 확인했다. 실제 CloudKit 프로파일/schema 준비와 첫 전송 실패 회복은 [CloudKit 서명 준비 기록](../tools/cloud-signing/README.md), 상세 배포 결과는 [버전 이력](../CHANGELOG.md)을 따른다. 아래 버전별 ‘현재’ 문구는 당시 기록이다.
 
