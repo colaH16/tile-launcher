@@ -76,6 +76,11 @@ struct MenuHelpTraversalStats {
     var matched = 0
     var identities = 0
     var duration: TimeInterval = 0
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    /// First non-success AXChildren read, kept even if the traversal then
+    /// classifies the stop as deadline/cancel. Diagnostics only; no decision uses it.
+    var childrenTrace: MenuHelpChildrenRead.Trace? = nil
+    #endif
 }
 
 enum MenuHelpResolutionOutcome {
@@ -216,6 +221,25 @@ private final class MenuHelpCatalogRead {
         return error == .attributeUnsupported || error == .noValue ? .unavailable : .failure
     }
     private func elements(_ node: AXUIElement, leafAllowed: Bool) -> MenuCatalogTraversal.Read<[AXUIElement]> {
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        // Same AX calls, timeout, order and decisions as the #else body; only
+        // the first failing branch is recorded (no extra query, no log line).
+        AXUIElementSetMessagingTimeout(node, 0.025)
+        return MenuHelpChildrenRead.read(
+            leafAllowed: leafAllowed, limit: Self.limits.children,
+            count: {
+                var count: CFIndex = 0
+                let result = AXUIElementGetAttributeValueCount(node, kAXChildrenAttribute as CFString, &count)
+                return (result, count)
+            },
+            canCopy: { self.hasTime && !self.request.cancel.isCancelled },
+            copy: { requested in
+                var values: CFArray?
+                let result = AXUIElementCopyAttributeValues(node, kAXChildrenAttribute as CFString, 0, requested, &values)
+                return (result, values)
+            },
+            report: { trace in if self.stats.childrenTrace == nil { self.stats.childrenTrace = trace } })
+        #else
         AXUIElementSetMessagingTimeout(node, 0.025)
         var count: CFIndex = 0
         let result = AXUIElementGetAttributeValueCount(node, kAXChildrenAttribute as CFString, &count)
@@ -239,6 +263,7 @@ private final class MenuHelpCatalogRead {
             children.append(item as! AXUIElement)
         }
         return .value(children)
+        #endif
     }
     private func roots() -> MenuCatalogTraversal.Read<[MenuCatalogTraversal.Root<AXUIElement>]> {
         switch elements(request.bar, leafAllowed: false) {

@@ -837,9 +837,21 @@ final class MenuUsageMonitor {
     }
     private func diagnosticDeferredOutcome(_ request: MenuHelpDeferredRequest, _ outcome: MenuHelpResolutionOutcome) {
         func values(_ stats: MenuHelpTraversalStats) -> MenuCaptureDiagnostics.Values {
-            .init(durationMilliseconds: MenuCaptureDiagnostics.milliseconds(stats.duration), nodeCount: stats.nodes,
-                  childCount: stats.children, depth: stats.depth, identityCount: stats.identities,
-                  leafCount: stats.leaves, matchedCount: stats.matched)
+            var result = MenuCaptureDiagnostics.Values(
+                durationMilliseconds: MenuCaptureDiagnostics.milliseconds(stats.duration), nodeCount: stats.nodes,
+                childCount: stats.children, depth: stats.depth, identityCount: stats.identities,
+                leafCount: stats.leaves, matchedCount: stats.matched)
+            // Branch, AX error codes and counts only; fields the read did not reach stay unset.
+            if let trace = stats.childrenTrace {
+                result.childrenFailure = trace.failure
+                result.childrenCountError = trace.countErrorCode
+                result.childrenCopyError = trace.copyErrorCode
+                result.childrenReportedCount = trace.reportedCount
+                result.childrenRequestedCount = trace.requestedCount
+                result.childrenReturnedCount = trace.returnedCount
+                result.childrenInvalidIndex = trace.invalidIndex
+            }
+            return result
         }
         switch outcome {
         case .resolved(_, let stats):

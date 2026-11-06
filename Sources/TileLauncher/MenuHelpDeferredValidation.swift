@@ -9,6 +9,9 @@ import ApplicationServices
 /// window, event monitor or production instance.
 enum MenuHelpDeferredValidation {
     static func run() throws {
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        try MenuHelpChildrenReadValidation.run()
+        #endif
         func check(_ condition: Bool, _ code: Int, _ message: String) throws {
             if !condition {
                 throw NSError(domain: "TileLauncher.MenuHelpDeferred", code: code,

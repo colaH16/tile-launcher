@@ -73,6 +73,14 @@ final class MenuCaptureDiagnostics {
         var cancelReason: CancelReason? = nil
         var leafCount: Int? = nil
         var matchedCount: Int? = nil
+        // First non-success AXChildren read of a deferred Help traversal (R368).
+        var childrenFailure: MenuHelpChildrenRead.Failure? = nil
+        var childrenCountError: Int? = nil
+        var childrenCopyError: Int? = nil
+        var childrenReportedCount: Int? = nil
+        var childrenRequestedCount: Int? = nil
+        var childrenReturnedCount: Int? = nil
+        var childrenInvalidIndex: Int? = nil
     }
     private struct Line: Encodable {
         let schema = 1

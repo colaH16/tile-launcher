@@ -1,6 +1,7 @@
 #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
 import Darwin
 import Foundation
+import ApplicationServices
 
 /// Synthetic file/queue fixtures only. Does not observe apps, install a global
 /// input monitor, query AX, open a panel or acquire the production instance.
@@ -79,6 +80,24 @@ enum MenuCaptureDiagnosticsValidation {
             let elapsed = entry["elapsedMilliseconds"] as? Int ?? -1
             try check((0...600_000).contains(elapsed), "Use relative bounded time only")
         }
+
+        let childRead = try logger("child-read")
+        let copyError = Int(AXError.cannotComplete.rawValue)
+        try check(childRead.record(.deferred, .incomplete,
+                                   values: .init(childrenFailure: .copyError, childrenCopyError: copyError,
+                                                 childrenReportedCount: 3, childrenRequestedCount: 3)),
+                  "Accept a typed child-read failure")
+        try check(childRead.finish(), "Child-read metadata flushes")
+        let childRows = try lines(childRead)
+        try check(childRows.count == 2, "A failure adds one event, not one per node")
+        let childValues = childRows.last?["values"] as? [String: Any] ?? [:]
+        try check(Set(childValues.keys) == ["childrenFailure", "childrenCopyError", "childrenReportedCount", "childrenRequestedCount"],
+                  "Unreached stages and raw values must not enter the child-read record")
+        try check(childValues["childrenFailure"] as? String == "copyError"
+                  && childValues["childrenCopyError"] as? Int == copyError
+                  && childValues["childrenReportedCount"] as? Int == 3
+                  && childValues["childrenRequestedCount"] as? Int == 3,
+                  "Keep the failure enum, signed AX code and counts in their typed fields")
 
         var recordLimits = MenuCaptureDiagnostics.Limits()
         recordLimits.records = 3

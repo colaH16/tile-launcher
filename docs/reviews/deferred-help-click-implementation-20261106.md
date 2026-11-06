@@ -28,4 +28,19 @@
 - 조회는 별도 큐의 한 in-flight/최신 pending1개, 요청별1시도·기한2초·3000노드/자식100/깊이12·개별 메시지25ms 한도다. 3000은 실제 Numbers 규모의 측정값이 아닌 새 off-input 작업의 유한 상한이다. 이미 시작된 IPC 즉시 중단이나 원자적 AX snapshot은 보장하지 않는다.
 - 일치한 모든 후보의 identifier를 확인하고 대표 shortcut만 읽는다. 정상 메뉴 close·선택 후 dialog Esc/무관 입력은 확정 요청을 유지한다. 새로운 메뉴 선택·실제 앱/프로세스/설정 전환·stop·suppression은 무효화한다.
 
-실제 여러 앱의 클릭→완전 조회→저장 성공, 지연 메뉴/커스텀뷰/선택 후 앱 전환 명령은 사용자 dev 실기로 확인한다. 정식 배포는 하지 않는다. 지금은 새 공증 dev 게시 진행 중이며 공증/공개 자산 영수증은 완료 뒤 갱신한다.
+실제 여러 앱의 클릭→완전 조회→저장 성공, 지연 메뉴/커스텀뷰/선택 후 앱 전환 명령은 사용자 dev 실기로 확인한다. 정식 배포는 하지 않는다. 공증 dev 게시까지 완료했으며 아래 영수증으로 연결한다.
+
+
+## 최종 공증·dev 게시 영수증
+
+- 소스: 0f67b7d0d3139b52a74b6072e3c8a93d010df0f4, parent08ca97d7. 검증211입력과 제품 소스 일치.
+- Apple Accepted: 2c32c97e-43c5-4cfc-a40e-2fbadf378068. 원래 서명9파일의 hash/mode 동일, Contents/CodeResources 티켓만 추가. 재빌드·재서명 없이 공증 ZIP 게시.
+- ZIP: 3,166,642bytes, SHA256 d8c1c593ccb4c31aae420db044fb86d3584c0634d80a4d04ee84b2f21e8141f3.
+- dev-builds 자산: d800e048ff485bfc7c9c903a89673298cad55d0b, tile-launcher/2.1.11-79 신규10파일만 추가. 기존78/이전자산 불변.
+- tap main: 8aca31e4eeb7bb751a25e51380b80761703f376a, dev blob25ad24162ab8d1ffd77531bcc16d0dbe42b08a54. version CSV2.1.11,79/불변 URL/ZIP SHA 일치.
+- 공개3자산 인증 없는 재다운로드 hash·Info.plist/BuildID/source·서명/CloudKit profile·번들트리·stapler·Gatekeeper 확인. Homebrew audit/style/fetch 각각exit0, 실제 fetch는2.1.11,79 확인.
+- 정식 cask blob24662e5e2edbd1e5e5a2d08f7862b4005741bca1, 최신정식v2.1.10/ID427433440, 앱 원격main17f3f615 보존. 새 앱 정식 태그/릴리스는 생성하지 않았다.
+- 이 Mac 앱 설치/재시작 없음; 설치78 binaryc9ff7f20 지문 보존. 회사 Mac은 기존dev만 upgrade하면 appdir/설정 유지.
+- [공개 시험 안내](https://github.com/colaH16/homebrew-tap/blob/d800e048ff485bfc7c9c903a89673298cad55d0b/tile-launcher/2.1.11-79/diagnostic-guide.md). 정상 실행에서 수정은 켜져 있고 로그는 기본 꺼짐이다.
+
+독립 배포 감사에서도 소스 bundle/base·source/BuildID/서명·3자산·불변URL·stable 보존을 확인했고 차단 결함이 없었다. 현재는 여러 앱의 사용자 실기 결과를 기다린다. 추가 구현/인증 대기가 아니다.
