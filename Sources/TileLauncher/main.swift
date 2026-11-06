@@ -1314,6 +1314,23 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
         exit(1)
     }
 }
+// R383 synthetic caption/tile rendering; exits before the production instance.
+if let index = CommandLine.arguments.firstIndex(of: "--check-menu-tile-caption") {
+    application.setActivationPolicy(.prohibited)
+    guard CommandLine.arguments.indices.contains(index + 1) else {
+        fputs("Usage: --check-menu-tile-caption <output directory>\n", stderr)
+        exit(2)
+    }
+    do {
+        try MainActor.assumeIsolated {
+            try MenuTileCaptionValidation.verify(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+        }
+        exit(0)
+    } catch {
+        fputs("Menu tile caption check failed: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+}
 // R357 Option anchor plus the hold regressions it touches: synthetic
 // HoldMonitor events and unshown/offscreen panels; no event monitor, instance
 // lock, status item or user settings (each delegate gets its own fixture suite).

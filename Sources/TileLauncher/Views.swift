@@ -457,6 +457,24 @@ struct DeckView: View {
         }
     }
     private func optionSide(_ size: CGSize) -> CGFloat { max(0, min(size.width, size.height) / 2) }
+    /// Start-label tile pin/use-count badge (top right, or in the footer row
+    /// when the tile has an Option corner).
+    private func menuTileBadge(_ command: MenuCommand) -> some View {
+        VStack(spacing: u(3)) {
+            if command.isPinned { Image(systemName: "pin.fill") }
+            Text("\(command.totalUseCount)회")
+        }.font(.system(size: u(9)))
+    }
+    #if TILE_LAUNCHER_DIAGNOSTICS
+    /// R383 validation: the actual production menu tile with the deck
+    /// environment it is rendered in (scale, theme, tile colors).
+    func menuTileForValidation(_ command: MenuCommand, small: Bool = false) -> some View {
+        menuTile(command, small: small)
+            .environment(\.deckScale, snapshot.layout.scale)
+            .environment(\.deckTheme, settings.theme)
+            .environment(\.tileColors, settings.tileColors)
+    }
+    #endif
     private func menuTile(_ command: MenuCommand, small: Bool = false) -> some View {
         var colors = settings.tileColors
         if menuAppearance == .recentGraySquare && !command.isPinned && !snapshot.frequentMenuIDs.contains(command.id) {
@@ -467,27 +485,32 @@ struct DeckView: View {
             GeometryReader { tileGeometry in
             if startTileLabels {
                 let glyph = command.glyph
+                // R383: regular icon/resource/symbol/shortcut tiles show the saved
+                // parent path above the name; text and small tiles are unchanged.
+                let parentPath = small || glyph == .text ? nil : MenuTileCaption.parentPath(of: command.path)
+                let glyphReserve = small ? u(12) : MenuTileCaption.glyphReserve(hasParentPath: parentPath != nil,
+                                                                                 scale: snapshot.layout.scale)
                 ZStack(alignment: .bottomLeading) {
                     switch glyph {
                     case .resource(let icon):
                         if icon.kind == .symbol {
                             Image(systemName: icon.resourceName).font(.system(size: u(small ? 26 : 44), weight: .light))
-                                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, glyphReserve)
                                 .padding(.trailing, command.optionAction == nil ? 0 : optionSide(tileGeometry.size))
                         } else if let image = SavedMenuImages.image(icon) {
                             Image(nsImage: image).resizable().scaledToFit()
                                 .frame(width: u(small ? 26 : 44), height: u(small ? 26 : 44))
-                                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, glyphReserve)
                                 .padding(.trailing, command.optionAction == nil ? 0 : optionSide(tileGeometry.size))
                         }
                     case .symbol(let symbol):
                         Image(systemName: symbol).font(.system(size: u(small ? 26 : 44), weight: .light))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, glyphReserve)
                                 .padding(.trailing, command.optionAction == nil ? 0 : optionSide(tileGeometry.size))
                     case .shortcut(let keys):
                         Text(keys).font(.system(size: u(small ? 18 : 34), weight: .medium, design: .rounded))
                             .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, u(small ? 4 : 12))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, u(small ? 12 : 22))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.bottom, glyphReserve)
                                 .padding(.trailing, command.optionAction == nil ? 0 : optionSide(tileGeometry.size))
                     case .text:
                         // Windows 8 text-only tile: the name itself is the large
@@ -498,17 +521,32 @@ struct DeckView: View {
                             .padding(.horizontal, u(small ? 3 : 8)).padding(.top, u(small ? 3 : 8))
                             .padding(.trailing, command.optionAction == nil ? u(small ? 10 : 28) : optionSide(tileGeometry.size)).padding(.bottom, u(small ? 12 : 22))
                     }
-                    Text(glyph == .text ? command.path.dropLast().joined(separator: " › ") : command.title)
-                        .font(.system(size: u(small ? 8 : 12), weight: .medium)).lineLimit(1)
-                        .foregroundStyle(glyph == .text ? HierarchicalShapeStyle.secondary : .primary)
-                        .padding(u(small ? 3 : 8))
+                    if small || glyph == .text {
+                        // Unchanged footer for text and small tiles.
+                        Text(glyph == .text ? command.path.dropLast().joined(separator: " › ") : command.title)
+                            .font(.system(size: u(small ? 8 : 12), weight: .medium)).lineLimit(1)
+                            .foregroundStyle(glyph == .text ? HierarchicalShapeStyle.secondary : .primary)
+                            .padding(u(small ? 3 : 8))
+                    } else {
+                        // With an Option corner the pin/count badge sits at the bottom
+                        // right; it shares this row so the caption truncates before it.
+                        HStack(alignment: .bottom, spacing: 0) {
+                            MenuTileCaption(title: command.title, parentPath: parentPath, scale: snapshot.layout.scale)
+                                .padding(u(MenuTileCaption.Metrics.inset))
+                            Spacer(minLength: 0)
+                            if command.optionAction != nil {
+                                menuTileBadge(command).padding(u(8)).fixedSize()
+                            }
+                        }
+                    }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .overlay(alignment: .topTrailing) {
-                        VStack(spacing: u(3)) {
-                            if command.isPinned { Image(systemName: "pin.fill") }
-                            Text("\(command.totalUseCount)회")
-                        }.font(.system(size: u(9))).padding(u(8))
-                            .frame(maxHeight: .infinity, alignment: command.optionAction == nil ? .top : .bottom)
+                        // Text/small tiles keep the old top/bottom badge; regular tiles
+                        // with an Option corner draw it in their footer row instead.
+                        if small || glyph == .text || command.optionAction == nil {
+                            menuTileBadge(command).padding(u(8))
+                                .frame(maxHeight: .infinity, alignment: command.optionAction == nil ? .top : .bottom)
+                        }
                     }
             } else {
             VStack(alignment: .leading, spacing: u(2)) {
