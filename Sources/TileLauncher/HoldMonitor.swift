@@ -2,19 +2,24 @@ import AppKit
 import DeckCore
 
 final class HoldMonitor {
-    var onShow: (() -> Void)?
+    /// Show/prepare/quick-reopen receive the cursor anchor sampled when this
+    /// gesture's first valid Option press was detected, never a later position.
+    var onShow: ((CGPoint) -> Void)?
     var onHide: ((OverlayDismissal, TimeInterval) -> Void)?
-    var onQuickReopen: ((TimeInterval) -> Bool)?
+    var onQuickReopen: ((TimeInterval, CGPoint) -> Bool)?
     var onReopenCancelled: (() -> Void)?
     var onCancel: (() -> Void)?
     var onRelease: (() -> Void)?
     var onShortcut: ((OverlayShortcut) -> Void)?
     /// Start building the overlay while the hold timer runs; abandon it if no overlay follows.
-    var onPrepare: (() -> Void)?
+    var onPrepare: ((CGPoint) -> Void)?
     var onAbandon: (() -> Void)?
     var ownsKeyboard: (() -> Bool)?
     var canTriggerHold: (() -> Bool)?
     var hasPressedMouseButtons: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
+    /// AppKit global coordinates, read when the press is handled (detection
+    /// time; not a hardware-timestamp sample). Injectable for native checks.
+    var cursorLocation: () -> CGPoint = { NSEvent.mouseLocation }
     var isShowing = false
     private var gesture = HoldGesture()
     private var timer: DispatchWorkItem?
@@ -93,9 +98,14 @@ final class HoldMonitor {
         case .none: break
         case .arm:
             guard canTriggerHold?() != false else { return }
+            // Once per gesture, before any other work. The deferred prepare/show
+            // capture this constant; nothing shared can leak into a later press.
+            let anchor = cursorLocation()
+            // Every arm/cancel/release/stop cancels the previous work item before
+            // it runs, so a stale gesture can never show; prepare also checks identity.
             timer?.cancel()
             timer = nil
-            if !hasPressedMouseButtons(), onQuickReopen?(time) == true {
+            if !hasPressedMouseButtons(), onQuickReopen?(time, anchor) == true {
                 triggered = true
                 return
             }
@@ -103,14 +113,14 @@ final class HoldMonitor {
                 guard let self, self.optionDown, self.canTriggerHold?() != false,
                       !self.hasPressedMouseButtons() else { self?.onAbandon?(); return }
                 self.triggered = true
-                self.onShow?()
+                self.onShow?(anchor)
             }
             timer = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
             // After this event is handled, so the monitor callback stays short.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.timer === work, !work.isCancelled, !self.isShowing else { return }
-                self.onPrepare?()
+                self.onPrepare?(anchor)
             }
         case .cancel:
             onCancel?()

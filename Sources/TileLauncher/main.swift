@@ -97,12 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             self.scheduleOverlayRefresh()
         }
-        hold.onShow = { [weak self] in self?.show(held: true) }
-        hold.onPrepare = { [weak self] in
+        hold.onShow = { [weak self] anchor in self?.show(held: true, anchor: anchor) }
+        hold.onPrepare = { [weak self] anchor in
             // Begin a background Dock read during the hold wait. Slow reads are
             // shared with visible monitoring instead of queued again at show.
             self?.dockHandoff.refresh()
-            self?.prepareOverlay()
+            self?.prepareOverlay(anchor: anchor)
         }
         dockHandoff.onChange = { [weak self] _ in
             guard let self, self.panel?.isVisible == true else { return }
@@ -122,9 +122,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.dockHandoff.stopMonitoring()
             }
         }
-        hold.onQuickReopen = { [weak self] time in
+        hold.onQuickReopen = { [weak self] time, anchor in
             guard let self, let layout = self.optionReopen.take(at: time, enabled: self.settings.optionReopen.enabled) else { return false }
-            self.show(held: true, restoring: layout)
+            // The saved layout wins; the anchor is only for its fresh fallback.
+            self.show(held: true, restoring: layout, anchor: anchor)
             return true
         }
         hold.onReopenCancelled = { [weak self] in self?.optionReopen.cancel() }
@@ -394,12 +395,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// and shared presentation state is not touched until `show`.
     /// Keep this preload (R185/R191, user decision): data that changes during the
     /// hold is refreshed in `takePreparedOverlay`, not a reason to remove it.
-    private func prepareOverlay() {
+    private func prepareOverlay(anchor: CGPoint) {
         guard panel?.isVisible != true, prepared == nil else { return }
         // No permission check here: a trust change restarts the hold monitor.
         // `show` checks it and rejects this overlay if trust changed meanwhile.
         updateApps()
-        prepared = buildOverlay(restoring: nil, reportErrors: false)
+        prepared = buildOverlay(restoring: nil, anchor: anchor, reportErrors: false)
     }
     private func discardPreparedOverlay() {
         prepared?.panel.contentView = nil
@@ -409,7 +410,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Only the Option hold (and its quick reopen) closes on release; every other
     /// invocation — status item, menu, --show, Finder/Dock or instance reopen —
     /// opens pinned, and pins/raises an overlay that is already visible.
-    private func show(held: Bool, restoring previousLayout: PanelLayout? = nil) {
+    /// `anchor` is the Option gesture's detection-time cursor; manual calls pass
+    /// nil and use the cursor at the call.
+    private func show(held: Bool, restoring previousLayout: PanelLayout? = nil, anchor: CGPoint? = nil) {
         if MainActor.assumeIsolated({ settingsSync?.presentAccountChangeIfNeeded() == true }) { return }
         guard panel?.isVisible != true else {
             if !held { pinOverlay() }
@@ -418,11 +421,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         optionReopen.cancel()
         checkPermission()
         updateApps()
-        let ready = previousLayout == nil ? takePreparedOverlay() : nil
+        let ready = previousLayout == nil ? takePreparedOverlay(anchor: anchor) : nil
         discardPreparedOverlay()
         let overlay: PreparedOverlay
         if let ready { overlay = ready } else {
-            guard let built = buildOverlay(restoring: previousLayout) else { return }
+            guard let built = buildOverlay(restoring: previousLayout, anchor: anchor) else { return }
             overlay = built
         }
         present(overlay, held: held)
@@ -430,11 +433,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // so activating the launcher cannot replace it.
         if !held { pinOverlay() }
     }
-    /// The prepared overlay if it still matches the cursor's screen, profile,
-    /// permission and size; it is moved to the current cursor position.
-    private func takePreparedOverlay() -> PreparedOverlay? {
+    /// The prepared overlay if it still matches the anchor's (or current cursor's)
+    /// screen, profile, permission and size; it is moved to that point.
+    private func takePreparedOverlay(anchor: CGPoint?) -> PreparedOverlay? {
         guard let ready = prepared, trusted == ready.trusted, settings.activeProfile.id == ready.profileID else { return nil }
-        let point = NSEvent.mouseLocation
+        let point = anchor ?? NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main,
               screen.visibleFrame == ready.screenFrame else { return nil }
         // Windows/app/menus may have changed during the hold. Update the prepared
@@ -458,8 +461,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         prepared = nil
         return ready
     }
-    private func buildOverlay(restoring previousLayout: PanelLayout?, reportErrors: Bool = true) -> PreparedOverlay? {
-        let point = NSEvent.mouseLocation
+    private func buildOverlay(restoring previousLayout: PanelLayout?, anchor: CGPoint? = nil,
+                              reportErrors: Bool = true) -> PreparedOverlay? {
+        let point = anchor ?? NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
             ?? NSScreen.main else { return nil }
         var layout: PanelLayout
@@ -791,6 +795,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         try check(!window.isVisible && !presentation.isPinned, "Explicit close did not dismiss/reset the overlay")
         print("Status item/manual show: right/left and control-click routing; status, menu Open and manual show pin an existing manual/held panel, Option hold invocation stays unpinned, profile redisplay keeps the pin; reuse, queued selection cancellation and explicit close passed without Option input.")
     }
+    /// R357: the prepared overlay and the rebuild fallback place one anchor
+    /// identically, and taking the preload for that anchor keeps it. Uses a real
+    /// screen's geometry but never orders a panel in.
+    func verifyOptionAnchorPlacementForPreview() throws {
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { throw NSError(domain: "TileLauncher.HoldAnchor", code: 20,
+                                          userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        guard let screen = NSScreen.screens.first else { print("Option anchor placement: skipped, no screen."); return }
+        let visible = screen.visibleFrame
+        let anchors = [CGPoint(x: visible.midX, y: visible.midY), CGPoint(x: visible.minX + 8, y: visible.maxY - 8)]
+        guard PanelLayout.calculate(visibleFrame: visible, cursor: anchors[0], scale: PanelLayout.preferredScale).supported else {
+            print("Option anchor placement: skipped, screen below the supported panel size.")
+            return
+        }
+        defer { discardPreparedOverlay() }
+        for (index, anchor) in anchors.enumerated() {
+            discardPreparedOverlay()
+            prepareOverlay(anchor: anchor)
+            guard let ready = prepared else { throw NSError(domain: "TileLauncher.HoldAnchor", code: 21) }
+            let layout = ready.content.snapshot.layout
+            guard let rebuilt = buildOverlay(restoring: nil, anchor: anchor, reportErrors: false) else {
+                throw NSError(domain: "TileLauncher.HoldAnchor", code: 22)
+            }
+            rebuilt.panel.contentView = nil
+            try check(rebuilt.content.snapshot.layout == layout, "Prepared and rebuilt overlays placed anchor \(index) differently")
+            try check(visible.contains(layout.frame), "Anchor \(index) placed the overlay outside the visible frame")
+            if index == 0 {
+                try check(abs(layout.frame.midX - anchor.x) < 0.001 && abs(layout.frame.midY - anchor.y) < 0.001,
+                          "A centered anchor is not the panel center")
+            }
+            guard let taken = takePreparedOverlay(anchor: anchor) else {
+                throw NSError(domain: "TileLauncher.HoldAnchor", code: 23)
+            }
+            taken.panel.contentView = nil
+            try check(taken.panel === ready.panel && taken.content.snapshot.layout == layout && prepared == nil,
+                      "Taking the preload for its own anchor moved or rebuilt it")
+        }
+        print("Option anchor placement: prepared, rebuilt and taken overlays agree for centered and edge anchors without showing a panel.")
+    }
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
     func verifyClickExecutionForPreview() throws {
         hold.canTriggerHold = { false }
@@ -907,7 +951,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // the 0.25 s show timer. Manual: the overlay is already visible.
                 hold.isShowing = !held
                 hold.canTriggerHold = { held }
-                hold.onQuickReopen = { _ in held }
+                hold.onQuickReopen = { _, _ in held }
                 time += 1
                 let press = try flags(.option, time)
                 _ = hold.handle(press, external: false)
@@ -1270,6 +1314,30 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
         exit(1)
     }
 }
+// R357 Option anchor plus the hold regressions it touches: synthetic
+// HoldMonitor events and unshown/offscreen panels; no event monitor, instance
+// lock, status item or user settings (each delegate gets its own fixture suite).
+if CommandLine.arguments.contains("--check-option-hold-anchor") {
+    application.setActivationPolicy(.prohibited)
+    do {
+        try MainActor.assumeIsolated {
+            func delegate(_ fixture: PreviewFixture) -> AppDelegate {
+                AppDelegate(build: AppBuild(version: "preview", build: "1", fingerprint: "preview"), settings: fixture.settings)
+            }
+            try HoldAnchorValidation.verify()
+            try PreviewExport.verifyQuickOptionReopen()
+            for check in [{ try $0.verifyOptionHoldDismissalForPreview() }, { try $0.verifyStatusItemPinningForPreview() },
+                          { try $0.verifyOptionAnchorPlacementForPreview() }] as [(AppDelegate) throws -> Void] {
+                let fixture = PreviewFixture(theme: .classic)
+                try withExtendedLifetime(fixture) { try check(delegate(fixture)) }
+            }
+        }
+        exit(0)
+    } catch {
+        fputs("Option hold anchor check failed: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+}
 // R183 glass comparison: synthetic panels only, bypasses the production instance.
 if let index = CommandLine.arguments.firstIndex(of: "--check-menu-icons"), CommandLine.arguments.indices.contains(index + 1) {
     application.setActivationPolicy(.prohibited)
@@ -1330,6 +1398,27 @@ if let index = CommandLine.arguments.firstIndex(of: "--diagnose-window-inventory
     DispatchQueue.main.asyncAfter(deadline: .now() + 10) { fputs("Inventory diagnostic timeout.\n", stderr); exit(3) }
     withExtendedLifetime(probe) { application.run() }
     exit(0)
+}
+#endif
+#if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+// R358 menu capture diagnostics check, compiled only with its own flag. Runs
+// before the instance lock, monitors, status item and user settings; a missing
+// path exits instead of falling through to the production app.
+if let index = CommandLine.arguments.firstIndex(of: "--check-menu-capture-diagnostics") {
+    application.setActivationPolicy(.prohibited)
+    guard CommandLine.arguments.indices.contains(index + 1) else {
+        fputs("Usage: --check-menu-capture-diagnostics <output directory>\n", stderr)
+        exit(2)
+    }
+    do {
+        try MainActor.assumeIsolated {
+            try MenuCaptureDiagnosticsValidation.verify(to: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+        }
+        exit(0)
+    } catch {
+        fputs("Menu capture diagnostics check failed: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
 }
 #endif
 let instanceLock: InstanceLock

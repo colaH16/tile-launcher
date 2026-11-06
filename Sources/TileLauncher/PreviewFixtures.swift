@@ -1411,7 +1411,8 @@ enum PreviewExport {
         print("SettingsNavigation: General, Registered/Profile, current-app menu addition and repeated requests passed.")
     }
 
-    @MainActor private static func verifyQuickOptionReopen() throws {
+    /// Also run directly by `--check-option-hold-anchor`.
+    @MainActor static func verifyQuickOptionReopen() throws {
         // Synthetic NSEvents are passed directly to the production adapter.
         // No event monitor, OS input injection or visible panel is installed.
         let monitor = HoldMonitor()
@@ -1422,7 +1423,7 @@ enum PreviewExport {
         monitor.canTriggerHold = { true }
         monitor.hasPressedMouseButtons = { false }
         monitor.onReopenCancelled = { memory.cancel() }
-        monitor.onShow = { ordinary += 1; monitor.isShowing = true }
+        monitor.onShow = { _ in ordinary += 1; monitor.isShowing = true }
         monitor.onHide = { reason, time in
             memory.record(frame, at: time, reason: reason, held: monitor.isShowing, actionPending: actionPending)
             monitor.isShowing = false
@@ -1430,7 +1431,7 @@ enum PreviewExport {
         monitor.onRelease = {
             if actionPending { executions += 1; actionPending = false }
         }
-        monitor.onQuickReopen = { time in
+        monitor.onQuickReopen = { time, _ in
             guard memory.take(at: time) == frame else { return false }
             quick += 1; monitor.isShowing = true
             return true

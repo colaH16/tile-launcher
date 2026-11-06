@@ -73,6 +73,9 @@ public enum MenuCapturePolicy {
     }
     /// Resolve a Help result only when its label identifies one real menu path.
     public static func resolveHelp(title: String, choices: [CapturedMenu]) -> CapturedMenu? {
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        return resolveHelp(title: title, choices: choices, diagnostic: nil)
+        #else
         let candidates = choices.filter { !isAppleMenuPath($0.identity.path) }
         // A literal title may itself contain >. If it collides with a displayed
         // breadcrumb, neither interpretation is safe without more evidence.
@@ -92,7 +95,41 @@ public enum MenuCapturePolicy {
                             shortcut: match.shortcut, commandModifier: match.commandModifier,
                             modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true,
                             axIdentifier: match.axIdentifier, optionAction: match.optionAction)
+        #endif
     }
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    public struct HelpResolutionDiagnostic {
+        public let candidateCount: Int
+        public let identityCount: Int
+        /// nil when the original short-circuit would not inspect identifiers.
+        public let identifierCount: Int?
+    }
+    public static func resolveHelp(title: String, choices: [CapturedMenu],
+                                   diagnostic: ((HelpResolutionDiagnostic) -> Void)?) -> CapturedMenu? {
+        let candidates = choices.filter { !isAppleMenuPath($0.identity.path) }
+        let exact = candidates.filter { normalize($0.identity.path.last ?? "") == normalize(title) }
+        let components = title.components(separatedBy: " > ").map(normalize)
+        var matches = exact
+        if components.count > 1, components.allSatisfy({ !$0.isEmpty }) {
+            matches += candidates.filter {
+                $0.identity.path.count >= components.count
+                    && Array($0.identity.path.suffix(components.count)).map(normalize) == components
+            }
+        }
+        let unique = Dictionary(grouping: matches, by: \.identity)
+        guard unique.count == 1, let group = unique.values.first, let match = group.first else {
+            diagnostic?(.init(candidateCount: matches.count, identityCount: unique.count, identifierCount: nil))
+            return nil
+        }
+        let identifiers = Set(group.map(\.axIdentifier))
+        diagnostic?(.init(candidateCount: matches.count, identityCount: unique.count, identifierCount: identifiers.count))
+        guard identifiers.count == 1 else { return nil }
+        return CapturedMenu(appID: match.identity.appID, appName: match.appName, path: match.identity.path,
+                            shortcut: match.shortcut, commandModifier: match.commandModifier,
+                            modifiers: match.modifiers, shortcutKnown: match.shortcutKnown, fromHelpSearch: true,
+                            axIdentifier: match.axIdentifier, optionAction: match.optionAction)
+    }
+    #endif
 }
 
 /// Notifications can describe highlighting. A physical release/Return must arm
@@ -105,11 +142,34 @@ public struct MenuCaptureGate {
     public mutating func cancel() { armedAt = nil; consumed = false }
     public mutating func take(_ menu: CapturedMenu, matchedUserSelection: Bool,
                               time: TimeInterval, preferences: MenuCapturePreferences) -> CapturedMenu? {
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        return take(menu, matchedUserSelection: matchedUserSelection, time: time,
+                    preferences: preferences, diagnostic: nil)
+        #else
         guard let armedAt, !consumed, time >= armedAt, time - armedAt <= 0.8,
               matchedUserSelection, MenuCapturePolicy.allows(menu, preferences: preferences) else { return nil }
         consumed = true
         return menu
+        #endif
     }
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    public enum DiagnosticOutcome {
+        case accepted, unarmed, consumed, beforeArm, expired, unmatched, policyRejected
+    }
+    public mutating func take(_ menu: CapturedMenu, matchedUserSelection: Bool,
+                              time: TimeInterval, preferences: MenuCapturePreferences,
+                              diagnostic: ((DiagnosticOutcome) -> Void)?) -> CapturedMenu? {
+        guard let armedAt else { diagnostic?(.unarmed); return nil }
+        guard !consumed else { diagnostic?(.consumed); return nil }
+        guard time >= armedAt else { diagnostic?(.beforeArm); return nil }
+        guard time - armedAt <= 0.8 else { diagnostic?(.expired); return nil }
+        guard matchedUserSelection else { diagnostic?(.unmatched); return nil }
+        guard MenuCapturePolicy.allows(menu, preferences: preferences) else { diagnostic?(.policyRejected); return nil }
+        consumed = true
+        diagnostic?(.accepted)
+        return menu
+    }
+    #endif
 }
 
 public enum MenuCaptureKeyDecision: Equatable {

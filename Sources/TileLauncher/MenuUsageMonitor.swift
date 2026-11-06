@@ -35,6 +35,70 @@ final class MenuUsageMonitor {
     private var suppressedMenus: Set<MenuIdentity> = []
     private var closedAt: TimeInterval?
     private enum Action { case mouse(CGPoint, TimeInterval), keyboard(TimeInterval) }
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    private let diagnostics = MenuCaptureDiagnostics.makeIfRequested()
+    private var diagnosticHelpSession: UInt64 = 0
+    private var diagnosticRecentHelpUntil: TimeInterval = 0
+    private var diagnosticOrigin: MenuCaptureDiagnostics.Stamp?
+    private var diagnosticActionOrigin: MenuCaptureDiagnostics.Stamp?
+    private var diagnosticInput: MenuCaptureDiagnostics.Input = .none
+    private var diagnosticCatalogComplete: Bool?
+    private var diagnosticContext: MenuCaptureDiagnostics.Context {
+        .init(generation: lifecycle.generation, helpSession: diagnosticHelpSession)
+    }
+    private var diagnosticRelevant: Bool {
+        diagnostics != nil && (menuSession || helpSession || down != nil || !openedMenus.isEmpty
+            || ProcessInfo.processInfo.systemUptime <= diagnosticRecentHelpUntil)
+    }
+    private func diagnosticNoteHelp(newSession: Bool = false) {
+        guard let diagnostics else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if newSession || now > diagnosticRecentHelpUntil { diagnosticHelpSession &+= 1 }
+        // Keep a short provenance window after close/reset to explain a queued
+        // click rejected before any AX query. Ordinary app clicks are not traced.
+        diagnosticRecentHelpUntil = now + 5
+        diagnostics.updateContext(diagnosticContext)
+    }
+    private func diagnosticLog(_ stage: MenuCaptureDiagnostics.Stage, _ outcome: MenuCaptureDiagnostics.Outcome,
+                               values original: MenuCaptureDiagnostics.Values = .init(), force: Bool = false) {
+        guard let diagnostics, force || diagnosticRelevant else { return }
+        var values = original
+        if values.input == nil { values.input = diagnosticInput }
+        values.menuActive = menuSession
+        values.helpActive = helpSession
+        let origin = diagnosticOrigin ?? diagnosticActionOrigin
+        if let origin {
+            values.generationChanged = origin.context.generation != lifecycle.generation
+            values.helpSessionChanged = origin.context.helpSession != diagnosticHelpSession
+        }
+        diagnostics.updateContext(diagnosticContext)
+        diagnostics.record(stage, outcome, context: diagnosticContext, origin: origin, values: values)
+    }
+    private func diagnosticConfigure(_ reader: MenuAXReader) {
+        guard diagnostics != nil else { return }
+        reader.diagnosticEnabled = true
+        reader.diagnosticRow = { [weak self] trace in
+            guard let self else { return }
+            if trace.helpOwned { self.diagnosticNoteHelp() }
+            self.diagnosticLog(.helpRow, trace.failure == .none ? .rowAccepted : .rowRejected,
+                               values: .init(cellCount: trace.cellCount, labelCount: trace.labelCount,
+                                             rowFailure: trace.failure))
+        }
+    }
+    private static func diagnosticRole(_ role: String?) -> MenuCaptureDiagnostics.Role {
+        switch role {
+        case nil: return .unknown
+        case kAXMenuItemRole: return .menuItem
+        case kAXMenuBarItemRole: return .menuBarItem
+        case kAXMenuRole: return .menu
+        case kAXRowRole: return .row
+        case kAXCellRole: return .cell
+        case kAXStaticTextRole: return .staticText
+        case kAXImageRole: return .image
+        default: return .other
+        }
+    }
+    #endif
 
     init(settings: SettingsStore) { self.settings = settings }
     func start() {
@@ -99,23 +163,63 @@ final class MenuUsageMonitor {
         let repeatKey = type == .keyDown && event.isARepeat
         let point = event.cgEvent?.location
         let inMenuBar = type != .keyDown && point.map { MenuBarRegion.contains($0, bands: Self.menuBarBands()) } == true
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        // Do not log typing/search characters or even a per-character event trail.
+        let diagnosticRelevantInput = type != .keyDown || [UInt16(36), 76, 53].contains(key) || modified
+        let diagnosticStamp = diagnosticRelevantInput ? diagnostics?.stamp() : nil
+        #endif
         queue.async { [weak self] in
-            guard let self, self.app?.pid == target.pid, self.bar != nil,
-                  ProcessInfo.processInfo.systemUptime - time < 1 else { return }
+            guard let self else { return }
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            let previousOrigin = self.diagnosticOrigin, previousInput = self.diagnosticInput
+            self.diagnosticOrigin = diagnosticStamp
+            self.diagnosticInput = type == .leftMouseDown ? .mouseDown : type == .leftMouseUp ? .mouseUp : .none
+            defer { self.diagnosticOrigin = previousOrigin; self.diagnosticInput = previousInput }
+            #endif
+            guard self.app?.pid == target.pid, self.bar != nil,
+                  ProcessInfo.processInfo.systemUptime - time < 1 else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                if diagnosticRelevantInput {
+                    let reason: MenuCaptureDiagnostics.Outcome = self.app?.pid != target.pid ? .staleTarget
+                        : self.bar == nil ? .noMenuBar : .staleInput
+                    self.diagnosticLog(.input, reason, values: .init(ageMilliseconds:
+                        MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - time)))
+                }
+                #endif
+                return
+            }
             if type == .keyDown {
                 let wasMenu = self.menuSession || self.closedAt.map { time <= $0 && $0 - time < 0.3 } == true
                 switch MenuCaptureKeyDecision.resolve(keyCode: key, shortcutModifier: modified,
                                                        repeating: repeatKey, menuWasOpen: wasMenu) {
                 case .cancel:
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    self.diagnosticInput = .cancel
+                    self.diagnosticLog(.input, .observed)
+                    #endif
                     self.resetInteraction()
                 case .confirm:
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    self.diagnosticInput = .confirm
+                    self.diagnosticLog(.input, .accepted, values: .init(ageMilliseconds:
+                        MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - time)))
+                    #endif
                     // Only Return/keypad Enter confirms a menu; typing/search terms are never read.
                     let reader = MenuAXReader(app: target, budget: 0.18)
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    self.diagnosticConfigure(reader)
+                    #endif
                     let focused = reader.focusedMenuItem()
                     let hit = focused.flatMap { self.hit($0, reader: reader) }
                         ?? self.selectedHit(reader: reader) ?? self.highlighted
                     self.gate.arm(time: time); self.action = .keyboard(time)
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    self.diagnosticActionOrigin = self.diagnosticOrigin
+                    #endif
                     if let hit { self.commit(hit, time: time) }
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    if hit == nil { self.diagnosticLog(.hit, .noCandidate, values: reader.diagnosticValues) }
+                    #endif
                     self.menuSession = false; self.highlighted = nil
                 case .clearHighlight:
                     // A navigation/search key invalidates the old highlight until
@@ -124,24 +228,52 @@ final class MenuUsageMonitor {
                 }
                 return
             }
-            guard let point else { return }
+            guard let point else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticLog(.input, .noPoint)
+                #endif
+                return
+            }
             // Most clicks are not on a menu. Skip the AX hit test (which the
             // clicked app must answer) unless a menu can be involved.
             guard inMenuBar || self.menuSession || self.down != nil || !self.openedMenus.isEmpty else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticLog(.input, .unrelated, values: .init(ageMilliseconds:
+                    MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - time)))
+                #endif
                 self.resetInteraction()
                 return
             }
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            self.diagnosticLog(.input, .accepted, values: .init(ageMilliseconds:
+                MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - time)))
+            #endif
             let reader = MenuAXReader(app: target, budget: 0.18)
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            self.diagnosticConfigure(reader)
+            #endif
             let element = reader.element(at: point)
             let role = element.flatMap { reader.value($0, kAXRoleAttribute) as? String }
             let menuRole = role == kAXMenuItemRole || role == kAXMenuBarItemRole || role == kAXMenuRole
             let hit = element.flatMap { self.hit($0, reader: reader) }
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            var readValues = reader.diagnosticValues
+            readValues.role = Self.diagnosticRole(role)
+            readValues.freshHit = hit != nil
+            self.diagnosticLog(.hit, hit == nil ? .absent : .observed, values: readValues)
+            #endif
             guard menuRole || hit?.isHelpResult == true || self.menuSession || self.down != nil else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticLog(.hit, .unsupportedHit)
+                #endif
                 self.resetInteraction()
                 return
             }
             if type == .leftMouseDown {
                 self.gate.cancel(); self.action = nil
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticActionOrigin = nil
+                #endif
                 self.down = hit
                 let path = element.flatMap { reader.menuPath($0) }
                 if path.map(MenuCapturePolicy.isAppleMenuPath) == true { self.resetInteraction(); return }
@@ -149,12 +281,24 @@ final class MenuUsageMonitor {
                     self.menuSession = true
                     self.closedAt = nil
                     if let first = path?.first { self.helpSession = MenuAXReader.isHelp(first) }
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    if self.helpSession { self.diagnosticNoteHelp() }
+                    self.diagnosticLog(.menuState, .opened)
+                    #endif
                 } else {
                     self.resetInteraction()
                 }
             } else {
                 self.gate.arm(time: time); self.action = .mouse(point, time)
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticActionOrigin = self.diagnosticOrigin
+                #endif
                 let candidate = hit ?? self.down ?? self.highlighted
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticLog(.hit, candidate == nil ? .noCandidate : .observed,
+                                   values: .init(hadDown: self.down != nil, hadHighlight: self.highlighted != nil,
+                                                 freshHit: hit != nil))
+                #endif
                 if let candidate { self.commit(candidate, time: time) }
                 self.down = nil
                 // Keep a just-opened top-level menu session; clear after choosing a leaf.
@@ -171,6 +315,9 @@ final class MenuUsageMonitor {
         tearDown()
         app = target
         let generation = lifecycle.begin(process)
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnostics?.updateContext(diagnosticContext)
+        #endif
         guard let target, process != nil else { return }
         connect(target, generation: generation)
     }
@@ -223,15 +370,25 @@ final class MenuUsageMonitor {
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success, pid == app.pid else { return }
         let reader = MenuAXReader(app: app, budget: 0.2)
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticConfigure(reader)
+        #endif
         if name == kAXMenuOpenedNotification {
             guard let path = reader.menuPath(element), !MenuCapturePolicy.isAppleMenuPath(path) else { resetInteraction(); return }
             if highlighted?.menu.identity.path.first != path.first { highlighted = nil }
             menuSession = true
             closedAt = nil
             helpSession = path.first.map(MenuAXReader.isHelp) == true
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            if helpSession { diagnosticNoteHelp(newSession: path.count == 1) }
+            diagnosticLog(.menuState, .opened)
+            #endif
             if !openedMenus.contains(where: { CFEqual($0, element) }), openedMenus.count < 32 { openedMenus.append(element) }
             subscribe(element)
             helpCache = nil
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticCatalogComplete = nil
+            #endif
             discoverOptions(element, app: app)
             // Some apps emit AXMenuOpened just before the primary links update.
             let process = lifecycle.process
@@ -240,6 +397,9 @@ final class MenuUsageMonitor {
                 self.discoverOptions(element, app: app)
             }
         } else if name == kAXMenuClosedNotification {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticLog(.menuState, .closed)
+            #endif
             openedMenus.removeAll { CFEqual($0, element) }
             if let observer, reader.value(element, kAXRoleAttribute) as? String == kAXMenuRole {
                 let closedSubscriptions = subscriptions.filter { CFEqual($0.0, element) }
@@ -276,29 +436,115 @@ final class MenuUsageMonitor {
     private func hit(_ element: AXUIElement, reader: MenuAXReader) -> MenuHit? {
         guard let app, let bar, var hit = reader.hit(element, allowHelp: helpSession) else { return nil }
         if hit.isHelpResult {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticNoteHelp()
+            #endif
             if helpCache == nil {
                 let catalog = MenuAXReader(app: app, budget: 0.35)
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                diagnosticConfigure(catalog)
+                let entries = catalog.catalog(bar)
+                helpCache = entries ?? []
+                diagnosticCatalogComplete = entries != nil
+                var values = catalog.diagnosticValues
+                values.count = helpCache?.count
+                values.cachePresent = false
+                values.catalogComplete = entries != nil
+                diagnosticLog(.catalog, entries == nil ? .incomplete : .complete, values: values)
+                #else
                 helpCache = catalog.catalog(bar) ?? []
+                #endif
+            } else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                diagnosticLog(.catalog, .cacheHit, values: .init(count: helpCache?.count,
+                                                               cachePresent: true,
+                                                               catalogComplete: diagnosticCatalogComplete))
+                #endif
             }
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            var values = MenuCaptureDiagnostics.Values()
+            let resolved = MenuCapturePolicy.resolveHelp(title: hit.menu.identity.path.last ?? "", choices: helpCache ?? [],
+                                                          diagnostic: diagnostics == nil ? nil : { trace in
+                values.candidateCount = trace.candidateCount
+                values.identityCount = trace.identityCount
+                values.identifierCount = trace.identifierCount
+            })
+            diagnosticLog(.resolution, resolved == nil ? .unresolved : .resolved, values: values)
+            guard let resolved else { return nil }
+            #else
             guard let resolved = MenuCapturePolicy.resolveHelp(title: hit.menu.identity.path.last ?? "", choices: helpCache ?? []) else { return nil }
+            #endif
             hit = MenuHit(menu: resolved, frame: hit.frame, isHelpResult: true)
         }
         let normalized = MenuOptionDiscovery.shared.normalized(hit.menu, app: app)
         return MenuHit(menu: normalized, frame: hit.frame, isHelpResult: hit.isHelpResult)
     }
     private func commit(_ hit: MenuHit, time: TimeInterval) {
-        if suppressedMenus.contains(hit.menu.identity), time < suppressedUntil { return }
+        if suppressedMenus.contains(hit.menu.identity), time < suppressedUntil {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticLog(.gate, .suppressed)
+            #endif
+            return
+        }
         let matched: Bool
         switch action {
         case .mouse(let point, let when): matched = time - when <= 0.8 && hit.frame?.contains(point) == true
         case .keyboard(let when): matched = time - when <= 0.8
         case nil: matched = false
         }
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        var matchValues = MenuCaptureDiagnostics.Values()
+        if case .some(.mouse(let point, let when)) = action {
+            // Use only the point/frame already used above. Neither is logged.
+            matchValues.frameContains = hit.frame?.contains(point) == true
+            matchValues.ageMilliseconds = MenuCaptureDiagnostics.milliseconds(time - when)
+        }
+        var decision: MenuCaptureGate.DiagnosticOutcome?
+        let taken = gate.take(hit.menu, matchedUserSelection: matched, time: time, preferences: preferences,
+                              diagnostic: diagnostics == nil ? nil : { decision = $0 })
+        let outcome: MenuCaptureDiagnostics.Outcome
+        switch decision {
+        case .some(.accepted): outcome = .accepted
+        case .some(.unarmed): outcome = .unarmed
+        case .some(.consumed): outcome = .consumed
+        case .some(.beforeArm): outcome = .beforeArm
+        case .some(.expired): outcome = .expired
+        case .some(.unmatched): outcome = .unmatched
+        case .some(.policyRejected): outcome = .policyRejected
+        case nil: outcome = .absent
+        }
+        let passiveHighlight: Bool
+        switch (action, decision) {
+        case (nil, .some(.unarmed)): passiveHighlight = true
+        default: passiveHighlight = false
+        }
+        // AX highlighting alone is not a selection. Keep the limited log for
+        // physical actions, including an unexpected unarmed action failure.
+        if !passiveHighlight { diagnosticLog(.gate, outcome, values: matchValues) }
+        guard let menu = taken else { return }
+        let diagnosticRecordContext = diagnosticRelevant ? diagnosticContext : nil
+        let diagnosticRecordOrigin = diagnosticOrigin ?? diagnosticActionOrigin
+        diagnosticLog(.record, .queued)
+        #else
         guard let menu = gate.take(hit.menu, matchedUserSelection: matched, time: time, preferences: preferences) else { return }
+        #endif
         let target = app
         DispatchQueue.main.async { [weak self] in
-            guard let self, MenuCapturePolicy.allows(menu, preferences: self.settings.menuCapture) else { return }
+            guard let self else { return }
+            guard MenuCapturePolicy.allows(menu, preferences: self.settings.menuCapture) else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                if let diagnosticRecordContext {
+                    self.diagnostics?.record(.record, .settingsRejected, context: diagnosticRecordContext, origin: diagnosticRecordOrigin)
+                }
+                #endif
+                return
+            }
             self.settings.recordCapturedMenu(menu)
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            if let diagnosticRecordContext {
+                self.diagnostics?.record(.record, .recorded, context: diagnosticRecordContext, origin: diagnosticRecordOrigin)
+            }
+            #endif
             if let target { self.settings.menuCaptureStatus[target.id] = "메뉴 선택을 수집했습니다." }
             self.onCapture?()
         }
@@ -307,6 +553,11 @@ final class MenuUsageMonitor {
         DispatchQueue.main.async { [weak self] in self?.settings.menuCaptureStatus[app.id] = message }
     }
     private func resetInteraction() {
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticLog(.menuState, .reset)
+        diagnosticActionOrigin = nil
+        diagnosticCatalogComplete = nil
+        #endif
         gate.cancel(); action = nil; down = nil; highlighted = nil
         menuSession = false; helpSession = false; helpCache = nil
         closedAt = nil
@@ -314,6 +565,9 @@ final class MenuUsageMonitor {
     private func tearDown() {
         retryWork?.cancel(); retryWork = nil
         lifecycle.begin(nil)
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnostics?.updateContext(diagnosticContext)
+        #endif
         if let observer {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
             for (element, name) in subscriptions { AXObserverRemoveNotification(observer, element, name as CFString) }
@@ -333,13 +587,53 @@ private struct MenuHit {
 private final class MenuAXReader {
     let app: AppItem
     private let deadline: TimeInterval
-    init(app: AppItem, budget: TimeInterval) { self.app = app; deadline = ProcessInfo.processInfo.systemUptime + budget }
-    private var hasTime: Bool { ProcessInfo.processInfo.systemUptime < deadline }
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    var diagnosticEnabled = false
+    var diagnosticRow: ((MenuHelpSearchRow.Diagnostic) -> Void)?
+    private let diagnosticStarted: TimeInterval
+    private var diagnosticStats = MenuCaptureDiagnostics.Values()
+    var diagnosticValues: MenuCaptureDiagnostics.Values {
+        var result = diagnosticStats
+        if diagnosticEnabled {
+            result.durationMilliseconds = MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - diagnosticStarted)
+        }
+        return result
+    }
+    private func diagnosticReadError(_ error: AXError) {
+        guard diagnosticEnabled, error != .success else { return }
+        if error == .attributeUnsupported || error == .noValue {
+            diagnosticStats.missingValues = (diagnosticStats.missingValues ?? 0) + 1
+        } else {
+            diagnosticStats.ipcFailures = (diagnosticStats.ipcFailures ?? 0) + 1
+        }
+    }
+    #endif
+    init(app: AppItem, budget: TimeInterval) {
+        self.app = app
+        let start = ProcessInfo.processInfo.systemUptime
+        deadline = start + budget
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticStarted = start
+        #endif
+    }
+    private var hasTime: Bool {
+        let available = ProcessInfo.processInfo.systemUptime < deadline
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        if diagnosticEnabled && !available { diagnosticStats.budgetExceeded = true }
+        #endif
+        return available
+    }
     func value(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
         guard hasTime else { return nil }
         AXUIElementSetMessagingTimeout(element, 0.025)
         var result: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, key as CFString, &result) == .success else { return nil }
+        let error = AXUIElementCopyAttributeValue(element, key as CFString, &result)
+        guard error == .success else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticReadError(error)
+            #endif
+            return nil
+        }
         return result
     }
     func element(_ owner: AXUIElement, _ key: String) -> AXUIElement? {
@@ -351,7 +645,13 @@ private final class MenuAXReader {
         let owner = AXUIElementCreateApplication(app.pid)
         AXUIElementSetMessagingTimeout(owner, 0.025)
         var result: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(owner, Float(point.x), Float(point.y), &result) == .success else { return nil }
+        let error = AXUIElementCopyElementAtPosition(owner, Float(point.x), Float(point.y), &result)
+        guard error == .success else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticReadError(error)
+            #endif
+            return nil
+        }
         return result
     }
     private func children(_ element: AXUIElement) -> [AXUIElement]? {
@@ -360,14 +660,31 @@ private final class MenuAXReader {
         var count: CFIndex = 0
         let result = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
         guard hasTime else { return nil }
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        if diagnosticEnabled {
+            diagnosticReadError(result)
+            diagnosticStats.childCount = max(diagnosticStats.childCount ?? 0, count)
+        }
+        #endif
         // Childless standard menu items can omit AXChildren. Messaging failures
         // are different: never turn a timed-out submenu into a leaf command.
         if result == .attributeUnsupported || result == .noValue { return [] }
         guard result == .success else { return nil }
         if count == 0 { return [] }
-        guard count <= 100 else { return nil }
+        guard count <= 100 else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            if diagnosticEnabled { diagnosticStats.childLimit = true }
+            #endif
+            return nil
+        }
         var values: CFArray?
-        guard AXUIElementCopyAttributeValues(element, kAXChildrenAttribute as CFString, 0, count, &values) == .success else { return nil }
+        let error = AXUIElementCopyAttributeValues(element, kAXChildrenAttribute as CFString, 0, count, &values)
+        guard error == .success else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticReadError(error)
+            #endif
+            return nil
+        }
         return values as? [AXUIElement]
     }
     func menuPath(_ element: AXUIElement) -> [String]? {
@@ -437,7 +754,26 @@ private final class MenuAXReader {
     }
     private func helpSearchHit(_ original: AXUIElement) -> MenuHit? {
         var pid: pid_t = 0
-        guard AXUIElementGetPid(original, &pid) == .success, pid == app.pid else { return nil }
+        let pidError = AXUIElementGetPid(original, &pid)
+        guard pidError == .success, pid == app.pid else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticReadError(pidError)
+            #endif
+            return nil
+        }
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        let result = MenuHelpSearchRow.read(from: original, role: { node in
+            switch self.value(node, kAXRoleAttribute) as? String {
+            case kAXRowRole: return .row
+            case kAXCellRole: return .cell
+            case kAXTableRole: return .table
+            case kAXStaticTextRole: return .staticText
+            default: return .other
+            }
+        }, parent: { self.element($0, kAXParentAttribute) }, children: children,
+           staticText: { self.value($0, kAXValueAttribute) as? String },
+           frame: frame, menuPath: menuPath, diagnostic: diagnosticEnabled ? diagnosticRow : nil)
+        #else
         let result = MenuHelpSearchRow.read(from: original, role: { node in
             switch self.value(node, kAXRoleAttribute) as? String {
             case kAXRowRole: return .row
@@ -449,6 +785,7 @@ private final class MenuAXReader {
         }, parent: { self.element($0, kAXParentAttribute) }, children: children,
            staticText: { self.value($0, kAXValueAttribute) as? String },
            frame: frame, menuPath: menuPath)
+        #endif
         guard let result, hasTime else { return nil }
         return MenuHit(menu: CapturedMenu(appID: app.id, appName: app.name, path: ["Help", result.label]),
                        frame: result.frame, isHelpResult: true)
@@ -479,8 +816,26 @@ private final class MenuAXReader {
     func catalog(_ bar: AXUIElement) -> [CapturedMenu]? {
         var result: [CapturedMenu] = [], count = 0, complete = true
         func visit(_ node: AXUIElement, path: [String], depth: Int) {
-            guard hasTime, count < 800, depth < 12 else { complete = false; return }
+            let timeAvailable = hasTime
+            guard timeAvailable, count < 800, depth < 12 else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                if diagnosticEnabled {
+                    if !timeAvailable { diagnosticStats.budgetExceeded = true }
+                    else if count >= 800 { diagnosticStats.nodeLimit = true }
+                    else if depth >= 12 { diagnosticStats.depthLimit = true }
+                    diagnosticStats.depth = max(diagnosticStats.depth ?? 0, depth)
+                }
+                #endif
+                complete = false
+                return
+            }
             count += 1
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            if diagnosticEnabled {
+                diagnosticStats.nodeCount = count
+                diagnosticStats.depth = max(diagnosticStats.depth ?? 0, depth)
+            }
+            #endif
             let role = value(node, kAXRoleAttribute) as? String ?? ""
             let title = value(node, kAXTitleAttribute) as? String ?? ""
             let named = role == kAXMenuItemRole || role == kAXMenuBarItemRole

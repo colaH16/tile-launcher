@@ -2,6 +2,14 @@
 
 기준일: 2026-10-29 (Asia/Seoul). 최신 정식 공개는 공증 **2.1.10(77)** 이다. 사용자가1080×1920세로모니터배치를확인한 동일 공증 빌드를 2026-10-29 12:30:13 KST GitHub 정식과 일반 Homebrew cask에 게시했다. dev 채널도 동일 공증77을 유지한다. 기존 릴리스와 백업은 보존한다.
 
+## 2.1.11 · Option 최초 좌표·메뉴 클릭 진단 (78, dev 시험본 준비)
+
+- Option 최초 감지 위치를 준비·표시·재생성에 전달해 대기 중 마우스 이동에 창이 따라가지 않게 한다. 기존 빠른 재열기 복원·수동 고정·화면 경계/크기는 유지한다.
+- Numbers Help 클릭 누락의 실패 단계만 확인하는 opt-in 메뉴 진단을 포함한다. 기존 수집 판정은 유지하며 문제의 근본 수정 완료로 주장하지 않는다.
+- 실제 Claude와 Codex 서브에이전트 구현·교차 검토 후 일반Swift322/진단Swift330/Python30·native/Release ON/OFF 검증을 통과했다. 이번에는 2.1.11(78) dev 시험 앱을 준비하며 정식은2.1.10(77)을 유지한다.
+- 진단 포함/정식 승격 불가를 별도 build-summary에 기록한다. 상세는 [구현·검증](docs/reviews/option-anchor-help-click-implementation-20261106.md).
+
+
 ## 2.1.10 · 커서 근처 오버레이 배치 수정 (77, 공증 정식·dev 게시 완료)
 
 - [v2.1.10 정식 릴리스](https://github.com/colaH16/tile-launcher/releases/tag/v2.1.10). 일반 cask와 dev 모두 같은 공증 ZIP을 제공한다. SHA256 `47e1f9c092e3760a5ecf24d9c4a1d6156046c76700bf12a2fb72379ac6c75f30`.
