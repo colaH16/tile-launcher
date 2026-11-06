@@ -35,6 +35,31 @@ final class MenuUsageMonitor {
     private var suppressedMenus: Set<MenuIdentity> = []
     private var closedAt: TimeInterval?
     private enum Action { case mouse(CGPoint, TimeInterval), keyboard(TimeInterval) }
+    // Deferred Help click. A validated row press survives normal close/reset
+    // until its release; a sealed request survives normal close until resolved.
+    private struct HelpRowDown {
+        let label: String
+        let frame: CGRect
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        let origin: MenuCaptureDiagnostics.Stamp?
+        #endif
+    }
+    private var helpDown: HelpRowDown?
+    private var helpRequest: MenuHelpDeferredRequest?
+    private var helpRequestSettled = false
+    private var helpResolverBusy = false
+    private let helpResolver = MenuHelpDeferredResolver()
+    /// Thread-safe owner of the ticket policy; invalidated from either thread.
+    private let helpLedger = MenuHelpCaptureLedger()
+    // Main-thread-owned: the effective observation target last seen by refresh.
+    private struct ObservedTarget: Equatable {
+        let app: AppItem?
+        let process: ProcessIdentity?
+        let options: MenuCapturePreferences
+    }
+    private var lastObservedTarget: ObservedTarget?
+    private static let helpResolutionTimeout: TimeInterval = 2
+    private static let helpCloseSettle: TimeInterval = 0.3
     #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
     private let diagnostics = MenuCaptureDiagnostics.makeIfRequested()
     private var diagnosticHelpSession: UInt64 = 0
@@ -134,11 +159,18 @@ final class MenuUsageMonitor {
         } else if let inputMonitor { NSEvent.removeMonitor(inputMonitor); self.inputMonitor = nil }
         let canObserve = trusted && target.map { options.allows(appID: $0.id) } == true
         let process = canObserve ? target.flatMap { ProcessIdentity.read(pid: $0.pid) } : nil
+        // Before the queue hop: a different target/process or changed settings
+        // invalidates a deferred Help save already heading to main. Workspace
+        // notifications that leave the effective target unchanged do not.
+        let observed = ObservedTarget(app: process == nil ? nil : target, process: process, options: options)
+        if observed != lastObservedTarget { helpLedger.invalidate() }
+        lastObservedTarget = observed
         queue.async { [weak self] in
             self?.configure(process == nil ? nil : target, process: process, preferences: options)
         }
     }
     func stop() {
+        helpLedger.invalidate()
         workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceTokens = []
         preferencesToken = nil
@@ -148,9 +180,13 @@ final class MenuUsageMonitor {
         queue.async { [weak self] in self?.tearDown() }
     }
     func suppressLauncherAction(_ menu: MenuCommand, primary: MenuCommand? = nil, completion: (() -> Void)? = nil) {
+        // Before the queue hop, so a deferred save already on its way to main is rejected.
+        helpLedger.invalidate()
         queue.async { [weak self] in
             self?.suppressedUntil = ProcessInfo.processInfo.systemUptime + 2
             self?.suppressedMenus = Set((MenuPathMatch.paths(menu) + (primary.map(MenuPathMatch.paths) ?? [])).map { MenuIdentity(appID: menu.appID, path: $0) })
+            self?.helpDown = nil
+            self?.cancelHelpRequest(.suppressed)
             self?.resetInteraction()
             if let completion { DispatchQueue.main.async(execute: completion) }
         }
@@ -163,6 +199,10 @@ final class MenuUsageMonitor {
         let repeatKey = type == .keyDown && event.isARepeat
         let point = event.cgEvent?.location
         let inMenuBar = type != .keyDown && point.map { MenuBarRegion.contains($0, bands: Self.menuBarBands()) } == true
+        // A press in the menu bar is a new menu interaction: invalidate before the
+        // queue hop so an older deferred Help result cannot be saved meanwhile.
+        // Only scalar event facts are used here, never queue-owned menu state.
+        if type == .leftMouseDown && inMenuBar { helpLedger.invalidate() }
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         // Do not log typing/search characters or even a per-character event trail.
         let diagnosticRelevantInput = type != .keyDown || [UInt16(36), 76, 53].contains(key) || modified
@@ -197,6 +237,10 @@ final class MenuUsageMonitor {
                     self.diagnosticInput = .cancel
                     self.diagnosticLog(.input, .observed)
                     #endif
+                    // Esc/modified keys cancel only an unconfirmed press. A Help result
+                    // already released on its row stays a use even if the user then
+                    // dismisses the dialog that command opened.
+                    self.helpDown = nil
                     self.resetInteraction()
                 case .confirm:
                     #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
@@ -204,6 +248,11 @@ final class MenuUsageMonitor {
                     self.diagnosticLog(.input, .accepted, values: .init(ageMilliseconds:
                         MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - time)))
                     #endif
+                    // Return/Enter with a menu open (the decision requires it) is a new
+                    // menu selection and supersedes an unresolved Help click. Return in a
+                    // dialog after the menus closed is .clearHighlight and does not.
+                    self.helpDown = nil
+                    self.cancelHelpRequest(.newInteraction)
                     // Only Return/keypad Enter confirms a menu; typing/search terms are never read.
                     let reader = MenuAXReader(app: target, budget: 0.18)
                     #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
@@ -224,7 +273,10 @@ final class MenuUsageMonitor {
                 case .clearHighlight:
                     // A navigation/search key invalidates the old highlight until
                     // AX supplies the newly selected item. Never guess from stale focus.
+                    // It also drops an unconfirmed Help row press: the results (and the
+                    // row under a later release) may have changed.
                     self.highlighted = nil
+                    self.helpDown = nil
                 }
                 return
             }
@@ -233,6 +285,21 @@ final class MenuUsageMonitor {
                 self.diagnosticLog(.input, .noPoint)
                 #endif
                 return
+            }
+            if type == .leftMouseDown {
+                // A new press replaces any validated Help row press.
+                self.helpDown = nil
+            } else if let held = self.helpDown {
+                self.helpDown = nil
+                // The release is judged against the row saved at press time, before
+                // any AX read: the Help menu may already be closed or show another element.
+                if held.frame.contains(point) {
+                    self.sealHelpRequest(held, time: time)
+                    return
+                }
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                self.diagnosticLog(.deferred, .releasedOutside, force: true)
+                #endif
             }
             // Most clicks are not on a menu. Skip the AX hit test (which the
             // clicked app must answer) unless a menu can be involved.
@@ -255,7 +322,14 @@ final class MenuUsageMonitor {
             let element = reader.element(at: point)
             let role = element.flatMap { reader.value($0, kAXRoleAttribute) as? String }
             let menuRole = role == kAXMenuItemRole || role == kAXMenuBarItemRole || role == kAXMenuRole
-            let hit = element.flatMap { self.hit($0, reader: reader) }
+            // Physical mouse input never runs the menu catalog: a Help result stays
+            // an unresolved label+frame until its release is confirmed.
+            let hit = element.flatMap { self.hit($0, reader: reader, deferHelp: true) }
+            // A press with menu evidence (menu bar, a menu element or a menu/Help
+            // hit) is a new menu interaction and supersedes an unresolved Help
+            // click. Other presses, e.g. in a dialog the command opened, do not,
+            // even if a stale opened-menu entry let them past the guard above.
+            if type == .leftMouseDown, inMenuBar || menuRole || hit != nil { self.cancelHelpRequest(.newInteraction) }
             #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
             var readValues = reader.diagnosticValues
             readValues.role = Self.diagnosticRole(role)
@@ -274,7 +348,17 @@ final class MenuUsageMonitor {
                 #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
                 self.diagnosticActionOrigin = nil
                 #endif
-                self.down = hit
+                if let hit, let label = hit.helpLabel, let frame = hit.frame {
+                    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                    self.helpDown = HelpRowDown(label: label, frame: frame, origin: self.diagnosticOrigin)
+                    self.diagnosticLog(.deferred, .rowHeld)
+                    #else
+                    self.helpDown = HelpRowDown(label: label, frame: frame)
+                    #endif
+                    self.down = nil
+                } else {
+                    self.down = hit?.helpLabel == nil ? hit : nil
+                }
                 let path = element.flatMap { reader.menuPath($0) }
                 if path.map(MenuCapturePolicy.isAppleMenuPath) == true { self.resetInteraction(); return }
                 if hit != nil || path != nil {
@@ -293,7 +377,8 @@ final class MenuUsageMonitor {
                 #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
                 self.diagnosticActionOrigin = self.diagnosticOrigin
                 #endif
-                let candidate = hit ?? self.down ?? self.highlighted
+                // An unresolved Help hit seen only at release (no validated press) is not a choice.
+                let candidate = (hit?.helpLabel == nil ? hit : nil) ?? self.down ?? self.highlighted
                 #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
                 self.diagnosticLog(.hit, candidate == nil ? .noCandidate : .observed,
                                    values: .init(hadDown: self.down != nil, hadHighlight: self.highlighted != nil,
@@ -409,9 +494,17 @@ final class MenuUsageMonitor {
             if openedMenus.isEmpty {
                 if menuSession { closedAt = time }
                 menuSession = false
+                // Normal close never invalidates a sealed Help request; it lets it start.
+                helpLedger.menuClosed()
+                if helpRequest != nil { helpRequestSettled = true }
+                startHelpResolutionIfReady()
             }
         } else if name == kAXMenuItemSelectedNotification {
-            guard let hit = hit(element, reader: reader) else { return }
+            // Passive highlighting never runs the Help catalog (that would block
+            // the queue ahead of a mouse release) and never stores an unresolved
+            // Help highlight. Ordinary menu items are unchanged; an explicit Enter
+            // still reads focused/selected items itself.
+            guard let hit = hit(element, reader: reader, deferHelp: true), hit.helpLabel == nil else { return }
             highlighted = hit
             // Notification alone is never a use: mouse-up/Return must match it.
             commit(hit, time: time)
@@ -433,8 +526,17 @@ final class MenuUsageMonitor {
         }
         return nil
     }
-    private func hit(_ element: AXUIElement, reader: MenuAXReader) -> MenuHit? {
+    /// `deferHelp` (physical mouse input): a Help result is returned unresolved
+    /// as its label and frame; the catalog runs only after a confirmed release.
+    private func hit(_ element: AXUIElement, reader: MenuAXReader, deferHelp: Bool = false) -> MenuHit? {
         guard let app, let bar, var hit = reader.hit(element, allowHelp: helpSession) else { return nil }
+        if hit.isHelpResult, deferHelp {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticNoteHelp()
+            #endif
+            guard let label = hit.menu.identity.path.last, !label.isEmpty, let frame = hit.frame else { return nil }
+            return MenuHit(menu: hit.menu, frame: frame, isHelpResult: true, helpLabel: label)
+        }
         if hit.isHelpResult {
             #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
             diagnosticNoteHelp()
@@ -480,6 +582,8 @@ final class MenuUsageMonitor {
         return MenuHit(menu: normalized, frame: hit.frame, isHelpResult: hit.isHelpResult)
     }
     private func commit(_ hit: MenuHit, time: TimeInterval) {
+        // An unresolved Help label is never a menu path; only the deferred resolver may save it.
+        guard hit.helpLabel == nil else { return }
         if suppressedMenus.contains(hit.menu.identity), time < suppressedUntil {
             #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
             diagnosticLog(.gate, .suppressed)
@@ -552,6 +656,230 @@ final class MenuUsageMonitor {
     private func status(_ message: String, for app: AppItem) {
         DispatchQueue.main.async { [weak self] in self?.settings.menuCaptureStatus[app.id] = message }
     }
+
+    // MARK: Deferred Help click
+
+    /// Boundary: a sealed request is cancelled by a newer seal, a press with menu
+    /// evidence, Return/Enter confirming an open menu, app/process/generation or
+    /// settings change, stop, suppression or expiry. Normal menu close, Esc or
+    /// modified keys, and unrelated clicks/keys (e.g. in the command's dialog) keep it.
+    private enum HelpCancel { case superseded, newInteraction, lifecycle, suppressed, expired }
+
+    /// The release landed on the row saved at press time: that is the user's
+    /// choice. Seal it with a new request ID; resolution happens off the input path.
+    private func sealHelpRequest(_ held: HelpRowDown, time: TimeInterval) {
+        // Nothing else may be committed for this release (e.g. a system-highlighted item).
+        gate.cancel(); action = nil; down = nil; highlighted = nil
+        menuSession = false
+        cancelHelpRequest(.superseded)
+        guard let app, let bar, let process = lifecycle.process,
+              let ticket = helpLedger.confirm(generation: lifecycle.generation, at: ProcessInfo.processInfo.systemUptime,
+                                              duration: Self.helpResolutionTimeout) else { return }
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        let request = MenuHelpDeferredRequest(ticket: ticket, label: held.label, app: app, process: process, bar: bar,
+                                              eventTime: time, diagnosticContext: diagnosticContext,
+                                              diagnosticOrigin: diagnosticOrigin ?? held.origin)
+        #else
+        let request = MenuHelpDeferredRequest(ticket: ticket, label: held.label, app: app, process: process, bar: bar,
+                                              eventTime: time)
+        #endif
+        helpRequest = request
+        helpRequestSettled = openedMenus.isEmpty
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticDeferred(.sealed, request)
+        #endif
+        if helpRequestSettled { startHelpResolutionIfReady(); return }
+        // Menus normally close right after the release (AXMenuClosed starts it);
+        // otherwise start once after a short bounded settle. No polling.
+        let id = request.id
+        queue.asyncAfter(deadline: .now() + Self.helpCloseSettle) { [weak self] in
+            guard let self, self.helpRequest?.id == id else { return }
+            self.helpRequestSettled = true
+            self.startHelpResolutionIfReady()
+        }
+    }
+    /// Normal menu close/reset never calls this; only real invalidation does.
+    private func cancelHelpRequest(_ reason: HelpCancel) {
+        // Also stops a completion already on its way to main.
+        helpLedger.invalidate()
+        guard let request = helpRequest else { return }
+        helpRequest = nil
+        helpRequestSettled = false
+        request.cancel.cancel()
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        let diagnostic: MenuCaptureDiagnostics.CancelReason
+        switch reason {
+        case .superseded: diagnostic = .superseded
+        case .newInteraction: diagnostic = .newInteraction
+        case .lifecycle: diagnostic = .lifecycle
+        case .suppressed: diagnostic = .suppressed
+        case .expired: diagnostic = .expired
+        }
+        diagnosticDeferred(.cancelled, request, values: .init(cancelReason: diagnostic))
+        #endif
+    }
+    /// One read in flight; only the latest sealed request waits behind it.
+    private func startHelpResolutionIfReady() {
+        guard let request = helpRequest, !helpResolverBusy, helpRequestSettled || openedMenus.isEmpty else { return }
+        guard helpLedger.isCurrent(request.ticket, generation: lifecycle.generation,
+                                   at: ProcessInfo.processInfo.systemUptime) else { cancelHelpRequest(.expired); return }
+        helpResolverBusy = true
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticDeferred(.started, request)
+        #endif
+        helpResolver.resolve(request, deliverOn: queue) { [weak self] outcome in
+            self?.finishHelpResolution(request, outcome)
+        }
+    }
+    private func finishHelpResolution(_ request: MenuHelpDeferredRequest, _ outcome: MenuHelpResolutionOutcome) {
+        helpResolverBusy = false
+        defer { startHelpResolutionIfReady() }
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticDeferredOutcome(request, outcome)
+        #endif
+        guard helpRequest?.id == request.id, !request.cancel.isCancelled else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticDeferred(.staleCompletion, request)
+            #endif
+            return
+        }
+        helpRequest = nil
+        helpRequestSettled = false
+        guard let app, app == request.app, lifecycle.generation == request.generation,
+              lifecycle.process == request.process else {
+            helpLedger.invalidate()
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticDeferred(.lifecycleChanged, request)
+            #endif
+            return
+        }
+        guard case .resolved(let resolved, _) = outcome else { helpLedger.invalidate(); return }
+        let menu = MenuOptionDiscovery.shared.normalized(resolved, app: app)
+        // Suppression is judged at the user's release time, as for direct menus.
+        if suppressedMenus.contains(menu.identity), request.eventTime < suppressedUntil {
+            helpLedger.invalidate()
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticDeferred(.suppressed, request)
+            #endif
+            return
+        }
+        guard MenuCapturePolicy.allows(menu, preferences: preferences) else {
+            helpLedger.invalidate()
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticDeferred(.policyRejected, request)
+            #endif
+            return
+        }
+        guard helpLedger.isCurrent(request.ticket, generation: lifecycle.generation,
+                                   at: ProcessInfo.processInfo.systemUptime) else {
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticDeferred(.expired, request)
+            #endif
+            return
+        }
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        diagnosticDeferred(.queued, request)
+        let diagnosticRecorder = diagnostics
+        #endif
+        let ticket = request.ticket, cancel = request.cancel, pid = request.app.pid, process = request.process
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Main-thread facts only: current settings, the actual frontmost process
+            // (start-time identity), cancellation; the locked take (expiry, newer
+            // ticket, invalidation, exactly once) is the last step before saving.
+            var rejection: HelpSaveRejection = .none
+            let approved = self.helpLedger.finalize(ticket) {
+                guard !cancel.isCancelled else { rejection = .cancelled; return false }
+                guard MenuCapturePolicy.allows(menu, preferences: self.settings.menuCapture) else {
+                    rejection = .settings; return false
+                }
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                      ProcessIdentity.read(pid: pid) == process else { rejection = .process; return false }
+                rejection = .ticket
+                return true
+            }
+            guard approved else {
+                #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+                let outcome: MenuCaptureDiagnostics.Outcome
+                switch rejection {
+                case .settings: outcome = .settingsRejected
+                case .process: outcome = .lifecycleChanged
+                case .cancelled: outcome = .cancelled
+                case .ticket, .none: outcome = .staleCompletion
+                }
+                diagnosticRecorder?.record(.deferred, outcome, context: request.diagnosticContext,
+                                           origin: request.diagnosticOrigin, values: .init(requestID: ticket.id))
+                #endif
+                _ = rejection
+                return
+            }
+            self.settings.recordCapturedMenu(menu)
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            diagnosticRecorder?.record(.deferred, .recorded, context: request.diagnosticContext,
+                                       origin: request.diagnosticOrigin, values: .init(requestID: ticket.id))
+            #endif
+            self.settings.menuCaptureStatus[app.id] = "메뉴 선택을 수집했습니다."
+            self.onCapture?()
+        }
+    }
+    /// Why the main-thread final save declined (diagnostics only).
+    private enum HelpSaveRejection { case none, cancelled, settings, process, ticket }
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    /// Deferred records keep the sealed selection's context/origin after the menus closed.
+    private func diagnosticDeferred(_ outcome: MenuCaptureDiagnostics.Outcome, _ request: MenuHelpDeferredRequest,
+                                    values original: MenuCaptureDiagnostics.Values = .init()) {
+        guard let diagnostics else { return }
+        var values = original
+        values.requestID = request.id
+        values.ageMilliseconds = MenuCaptureDiagnostics.milliseconds(ProcessInfo.processInfo.systemUptime - request.sealedAt)
+        values.generationChanged = request.generation != lifecycle.generation
+        diagnostics.record(.deferred, outcome, context: request.diagnosticContext, origin: request.diagnosticOrigin, values: values)
+    }
+    private func diagnosticDeferredOutcome(_ request: MenuHelpDeferredRequest, _ outcome: MenuHelpResolutionOutcome) {
+        func values(_ stats: MenuHelpTraversalStats) -> MenuCaptureDiagnostics.Values {
+            .init(durationMilliseconds: MenuCaptureDiagnostics.milliseconds(stats.duration), nodeCount: stats.nodes,
+                  childCount: stats.children, depth: stats.depth, identityCount: stats.identities,
+                  leafCount: stats.leaves, matchedCount: stats.matched)
+        }
+        switch outcome {
+        case .resolved(_, let stats):
+            var result = values(stats); result.catalogComplete = true
+            diagnosticDeferred(.resolved, request, values: result)
+        case .unresolved(let stats):
+            var result = values(stats); result.catalogComplete = true
+            diagnosticDeferred(.unresolved, request, values: result)
+        case .failed(let failure, let stats):
+            var result = values(stats); result.catalogComplete = false
+            switch failure {
+            case .cancelled: result.deferredFailure = .cancelled
+            case .deadline: result.deferredFailure = .deadline
+            case .process: result.deferredFailure = .process
+            case .identifier: result.deferredFailure = .identifier
+            case .traversal(let traversal):
+                switch traversal {
+                case .invalidLimits: result.deferredFailure = .invalidLimits
+                case .cancelled: result.deferredFailure = .cancelled
+                case .deadline: result.deferredFailure = .deadline
+                case .nodeLimit: result.deferredFailure = .nodeLimit
+                case .depthLimit: result.deferredFailure = .depthLimit
+                case .childLimit: result.deferredFailure = .childLimit
+                case .invalidRootRole: result.deferredFailure = .invalidRootRole
+                case .unnamedBranch: result.deferredFailure = .unnamedBranch
+                case .unavailable(let attribute), .readFailure(let attribute):
+                    let unavailable: Bool
+                    if case .unavailable = traversal { unavailable = true } else { unavailable = false }
+                    switch attribute {
+                    case .roots: result.deferredFailure = unavailable ? .rootsUnavailable : .rootsReadFailure
+                    case .role: result.deferredFailure = unavailable ? .roleUnavailable : .roleReadFailure
+                    case .title: result.deferredFailure = unavailable ? .titleUnavailable : .titleReadFailure
+                    case .children: result.deferredFailure = unavailable ? .childrenUnavailable : .childrenReadFailure
+                    }
+                }
+            }
+            diagnosticDeferred(.incomplete, request, values: result)
+        }
+    }
+    #endif
     private func resetInteraction() {
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         diagnosticLog(.menuState, .reset)
@@ -564,6 +892,9 @@ final class MenuUsageMonitor {
     }
     private func tearDown() {
         retryWork?.cancel(); retryWork = nil
+        // App/process/generation change, stop or settings disable.
+        helpDown = nil
+        cancelHelpRequest(.lifecycle)
         lifecycle.begin(nil)
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         diagnostics?.updateContext(diagnosticContext)
@@ -581,6 +912,9 @@ private struct MenuHit {
     let menu: CapturedMenu
     let frame: CGRect?
     let isHelpResult: Bool
+    /// Set only for an unresolved Help result on physical mouse input; such a
+    /// hit is never committed directly.
+    var helpLabel: String? = nil
 }
 
 /// Bounded read-only AX access. Never reads text field values or executes actions.

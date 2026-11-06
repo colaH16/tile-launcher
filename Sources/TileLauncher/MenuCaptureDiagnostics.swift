@@ -8,7 +8,7 @@ import Foundation
 /// AX values, coordinates, keys, app IDs or arbitrary diagnostic messages.
 final class MenuCaptureDiagnostics {
     enum Stage: String, Encodable {
-        case started, input, menuState, hit, helpRow, catalog, resolution, gate, record
+        case started, input, menuState, hit, helpRow, catalog, resolution, gate, record, deferred
     }
     enum Outcome: String, Encodable {
         case observed, accepted, absent, staleTarget, noMenuBar, staleInput, noPoint
@@ -16,7 +16,17 @@ final class MenuCaptureDiagnostics {
         case rowAccepted, rowRejected, cacheHit, complete, incomplete, resolved, unresolved
         case suppressed, unarmed, consumed, beforeArm, expired, unmatched, policyRejected
         case queued, recorded, settingsRejected
+        // Deferred Help click lifecycle.
+        case rowHeld, releasedOutside, sealed, started, cancelled, lifecycleChanged, staleCompletion
     }
+    /// Why a deferred Help resolution read stopped before a complete list.
+    enum DeferredFailure: String, Encodable {
+        case invalidLimits, cancelled, deadline, nodeLimit, depthLimit, childLimit
+        case rootsUnavailable, roleUnavailable, titleUnavailable, childrenUnavailable
+        case rootsReadFailure, roleReadFailure, titleReadFailure, childrenReadFailure
+        case invalidRootRole, unnamedBranch, process, identifier
+    }
+    enum CancelReason: String, Encodable { case superseded, newInteraction, cancelKey, lifecycle, suppressed, expired }
     enum Input: String, Encodable { case none, mouseDown, mouseUp, confirm, cancel, navigation }
     enum Role: String, Encodable { case unknown, menuItem, menuBarItem, menu, row, cell, staticText, image, other }
     struct Context: Encodable, Equatable {
@@ -58,6 +68,11 @@ final class MenuCaptureDiagnostics {
         var hadHighlight: Bool? = nil
         var frameContains: Bool? = nil
         var freshHit: Bool? = nil
+        var requestID: UInt64? = nil
+        var deferredFailure: DeferredFailure? = nil
+        var cancelReason: CancelReason? = nil
+        var leafCount: Int? = nil
+        var matchedCount: Int? = nil
     }
     private struct Line: Encodable {
         let schema = 1

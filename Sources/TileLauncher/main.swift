@@ -1400,6 +1400,19 @@ if let index = CommandLine.arguments.firstIndex(of: "--diagnose-window-inventory
     exit(0)
 }
 #endif
+#if TILE_LAUNCHER_DIAGNOSTICS || TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+// Synthetic ticket/queue checks must exit before acquiring the live instance.
+if CommandLine.arguments.contains("--check-menu-help-deferred") {
+    application.setActivationPolicy(.prohibited)
+    do {
+        try MenuHelpDeferredValidation.run()
+        exit(0)
+    } catch {
+        fputs("Deferred Help check failed: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+}
+#endif
 #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
 // R358 menu capture diagnostics check, compiled only with its own flag. Runs
 // before the instance lock, monitors, status item and user settings; a missing
