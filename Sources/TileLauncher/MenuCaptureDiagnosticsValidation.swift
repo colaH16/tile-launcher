@@ -34,6 +34,14 @@ enum MenuCaptureDiagnosticsValidation {
                 return result
             }
         }
+        func noProbe(_ value: MenuCaptureDiagnostics, _ message: String) throws {
+            let gate = MenuHelpStructureProbeGate(logActive: true, structureRequested: true,
+                                                  availability: { value.canAcceptRecords() })
+            var providerCalls = 0
+            let result = gate.run(expectedEpoch: gate.captureEpoch(), after: .init(failure: .unsupportedKnownRole, role: .group),
+                                  catalogFailure: .readFailure(.role)) { _ in providerCalls += 1; return true }
+            try check(result == nil && providerCalls == 0, message)
+        }
 
         let noOpt = root.appendingPathComponent("not-opted-in", isDirectory: true)
         try fm.createDirectory(at: noOpt, withIntermediateDirectories: true)
@@ -59,6 +67,7 @@ enum MenuCaptureDiagnosticsValidation {
                                          cellCount: 1, labelCount: 1, frameContains: true)),
                   "Accept a typed metadata record")
         try check(a.finish() && b.finish(), "Normal shutdown must flush accepted records")
+        try noProbe(a, "A closed recorder must prevent optional structure queries")
         try check(try Data(contentsOf: sentinel) == existing, "Existing files must remain unchanged")
         let metadata = try lines(a)
         try check(metadata.count == 2, "Flush includes the header and accepted metadata")
@@ -99,29 +108,87 @@ enum MenuCaptureDiagnosticsValidation {
                   && childValues["childrenRequestedCount"] as? Int == 3,
                   "Keep the failure enum, signed AX code and counts in their typed fields")
 
+        let roleStructure = try logger("role-structure")
+        let branch = MenuHelpRoleRead.Context(parent: .menu, depth: 2, rootIndex: 4,
+                                              siblingIndex: 1, siblingCount: 3)
+        let structure = MenuHelpStructureProbe.Report(status: .truncated, subtreeStatus: .truncated, siblingStatus: nil,
+            nodes: [.init(role: .group, parent: nil, depth: 0, childCount: 1),
+                    .init(role: .menuItem, parent: 0, depth: 1,
+                          issue: .init(kind: .childrenCopyError, code: copyError))],
+            siblings: nil, siblingMenu: .unknown, descendantMenuItem: .present,
+            descendantMenu: .unknown, durationMilliseconds: 7)
+        try check(roleStructure.record(.deferred, .incomplete,
+            values: .init(durationMilliseconds: 62, depth: 6, deferredFailure: .roleReadFailure,
+                          roleFailure: .unsupportedKnownRole, roleCategory: .group,
+                          roleContext: branch, structure: structure)), "Accept bounded typed structure metadata")
+        try check(roleStructure.record(.deferred, .incomplete,
+            values: .init(roleFailure: .unlistedRole)), "Accept a custom role only as its fixed category")
+        try check(roleStructure.finish(), "Role/structure metadata flushes")
+        let structureRows = try lines(roleStructure)
+        try check(structureRows.count == 3, "Structure is one bounded event, not an event per visited node")
+        let structureValues = structureRows[1]["values"] as? [String: Any] ?? [:]
+        try check(Set(structureValues.keys) == ["durationMilliseconds", "depth", "deferredFailure", "roleFailure",
+                                               "roleCategory", "roleContext", "structure"],
+                  "Role failure metadata must not emit absent AX error/type fields or arbitrary text")
+        let context = structureValues["roleContext"] as? [String: Any] ?? [:]
+        try check(Set(context.keys) == ["parent", "depth", "rootIndex", "siblingIndex", "siblingCount"]
+                  && context["depth"] as? Int == 2 && structureValues["depth"] as? Int == 6,
+                  "Actual failed-branch context must remain distinct from maximum traversal depth")
+        let emitted = structureValues["structure"] as? [String: Any] ?? [:]
+        try check(Set(emitted.keys) == ["status", "subtreeStatus", "nodes", "siblingMenu", "descendantMenuItem", "descendantMenu",
+                                       "durationMilliseconds"] && emitted["durationMilliseconds"] as? Int == 7
+                  && structureValues["durationMilliseconds"] as? Int == 62,
+                  "Probe timing stays separate from original catalog timing; unobserved siblings stay unknown")
+        let emittedNodes = emitted["nodes"] as? [[String: Any]] ?? []
+        try check(emittedNodes.count == 2 && Set(emittedNodes[0].keys) == ["role", "depth", "childCount"]
+                  && Set(emittedNodes[1].keys) == ["role", "parent", "depth", "issue"],
+                  "Only role categories, edges, counts, depth and typed issues may leave the probe")
+        let customValues = structureRows[2]["values"] as? [String: Any] ?? [:]
+        try check(Set(customValues.keys) == ["roleFailure"] && customValues["roleFailure"] as? String == "unlistedRole",
+                  "A custom role string must never enter the serialized schema")
+        let structureAllowed: Set<String> = ["started", "observed", "deferred", "incomplete", "roleReadFailure",
+            "unsupportedKnownRole", "group", "menu", "truncated", "menuItem", "childrenCopyError",
+            "unknown", "present", "unlistedRole"]
+        func inspectStructure(_ value: Any) throws {
+            if let text = value as? String {
+                try check(structureAllowed.contains(text), "Structure serialization contains a non-enum string")
+            } else if let map = value as? [String: Any] {
+                for child in map.values { try inspectStructure(child) }
+            } else if let list = value as? [Any] {
+                for child in list { try inspectStructure(child) }
+            }
+        }
+        for entry in structureRows { try inspectStructure(entry) }
+
         var recordLimits = MenuCaptureDiagnostics.Limits()
         recordLimits.records = 3
         let capped = try logger("records", limits: recordLimits)
         var accepted = 0
         for _ in 0..<20 { if capped.record(.input, .observed) { accepted += 1 } }
+        try noProbe(capped, "An exhausted record budget must prevent optional structure queries")
         try check(accepted == 2 && capped.finish(), "The 200-record production cap includes the header")
         try check(try lines(capped).count == 3, "No record beyond the configured cap")
         try check(!capped.record(.input, .observed), "No entries after normal finish")
 
         var byteLimits = MenuCaptureDiagnostics.Limits()
         byteLimits.bytes = 320
-        let bytes = try logger("bytes", limits: byteLimits)
+        let byteQueue = DispatchQueue(label: "TileLauncher.menu-diagnostic-validation-byte-cap")
+        let bytes = try logger("bytes", limits: byteLimits, queue: byteQueue)
         for _ in 0..<20 { bytes.record(.catalog, .incomplete, values: .init(nodeCount: 800, nodeLimit: true)) }
+        byteQueue.sync {}
+        try noProbe(bytes, "A writer's byte-budget failure must prevent optional structure queries")
         try check(bytes.finish(), "Byte-limited logger drains")
         try check(try Data(contentsOf: bytes.fileURL).count <= byteLimits.bytes, "Never exceed byte budget")
         _ = try lines(bytes) // Writes stop before an oversized line, not halfway through one.
 
         var now: TimeInterval = 100
         let timed = try logger("time", clock: { now })
+        try check(timed.canAcceptRecords(), "A fresh recorder must be eligible before expiry")
         now = 99
         try check(!timed.record(.input, .observed), "A backwards clock is not serialized")
         now = 701
         try check(!timed.record(.input, .observed), "Stop accepting after ten minutes")
+        try noProbe(timed, "An expired recording window must prevent optional structure queries")
         try check(timed.finish(), "Expired logger drains previously accepted records")
         try check(try lines(timed).count == 1, "Only the accepted start record remains")
 
@@ -134,6 +201,7 @@ enum MenuCaptureDiagnosticsValidation {
         let bounded = try logger("pending", limits: pendingLimits, queue: paused)
         let first = bounded.record(.input, .observed)
         let overflow = bounded.record(.input, .observed)
+        try noProbe(bounded, "A full pending-write queue must prevent optional structure queries without waiting")
         let waiting = bounded.finish(timeout: 0)
         paused.resume()
         resumePending = false

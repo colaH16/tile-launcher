@@ -81,6 +81,14 @@ final class MenuCaptureDiagnostics {
         var childrenRequestedCount: Int? = nil
         var childrenReturnedCount: Int? = nil
         var childrenInvalidIndex: Int? = nil
+        // First non-accepted AXRole read of a deferred Help traversal (R374 A).
+        var roleFailure: MenuHelpRoleRead.Failure? = nil
+        var roleErrorCode: Int? = nil
+        var roleValueType: MenuHelpRoleRead.ValueType? = nil
+        var roleCategory: MenuHelpRoleRead.KnownRole? = nil
+        var roleContext: MenuHelpRoleRead.Context? = nil
+        // Bounded structure metadata (R374 B; --menu-capture-structure only).
+        var structure: MenuHelpStructureProbe.Report? = nil
     }
     private struct Line: Encodable {
         let schema = 1
@@ -112,6 +120,10 @@ final class MenuCaptureDiagnostics {
     private var inputSequence: UInt64 = 0
     private var reserved = 0
     private var closed = false
+    // Lock-protected mirrors for `canAcceptRecords`; the writer only flips them
+    // under the lock after its disk I/O, never holding the lock during I/O.
+    private var pendingWrites = 0
+    private var outputFailed = false
     // Writer-queue owned, never touched by the menu observation queue.
     private var writtenBytes = 0
     private var writeFailed = false
@@ -184,12 +196,17 @@ final class MenuCaptureDiagnostics {
             lock.unlock(); slots.signal(); return false
         }
         reserved += 1
+        pendingWrites += 1
         let line = Line(ordinal: reserved, elapsedMilliseconds: Self.milliseconds(now - started),
                         stage: stage, outcome: outcome, context: suppliedContext ?? context,
                         origin: origin, values: values)
         writes.enter()
         writer.async { [self] in
-            defer { slots.signal(); writes.leave() }
+            defer {
+                let failed = writeFailed
+                lock.lock(); pendingWrites -= 1; if failed { outputFailed = true }; lock.unlock()
+                slots.signal(); writes.leave()
+            }
             guard !writeFailed, let encoded = try? JSONEncoder().encode(line) else { return }
             var data = encoded
             data.append(0x0a)
@@ -212,6 +229,17 @@ final class MenuCaptureDiagnostics {
         }
         lock.unlock()
         return true
+    }
+
+    /// Best-effort, non-blocking: whether another record could still be accepted
+    /// now (open, within the time window, below the record cap, with a free
+    /// pending slot, and no write failure/byte-budget exhaustion seen yet). A race
+    /// with a concurrent record/write is possible; it only gates optional work.
+    func canAcceptRecords() -> Bool {
+        let now = clock()
+        lock.lock(); defer { lock.unlock() }
+        return !closed && !outputFailed && now >= started && now - started <= limits.seconds
+            && reserved < limits.records && pendingWrites < limits.pending
     }
 
     /// Called from normal termination or the validator, never the menu queue.

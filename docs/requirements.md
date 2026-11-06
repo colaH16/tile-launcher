@@ -1,3 +1,25 @@
+R374 진단 dev 제작 승인(2026-11-06): 사용자가 “진단 dev 진행해”라고 지시해 R373 합의한 역할 읽기 오류 세분화와 별도 opt-in의 제한 구조 진단 구현·검증·서명/공증·tile-launcher@dev 게시를 승인했다. 2.1.11(81)로 준비한다. 실제 Claude가 생산 코드, Codex 서브에이전트가 주입 검증/독립 정책 리뷰/배포 준비를 맡는다. 원래 incomplete 및 저장 판정은 유지한다. 추가 조회는 진단 빌드+명시 실행 인자에서 알려진 미지원 SDK 역할 첫 실패에만 허용하고 64노드/깊이4/자식100/IPC25ms/최대1초 및 원 요청 남은 마감으로 제한한다. AXParent·새루트·문서/제목/값 조회는 추가하지 않는다. 현재 구현 중이며 사용자 조작·재현·인증 대기가 아니다. 정식2.1.10·기존dev 자산과 이 Mac 실행 앱/설정은 보존한다.
+
+R373 dev80 새 재현 분석 완료(2026-11-06): 사용자가 R372 재현을 마쳤다고 보고했다. 올바른 새 기록창 안의 38건/11,407bytes 로그(hash e39e823fdc4f94e3e5a8051115ef9b3922c9c7068dcc03e86df53aacb43c14a0)를 보존·분석했다. 클릭 행 검증/보관/release 확정은 성공했고 request1/gen5의 조회는 62ms/500노드에서 roleReadFailure로 중단됐다. depth6/children40은 전체 최댓값이다. 2초 마감이 아니며 API 오류·nil/비문자열·미지원 역할 중 실제 분기는 미확정이다. 실제 Claude와 Codex 독립 리뷰는 기존 role 오류 세분화 + 알려진 미지원 SDK 역할일 때만 별도 opt-in/제한 구조 진단하는 안에 합의했다. 추가 AX 조회는 다음 제안이며 아직 구현/사용자 수락 전이다. 외부 helper 신뢰검사는 false여서 AX 조회 0회/권한 변경 0회였고 앱 자체 권한 오류로 해석하지 않았다. 현재 분석 완료·사용자의 다음 진단 구현/dev 단계 지시 대기다. 추가 재현/인증은 지금 필요 없고 제품 코드·버전·설치·배포 변경은 없다. 상세: docs/reviews/numbers-help-role-failure-dev80-20261106.md.
+
+아래 기록은 이전 단계의 상태다.
+
+R372 식사후재준비요청(2026-11-06): 사용자가식사후진단을다시준비해달라고요청했다. TileLauncher만정상종료후같은80을진단인자로새실행했다. PID96633, 새로그tile-launcher-menu-capture-wPQaro, started확인. 한국시간19:44전NumbersHelp검색ExportTSV1회클릭을안내한다. 현재대상은active-session.json이며이전로그와혼합하지않는다. 코드/설정/배포수정없음.
+
+R371 새 기록창 확인: PID93637/dev80/--menu-capture-log, 새 파일8XlpqJ/started1건을확인했다. 시작UTC2026-11-06T09:47:17(한국18:47:17),600초창이므로한국18:57전클릭이필요하다. 사용자에게기록기간을명시하고1회재현을요청한다. active-session.json이현재대상이고이전m2ZpvT/old78은분석대상이아니다.
+
+R371 재클릭 보고 뒤 기록기간 확인(2026-11-06): 사용자재클릭완료응답후새로그m2ZpvT는여전히143bytes/started1건이었다. 확인시파일시작후1059.8초/PID실행17분45초로600초기록기간이이미지났음이확인됐다. 클릭의정확한시각은독립관측하지않아만료가유일원인이라고단정하지않는다. 저장된수집설정은유효형식/켜짐/Numbers제외아님,실행앱은finishedLaunching=true였다. 외부도구의AXtrust를앱trust증거로쓰지않았고TCCDB/권한초기화도하지않았다. 현재기록기간을새로열고10분내재현을받는다. header만으로관찰자/입력모니터준비완료를보장하지않는다.
+
+R370 이Mac TSV 재현보고·진단 실제시작 확인(2026-11-06): 사용자가 연결된이Mac에서ExportTSV를클릭해도추가안됐다고보고했다. 설치80/sourcecac49와Caskroom80은확인됐으나당시PID90907의실제argv에는--menu-capture-log가없었고최신파일도옛78로그(hash0f073...,107기록)뿐이었다. 이를현재TSV진단으로해석하지않았다. 정확한PID/BundleID/실행경로를확인한공개NSRunningApplication.terminate API로TileLauncher만정상종료요청했다(강제종료아님). 이후새PID91779에서진단인자를확인했고새로그m2ZpvT가143bytes/started1건으로생성됨을확인했다. 사용자는에이전트가확인한다는점을수락했다. 현재다음대상은NumbersHelp검색결과ExportTSV1회재클릭이며파일첨부없이이Mac파일을직접분석할수있다. 추가코드/설치/공개수정은없다.
+
+R368 완료(2026-11-06): 세부 하위 메뉴 진단2.1.11(80)/소스cac49e4999c2675a5e9277d5cd3ec8063ba53592을공증해tile-launcher@dev에게시했다. AppleAccepted a9aff0e3-cd3a-425c-aed5-c500a8e916d6, 원래서명9파일동일/티켓만추가. ZIP3182522bytes/SHA850374a79e0e70ada11f04b159825094dbda3dddce1d2e90c2330da87e035d88. dev자산138065d014022989080d2e1d4ef4959129200e99/tap mainad272b98a39701814e3b3f5ede856c938a2349f2, devblobd41e79ccd11a93a61cabc1c21d4854ea18b5c0e4. SwiftON346/OFF338/Python30·실제helper/native/로그직렬화/Option/ReleaseON·OFF검증, 공개3자산익명재다운로드·서명/CloudKit·티켓/Gatekeeper, Homebrew audit/style/fetch가모두통과했다.
+
+정식cask2.1.10blob24662e5e·GitHub최신정식v2.1.10/ID427433440·앱원격main17f3f615·기존dev79/이전자산은보존했다. 이Mac앱교체/재시작을수행하지않았고최종설치본관측은79다. 현재작업은끝났으며회사Mac에서80업데이트→정상종료→--menu-capture-log로새실행→Numbers실패검색결과1회클릭의새로그를기다린다. 기본실행은로그꺼짐이며수집판정은79와같은진단보강본이다. Numbers수집해결완료로안내하지않는다. 상세: docs/reviews/menu-children-diagnostic-dev80-20261106.md.
+
+R368 재개(2026-11-06): 사용자가 집 Mac 잠금 해제를 보고했고 제출 직전 기존 공증 프로필 이력30건 접근이 회복됐다. 보존한 서명 dev80/source cac49e49의 실행파일 지문을 재확인한 뒤 동일 서명본의 공증을 시작했다. 재빌드/재서명·계정재등록은 하지 않는다. 공증 승인 후 dev80 게시와 공개 다운로드/Homebrew 검증을 이어간다.
+
+R368 서명80 준비 완료·잠금 해제 대기(2026-11-06): 소스cac49e4999c2675a5e9277d5cd3ec8063ba53592의세부진단80은ON346/OFF338/Python30·actualhelper전분기/ledger/Option/로그직렬화·ReleaseOFF제거/실제ReleaseON검사와기존DeveloperID/CloudKit서명을통과했다. 공증직전기존프로필접근은화면잠금상태에서실패했고CUA도Mac잠금을확인했다. 사용자에게집Mac잠금해제를요청한뒤응답대기다. 실제공증제출은아직시작하지않아pending제출불명상태가아니며, @dev는79그대로다. 서명본/소스bundle/검증영수증을Library releases/2.1.11-80-diagnostics-cac49e49/prepared와같은보관루트에보존했다. 잠금해제답변후기존인증재확인→동일서명본공증→불변자산/새cask게시를이어간다. 현재Claude/서브에이전트는구현중이아니다.
+
 R368 세부 진단 dev 승인(2026-11-06): 사용자가 하위 메뉴 읽기 실패를 세분화한 진단 dev 제작을 요청했다. 이번 승인 범위는 기존 read의 단계/오류 번호/반환 개수·타입만 기록하는 구현·검증과 서명/공증·tile-launcher@dev 게시까지다.2.1.11(80)으로 준비하며 정식2.1.10과 이 Mac 실행 앱·설정은 유지한다. 실제Claude가flagON read helper/trace·native접속·logger를담당하고Codex서브에이전트가동일생산helper주입fixture·조회순서/판정불변독립리뷰·배포준비를맡는다. 동작수정/추가AX조회/재시도/한도변경/실패가지건너뛰기는이번범위가아니다. 현재구현중이며추가사용자재현/인증대기가아니다.
 
 R367 회사 Numbers dev79 로그 분석 완료(2026-11-06): 첨부22,756bytes/75기록을 실제 Claude와 Codex 독립 리뷰로 대조했다. 사용자는 모든 시험이 Numbers였다고 확인했다. Help 행 보관·release 확정·별도 조회 시작은 성공했고 조회109ms/요청나이698ms에 childrenReadFailure로 멈췄다. Enter와 일반 클릭은 recorded다. 이번 실패는2초 만료가 아니며, API 오류/반환 개수·타입 검사 중 어느 분기인지는 현재 집계로 구분되지 않는다. 기존 read 결과의 API별 오류 코드·개수·검사 실패만 나누는 최소 진단을 다음 제안으로 정리했다. 원인별 제품 수정을 확정하지 않았고 현재는 다음 세부 진단 구현/dev 진행 지시를 기다린다. 추가 사용자 재현/다른 앱 시험/인증 대기가 아니며 코드·버전/설치·배포 변경은 없다. 상세: docs/reviews/numbers-help-click-dev79-log-20261106.md.

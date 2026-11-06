@@ -61,7 +61,10 @@ final class MenuUsageMonitor {
     private static let helpResolutionTimeout: TimeInterval = 2
     private static let helpCloseSettle: TimeInterval = 0.3
     #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
-    private let diagnostics = MenuCaptureDiagnostics.makeIfRequested()
+    private let diagnostics: MenuCaptureDiagnostics?
+    /// R374 B: needs a log that can still accept records and --menu-capture-structure;
+    /// once per process. Created in init so the main thread can cancel probes.
+    private let structureGate: MenuHelpStructureProbeGate
     private var diagnosticHelpSession: UInt64 = 0
     private var diagnosticRecentHelpUntil: TimeInterval = 0
     private var diagnosticOrigin: MenuCaptureDiagnostics.Stamp?
@@ -125,7 +128,15 @@ final class MenuUsageMonitor {
     }
     #endif
 
-    init(settings: SettingsStore) { self.settings = settings }
+    init(settings: SettingsStore) {
+        self.settings = settings
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        let recorder = MenuCaptureDiagnostics.makeIfRequested()
+        diagnostics = recorder
+        structureGate = MenuHelpStructureProbeGate.current(logActive: recorder != nil,
+                                                           availability: { [weak recorder] in recorder?.canAcceptRecords() == true })
+        #endif
+    }
     func start() {
         stop()
         let center = NSWorkspace.shared.notificationCenter
@@ -163,7 +174,14 @@ final class MenuUsageMonitor {
         // invalidates a deferred Help save already heading to main. Workspace
         // notifications that leave the effective target unchanged do not.
         let observed = ObservedTarget(app: process == nil ? nil : target, process: process, options: options)
-        if observed != lastObservedTarget { helpLedger.invalidate() }
+        if observed != lastObservedTarget {
+            helpLedger.invalidate()
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            // Same-process settings changes do not cancel the capture request in
+            // configure(); a running diagnostic probe still stops here.
+            structureGate.cancelProbes()
+            #endif
+        }
         lastObservedTarget = observed
         queue.async { [weak self] in
             self?.configure(process == nil ? nil : target, process: process, preferences: options)
@@ -171,6 +189,9 @@ final class MenuUsageMonitor {
     }
     func stop() {
         helpLedger.invalidate()
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        structureGate.cancelProbes()
+        #endif
         workspaceTokens.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceTokens = []
         preferencesToken = nil
@@ -182,6 +203,9 @@ final class MenuUsageMonitor {
     func suppressLauncherAction(_ menu: MenuCommand, primary: MenuCommand? = nil, completion: (() -> Void)? = nil) {
         // Before the queue hop, so a deferred save already on its way to main is rejected.
         helpLedger.invalidate()
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        structureGate.cancelProbes()
+        #endif
         queue.async { [weak self] in
             self?.suppressedUntil = ProcessInfo.processInfo.systemUptime + 2
             self?.suppressedMenus = Set((MenuPathMatch.paths(menu) + (primary.map(MenuPathMatch.paths) ?? [])).map { MenuIdentity(appID: menu.appID, path: $0) })
@@ -395,6 +419,11 @@ final class MenuUsageMonitor {
         MenuBarRegion.bands(screens: NSScreen.screens.map { ($0.frame, $0.frame.maxY - $0.visibleFrame.maxY) })
     }
     private func configure(_ target: AppItem?, process: ProcessIdentity?, preferences: MenuCapturePreferences) {
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        // Diagnostic-only: a settings change stops a running structure probe even
+        // on the same-process early return below; capture policy is unchanged.
+        if self.preferences != preferences { structureGate.cancelProbes() }
+        #endif
         self.preferences = preferences
         if app == target, lifecycle.process == process, bar != nil { return }
         tearDown()
@@ -678,7 +707,9 @@ final class MenuUsageMonitor {
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         let request = MenuHelpDeferredRequest(ticket: ticket, label: held.label, app: app, process: process, bar: bar,
                                               eventTime: time, diagnosticContext: diagnosticContext,
-                                              diagnosticOrigin: diagnosticOrigin ?? held.origin)
+                                              diagnosticOrigin: diagnosticOrigin ?? held.origin,
+                                              structureGate: structureGate,
+                                              structureEpoch: structureGate.captureEpoch())
         #else
         let request = MenuHelpDeferredRequest(ticket: ticket, label: held.label, app: app, process: process, bar: bar,
                                               eventTime: time)
@@ -851,6 +882,16 @@ final class MenuUsageMonitor {
                 result.childrenReturnedCount = trace.returnedCount
                 result.childrenInvalidIndex = trace.invalidIndex
             }
+            // R374: role failure branch/code/type/category, read-free context and
+            // the optional structure metadata, all on this one existing event.
+            if let trace = stats.roleTrace {
+                result.roleFailure = trace.failure
+                result.roleErrorCode = trace.errorCode
+                result.roleValueType = trace.valueType
+                result.roleCategory = trace.role
+                result.roleContext = stats.roleContext
+            }
+            result.structure = stats.structure
             return result
         }
         switch outcome {
@@ -907,6 +948,9 @@ final class MenuUsageMonitor {
         // App/process/generation change, stop or settings disable.
         helpDown = nil
         cancelHelpRequest(.lifecycle)
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        structureGate.cancelProbes()
+        #endif
         lifecycle.begin(nil)
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         diagnostics?.updateContext(diagnosticContext)

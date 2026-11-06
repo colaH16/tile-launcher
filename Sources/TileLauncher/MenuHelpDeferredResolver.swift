@@ -56,6 +56,11 @@ struct MenuHelpDeferredRequest {
     #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
     let diagnosticContext: MenuCaptureDiagnostics.Context
     let diagnosticOrigin: MenuCaptureDiagnostics.Stamp?
+    /// Per-process; `logActive` also enables the catalog's read-free context tracking.
+    let structureGate: MenuHelpStructureProbeGate
+    /// `structureGate.captureEpoch()` at seal; a later diagnostic cancellation
+    /// (target/settings change, stop, suppression) makes this request's probe ineligible.
+    let structureEpoch: UInt64
     #endif
     var id: UInt64 { ticket.id }
     var generation: UInt64 { ticket.generation }
@@ -80,6 +85,11 @@ struct MenuHelpTraversalStats {
     /// First non-success AXChildren read, kept even if the traversal then
     /// classifies the stop as deadline/cancel. Diagnostics only; no decision uses it.
     var childrenTrace: MenuHelpChildrenRead.Trace? = nil
+    /// R374: first non-accepted AXRole read and where it sat (read-free context).
+    var roleTrace: MenuHelpRoleRead.Trace? = nil
+    var roleContext: MenuHelpRoleRead.Context? = nil
+    /// R374: bounded structure probe after a role failure (both flags only).
+    var structure: MenuHelpStructureProbe.Report? = nil
     #endif
 }
 
@@ -126,6 +136,59 @@ private final class MenuHelpCatalogRead {
     /// `scan` reads role, then title/children of the same node; this remembers
     /// the role so a missing AXChildren is accepted as a leaf only for a menu item.
     private var lastRole: (node: AXUIElement, role: MenuCatalogTraversal.Role)?
+    #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+    // R374 read-free context: the DFS path of children lists the catalog already
+    // read, so a role failure gets its parent role, depth, root and sibling
+    // references without AXParent or any other query. Only with an active log.
+    private var tracking: Bool { request.structureGate.logActive }
+    private struct RoleFailure {
+        let node: AXUIElement
+        let trace: MenuHelpRoleRead.Trace
+        let context: MenuHelpRoleRead.Context
+        /// Other children of the same parent; nil for menu bar roots or unknown.
+        let siblings: [AXUIElement]?
+    }
+    private var roleFailure: RoleFailure?
+    private var catalogPath = MenuHelpCatalogPath<AXUIElement>(equal: { CFEqual($0, $1) })
+    /// (B), only through the gate. Runs while the request is still tracked by the
+    /// monitor, so a new capture cancels `request.cancel`; target/settings change,
+    /// stop, suppression and an unavailable log cancel through the gate.
+    private func structureProbe(after failure: MenuCatalogTraversal.Failure) -> MenuHelpStructureProbe.Report? {
+        guard let failed = roleFailure, let targetRole = failed.trace.role else { return nil }
+        let request = self.request
+        return request.structureGate.run(expectedEpoch: request.structureEpoch, after: failed.trace,
+                                         catalogFailure: failure, canStart: {
+            !request.cancel.isCancelled && ProcessInfo.processInfo.systemUptime < request.deadline
+        }) { gateCancelled in
+            let deadline = min(ProcessInfo.processInfo.systemUptime + MenuHelpStructureProbe.Limits().seconds,
+                               request.deadline)
+            let cancelled = { request.cancel.isCancelled || gateCancelled() }
+            let proceed = { !cancelled() && ProcessInfo.processInfo.systemUptime < deadline }
+            return MenuHelpStructureProbe.scan(
+                target: failed.node, targetRole: targetRole, siblings: failed.siblings,
+                role: { node in
+                    AXUIElementSetMessagingTimeout(node, 0.025)
+                    var value: CFTypeRef?
+                    let error = AXUIElementCopyAttributeValue(node, kAXRoleAttribute as CFString, &value)
+                    return (error, value)
+                },
+                children: { node, limit in
+                    AXUIElementSetMessagingTimeout(node, 0.025)
+                    return MenuHelpStructureChildrenRead.read(limit: limit, count: {
+                        var count: CFIndex = 0
+                        let result = AXUIElementGetAttributeValueCount(node, kAXChildrenAttribute as CFString, &count)
+                        return (result, count)
+                    }, canCopy: proceed, copy: { requested in
+                        var values: CFArray?
+                        let result = AXUIElementCopyAttributeValues(node, kAXChildrenAttribute as CFString, 0, requested, &values)
+                        return (result, values)
+                    })
+                },
+                clock: { ProcessInfo.processInfo.systemUptime }, deadline: deadline,
+                isCancelled: cancelled)
+        }
+    }
+    #endif
 
     init(request: MenuHelpDeferredRequest) { self.request = request }
 
@@ -148,7 +211,17 @@ private final class MenuHelpCatalogRead {
         switch outcome {
         case .incomplete(let failure, let statistics):
             note(statistics)
+            // The scan duration is fixed here; a diagnostic probe is timed separately
+            // and never changes this already failed (fail-closed) outcome.
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            var failed = finished()
+            failed.roleTrace = roleFailure?.trace
+            failed.roleContext = roleFailure?.context
+            failed.structure = structureProbe(after: failure)
+            return .failed(.traversal(failure), failed)
+            #else
             return .failed(.traversal(failure), finished())
+            #endif
         case .complete(let list, let statistics):
             note(statistics)
             entries = list
@@ -268,6 +341,9 @@ private final class MenuHelpCatalogRead {
     private func roots() -> MenuCatalogTraversal.Read<[MenuCatalogTraversal.Root<AXUIElement>]> {
         switch elements(request.bar, leafAllowed: false) {
         case .value(let nodes):
+            #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+            if tracking { catalogPath.didReadRoots(nodes) }
+            #endif
             // The system Apple menu is the menu bar's first child, as in menuPath.
             return .value(nodes.enumerated().map { .init(node: $0.element, isAppleMenu: $0.offset == 0) })
         case .unavailable: return .unavailable
@@ -276,6 +352,23 @@ private final class MenuHelpCatalogRead {
     }
     private func role(_ node: AXUIElement) -> MenuCatalogTraversal.Read<MenuCatalogTraversal.Role> {
         lastRole = nil
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        // Same single AXRole copy, timeout and decision as the #else body.
+        let result = MenuHelpRoleRead.read({
+            AXUIElementSetMessagingTimeout(node, 0.025)
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, kAXRoleAttribute as CFString, &value)
+            return (error, value)
+        }, report: { trace in
+            guard roleFailure == nil else { return }
+            // Sibling references only below a menu bar item (nil at the root level).
+            let located = tracking ? catalogPath.locate(node) : nil
+            roleFailure = RoleFailure(node: node, trace: trace, context: located?.context ?? .unknown,
+                                      siblings: located?.siblings)
+        })
+        if case .value(let accepted) = result { lastRole = (node, accepted) }
+        return result
+        #else
         switch copy(node, kAXRoleAttribute) {
         case .value(let value):
             let role: MenuCatalogTraversal.Role
@@ -291,6 +384,7 @@ private final class MenuHelpCatalogRead {
         case .unavailable: return .unavailable
         case .failure: return .failure
         }
+        #endif
     }
     private func title(_ node: AXUIElement) -> MenuCatalogTraversal.Read<String> {
         switch copy(node, kAXTitleAttribute) {
@@ -303,7 +397,17 @@ private final class MenuHelpCatalogRead {
     }
     private func children(_ node: AXUIElement) -> MenuCatalogTraversal.Read<[AXUIElement]> {
         let menuItem = lastRole.map { CFEqual($0.node, node) && $0.role == .menuItem } == true
+        #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
+        let result = elements(node, leafAllowed: menuItem)
+        // Bookkeeping of references already returned; no additional AX call.
+        if tracking, case .value(let kids) = result {
+            catalogPath.didReadChildren(of: node, role: lastRole.flatMap { CFEqual($0.node, node) ? $0.role : nil },
+                                        children: kids)
+        }
+        return result
+        #else
         return elements(node, leafAllowed: menuItem)
+        #endif
     }
     private enum Identifier { case read(String?), failure }
     /// Only unsupported/noValue means "no identifier". A failed read, or a
