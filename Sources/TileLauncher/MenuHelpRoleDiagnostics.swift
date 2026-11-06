@@ -5,10 +5,10 @@ import DeckCore
 import Foundation
 
 /// R374 (A): the deferred Help catalog's AXRole read with a typed trace of a
-/// non-accepted result. The decisions are exactly those of the flag-off
-/// `role` body: a String AXMenuBarItem/AXMenuItem/AXMenu is accepted; any other
-/// success fails closed; attributeUnsupported/noValue is unavailable; any other
-/// error fails. Only AX error codes, CF type categories and SDK-listed role
+/// non-accepted result. The decisions are those of the shared production
+/// mapping `MenuHelpCatalogRoleRead` (AXMenuBarItem/AXMenuItem/AXMenu/AXGroup/
+/// AXButton accepted; any other success fails closed; attributeUnsupported/
+/// noValue is unavailable; any other error fails). Only AX error codes, CF type categories and SDK-listed role
 /// categories leave this type — never raw strings or CF descriptions.
 enum MenuHelpRoleRead {
     enum Failure: String, Encodable, Equatable {
@@ -63,7 +63,7 @@ enum MenuHelpRoleRead {
     }
     /// Where the failed node sat, from references the catalog already read.
     struct Context: Encodable, Equatable {
-        enum Parent: String, Encodable, Equatable { case menuBar, menuBarItem, menuItem, menu, unknown }
+        enum Parent: String, Encodable, Equatable { case menuBar, menuBarItem, menuItem, menu, group, control, unknown }
         var parent: Parent
         /// Catalog depth of the failed node (menu bar children are 0); nil if unknown.
         var depth: Int?
@@ -78,36 +78,29 @@ enum MenuHelpRoleRead {
         case accepted(MenuCatalogTraversal.Role)
         case rejected(Trace)
     }
-    /// Pure classification of one AXRole result.
+    /// Classification of one AXRole result, layered on the shared production
+    /// mapping (`MenuHelpCatalogRoleRead`): accepted roles and the decision are
+    /// identical to the flag-off build; only the typed reason is added.
     static func classify(error: AXError, value: CFTypeRef?) -> Classified {
-        if error == .attributeUnsupported || error == .noValue {
-            return .rejected(Trace(failure: .unavailable, errorCode: Int(error.rawValue)))
-        }
-        guard error == .success else { return .rejected(Trace(failure: .axError, errorCode: Int(error.rawValue))) }
-        guard let value else { return .rejected(Trace(failure: .missingValue)) }
-        guard CFGetTypeID(value) == CFStringGetTypeID(), let string = value as? String else {
-            return .rejected(Trace(failure: .nonString, valueType: valueType(value)))
-        }
-        switch string {
-        case kAXMenuBarItemRole: return .accepted(.menuBarItem)
-        case kAXMenuItemRole: return .accepted(.menuItem)
-        case kAXMenuRole: return .accepted(.container)
-        default:
-            guard let known = KnownRole(rawValue: string) else { return .rejected(Trace(failure: .unlistedRole)) }
+        switch MenuHelpCatalogRoleRead.classify(error: error, value: value) {
+        case .accepted(let role): return .accepted(role)
+        case .unavailable(let code): return .rejected(Trace(failure: .unavailable, errorCode: Int(code.rawValue)))
+        case .error(let code): return .rejected(Trace(failure: .axError, errorCode: Int(code.rawValue)))
+        case .missingValue: return .rejected(Trace(failure: .missingValue))
+        case .nonString: return .rejected(Trace(failure: .nonString, valueType: value.map { valueType($0) }))
+        case .unsupported(let raw):
+            guard let known = KnownRole(rawValue: raw) else { return .rejected(Trace(failure: .unlistedRole)) }
             return .rejected(Trace(failure: .unsupportedKnownRole, role: known))
         }
     }
-    /// The production role read: one `copy` call, the flag-off decision, and
-    /// `report` at most once for a rejected result.
+    /// The production role read: one `copy` call, the shared flag-off decision,
+    /// and `report` at most once for a rejected result.
     static func read(_ copy: () -> (AXError, CFTypeRef?),
                      report: (Trace) -> Void) -> MenuCatalogTraversal.Read<MenuCatalogTraversal.Role> {
         let (error, value) = copy()
-        switch classify(error: error, value: value) {
-        case .accepted(let role): return .value(role)
-        case .rejected(let trace):
-            report(trace)
-            return trace.failure == .unavailable ? .unavailable : .failure
-        }
+        let result = MenuHelpCatalogRoleRead.classify(error: error, value: value)
+        if case .rejected(let trace) = classify(error: error, value: value) { report(trace) }
+        return MenuHelpCatalogRoleRead.outcome(result)
     }
     static func valueType(_ value: CFTypeRef) -> ValueType {
         switch CFGetTypeID(value) {
@@ -165,6 +158,8 @@ struct MenuHelpCatalogPath<Node> {
             case .menuBarItem: parent = .menuBarItem
             case .menuItem: parent = .menuItem
             case .container: parent = .menu
+            case .structuralGroup: parent = .group
+            case .controlLeaf: parent = .control
             case nil: parent = .unknown
             }
             let siblings = entry.children.enumerated().filter { $0.offset != index }.map(\.element)
@@ -275,6 +270,8 @@ enum MenuHelpStructureProbe {
                 case .menuBarItem: known = .menuBarItem
                 case .menuItem: known = .menuItem
                 case .container: known = .menu
+                case .structuralGroup: known = .group
+                case .controlLeaf: known = .button
                 }
                 return Node(role: known, parent: parent, depth: depth)
             case .rejected(let trace):

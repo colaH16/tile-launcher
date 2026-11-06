@@ -38,7 +38,7 @@ enum MenuCaptureDiagnosticsValidation {
             let gate = MenuHelpStructureProbeGate(logActive: true, structureRequested: true,
                                                   availability: { value.canAcceptRecords() })
             var providerCalls = 0
-            let result = gate.run(expectedEpoch: gate.captureEpoch(), after: .init(failure: .unsupportedKnownRole, role: .group),
+            let result = gate.run(expectedEpoch: gate.captureEpoch(), after: .init(failure: .unsupportedKnownRole, role: .image),
                                   catalogFailure: .readFailure(.role)) { _ in providerCalls += 1; return true }
             try check(result == nil && providerCalls == 0, message)
         }
@@ -112,14 +112,14 @@ enum MenuCaptureDiagnosticsValidation {
         let branch = MenuHelpRoleRead.Context(parent: .menu, depth: 2, rootIndex: 4,
                                               siblingIndex: 1, siblingCount: 3)
         let structure = MenuHelpStructureProbe.Report(status: .truncated, subtreeStatus: .truncated, siblingStatus: nil,
-            nodes: [.init(role: .group, parent: nil, depth: 0, childCount: 1),
+            nodes: [.init(role: .image, parent: nil, depth: 0, childCount: 1),
                     .init(role: .menuItem, parent: 0, depth: 1,
                           issue: .init(kind: .childrenCopyError, code: copyError))],
             siblings: nil, siblingMenu: .unknown, descendantMenuItem: .present,
             descendantMenu: .unknown, durationMilliseconds: 7)
         try check(roleStructure.record(.deferred, .incomplete,
             values: .init(durationMilliseconds: 62, depth: 6, deferredFailure: .roleReadFailure,
-                          roleFailure: .unsupportedKnownRole, roleCategory: .group,
+                          roleFailure: .unsupportedKnownRole, roleCategory: .image,
                           roleContext: branch, structure: structure)), "Accept bounded typed structure metadata")
         try check(roleStructure.record(.deferred, .incomplete,
             values: .init(roleFailure: .unlistedRole)), "Accept a custom role only as its fixed category")
@@ -147,7 +147,7 @@ enum MenuCaptureDiagnosticsValidation {
         try check(Set(customValues.keys) == ["roleFailure"] && customValues["roleFailure"] as? String == "unlistedRole",
                   "A custom role string must never enter the serialized schema")
         let structureAllowed: Set<String> = ["started", "observed", "deferred", "incomplete", "roleReadFailure",
-            "unsupportedKnownRole", "group", "menu", "truncated", "menuItem", "childrenCopyError",
+            "unsupportedKnownRole", "image", "menu", "truncated", "menuItem", "childrenCopyError",
             "unknown", "present", "unlistedRole"]
         func inspectStructure(_ value: Any) throws {
             if let text = value as? String {

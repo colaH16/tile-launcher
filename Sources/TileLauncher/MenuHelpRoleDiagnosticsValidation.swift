@@ -118,12 +118,14 @@ enum MenuHelpRoleDiagnosticsValidation {
         try read(.success, NSNumber(value: 7), expected: .failure, trace: .init(failure: .nonString, valueType: .number))
         try read(.success, kCFBooleanTrue, expected: .failure, trace: .init(failure: .nonString, valueType: .boolean))
         try read(.success, NSArray(), expected: .failure, trace: .init(failure: .nonString, valueType: .array))
-        try read(.success, kAXGroupRole as NSString, expected: .failure,
-                 trace: .init(failure: .unsupportedKnownRole, role: .group))
+        try read(.success, kAXGroupRole as NSString, expected: .value(.structuralGroup))
+        try read(.success, kAXButtonRole as NSString, expected: .value(.controlLeaf))
+        try read(.success, kAXImageRole as NSString, expected: .failure,
+                 trace: .init(failure: .unsupportedKnownRole, role: .image))
         try read(.success, "private custom role fixture" as NSString, expected: .failure,
                  trace: .init(failure: .unlistedRole))
 
-        let known = MenuHelpRoleRead.Trace(failure: .unsupportedKnownRole, role: .group)
+        let known = MenuHelpRoleRead.Trace(failure: .unsupportedKnownRole, role: .image)
         var probes = 0
         func attempt(_ gate: MenuHelpStructureProbeGate, trace: MenuHelpRoleRead.Trace? = known,
                      failure: MenuCatalogTraversal.Failure = .readFailure(.role), allowed: Bool = true) -> Int? {

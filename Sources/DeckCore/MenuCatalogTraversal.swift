@@ -11,6 +11,12 @@ public enum MenuCatalogTraversal {
     }
     public enum Role: Equatable {
         case menuBarItem, menuItem, container
+        /// A structural group (AXGroup) directly inside a menu or an admitted
+        /// group: no title, no path component; all its children are visited.
+        case structuralGroup
+        /// A control (AXButton) directly inside an admitted group: never a
+        /// candidate, no title; it must have an explicitly read, empty child list.
+        case controlLeaf
     }
     public enum Attribute: Equatable {
         case roots, role, title, children
@@ -19,6 +25,12 @@ public enum MenuCatalogTraversal {
         case invalidLimits, cancelled, deadline, nodeLimit, depthLimit, childLimit
         case unavailable(Attribute), readFailure(Attribute)
         case invalidRootRole, unnamedBranch
+        /// A group whose immediate parent is not a menu or an admitted group.
+        case invalidGroupParent
+        /// A control whose immediate parent is not an admitted group.
+        case invalidControlParent
+        /// A control with children.
+        case nonLeafControl
     }
     public struct Root<Node> {
         public let node: Node
@@ -62,7 +74,14 @@ public enum MenuCatalogTraversal {
     /// `.container` is only for native roles known to be structural, such as
     /// AXMenu: its optional title is never queried. Missing children is not
     /// automatically a leaf; the adapter may return `.value([])` only when it
-    /// has evidence of valid childlessness, never after an IPC/type failure.
+    /// has evidence of valid childlessness, never after an IPC/type failure
+    /// (for menu items only; groups and controls need an explicit list).
+    ///
+    /// Placement is checked against the actual parent in this recursion:
+    /// `.structuralGroup` only under `.container` or `.structuralGroup`;
+    /// `.controlLeaf` only under `.structuralGroup` and with no children. Neither
+    /// has a title read or contributes to a path, and neither is ever an entry;
+    /// every node counts against the same node/depth/children limits.
     public static func scan<Node>(roots: () -> Read<[Root<Node>]>,
                                   role: (Node) -> Read<Role>,
                                   title: (Node) -> Read<String>,
@@ -107,19 +126,30 @@ public enum MenuCatalogTraversal {
             guard count <= limits.children else { failure = .childLimit; return false }
             return true
         }
-        func visit(_ node: Node, path: [String], depth: Int, root: Bool) {
+        /// `parent` is the role of the node whose children list contains `node`
+        /// in this recursion (nil for menu bar roots).
+        func visit(_ node: Node, parent: Role?, path: [String], depth: Int) {
             guard checkpoint() else { return }
             statistics.maximumDepth = max(statistics.maximumDepth, depth)
             guard statistics.nodes < limits.nodes else { failure = .nodeLimit; return }
             guard depth < limits.depth else { failure = .depthLimit; return }
             statistics.nodes += 1
             guard let kind = read(.role, { role(node) }) else { return }
-            guard !root || kind == .menuBarItem else { failure = .invalidRootRole; return }
+            guard parent != nil || kind == .menuBarItem else { failure = .invalidRootRole; return }
+            // Placement before any optional attribute read.
+            switch kind {
+            case .structuralGroup:
+                guard parent == .container || parent == .structuralGroup else { failure = .invalidGroupParent; return }
+            case .controlLeaf:
+                guard parent == .structuralGroup else { failure = .invalidControlParent; return }
+            case .menuBarItem, .menuItem, .container:
+                break
+            }
 
             let next: [String]
             let name: String?
             switch kind {
-            case .container:
+            case .container, .structuralGroup, .controlLeaf:
                 name = nil
                 next = path
             case .menuBarItem, .menuItem:
@@ -132,6 +162,11 @@ public enum MenuCatalogTraversal {
             if next.first.map(MenuCapturePolicy.isHelpMenuTitle) == true
                 || MenuCapturePolicy.isAppleMenuPath(next) { return }
             guard let descendants = read(.children, { children(node) }), validChildren(descendants.count) else { return }
+            if kind == .controlLeaf {
+                // Never a candidate; an explicitly empty list is the only valid shape.
+                guard descendants.isEmpty else { failure = .nonLeafControl; return }
+                return
+            }
             if let name, name.isEmpty {
                 // A successful empty title on a childless menu item is a
                 // separator, distinct from an unavailable/failed title read.
@@ -143,7 +178,7 @@ public enum MenuCatalogTraversal {
                 entries.append(.init(node: node, path: next))
             } else {
                 for descendant in descendants {
-                    visit(descendant, path: next, depth: depth + 1, root: false)
+                    visit(descendant, parent: kind, path: next, depth: depth + 1)
                     if failure != nil { return }
                 }
             }
@@ -151,7 +186,7 @@ public enum MenuCatalogTraversal {
 
         if let roots = read(.roots, roots), validChildren(roots.count) {
             for root in roots where !root.isAppleMenu {
-                visit(root.node, path: [], depth: 0, root: true)
+                visit(root.node, parent: nil, path: [], depth: 0)
                 if failure != nil { break }
             }
         }

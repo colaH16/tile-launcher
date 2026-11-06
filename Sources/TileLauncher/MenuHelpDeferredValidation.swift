@@ -9,6 +9,7 @@ import ApplicationServices
 /// window, event monitor or production instance.
 enum MenuHelpDeferredValidation {
     static func run() throws {
+        try MenuHelpCatalogPolicyValidation.run()
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         try MenuHelpChildrenReadValidation.run()
         try MenuHelpRoleDiagnosticsValidation.run()

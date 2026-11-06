@@ -25,6 +25,8 @@ final class MenuCaptureDiagnostics {
         case rootsUnavailable, roleUnavailable, titleUnavailable, childrenUnavailable
         case rootsReadFailure, roleReadFailure, titleReadFailure, childrenReadFailure
         case invalidRootRole, unnamedBranch, process, identifier
+        // R378 placement/shape of admitted structural groups and controls.
+        case invalidGroupParent, invalidControlParent, nonLeafControl
     }
     enum CancelReason: String, Encodable { case superseded, newInteraction, cancelKey, lifecycle, suppressed, expired }
     enum Input: String, Encodable { case none, mouseDown, mouseUp, confirm, cancel, navigation }

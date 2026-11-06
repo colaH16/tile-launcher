@@ -36,7 +36,9 @@ final class MenuCatalogTraversalTests: XCTestCase {
             return self.read(node.role, fault: node.roleFault)
         }, title: { node in
             calls.append("title:\(node.id)"); didRead?(.title)
-            if node.role == .container { XCTFail("Optional container titles must never be read") }
+            if [.container, .structuralGroup, .controlLeaf].contains(node.role) {
+                XCTFail("Structural/control titles must never be read")
+            }
             return self.read(node.title, fault: node.titleFault)
         }, children: { node in
             calls.append("children:\(node.id)"); didRead?(.children)
@@ -189,5 +191,144 @@ final class MenuCatalogTraversalTests: XCTestCase {
         f.container.children = [f.container]
         defer { f.container.children = [] }
         XCTAssertEqual(failure(run([.init(node: f.root)], limits: .init(nodes: 10, depth: 5)).0), .depthLimit)
+    }
+
+    func testObservedGroupsAndSevenProvenLeafControlsDoNotHideLaterMenuCandidate() {
+        let controls = (5...11).map { Node($0, .controlLeaf, "TSV…") }
+        let inner = Node(4, .structuralGroup, "not a menu path", controls)
+        let group = Node(3, .structuralGroup, "not a menu path", [inner])
+        let tsv = Node(12, .menuItem, "TSV…")
+        let menu = Node(2, .container, "", [group, tsv])
+        let root = Node(1, .menuBarItem, "File", [menu])
+        // Faults ensure no title is used even when it matches the chosen command.
+        for node in [group, inner] + controls { node.titleFault = .failure }
+        let (outcome, calls) = run([.init(node: root)])
+        guard case .complete(let entries, let stats) = outcome else { return XCTFail("Observed complete shape rejected") }
+        XCTAssertEqual(entries.map(\.path), [["File", "TSV…"]])
+        XCTAssertEqual(entries.map { $0.node.id }, [12])
+        XCTAssertEqual(stats.nodes, 12)
+        XCTAssertEqual(stats.maximumDepth, 4)
+        XCTAssertEqual(stats.roleReads, 12)
+        XCTAssertEqual(stats.childrenReads, 12)
+        XCTAssertEqual(stats.titleReads, 2)
+        var expected = ["roots", "role:1", "title:1", "children:1", "role:2", "children:2",
+                        "role:3", "children:3", "role:4", "children:4"]
+        for id in 5...11 { expected += ["role:\(id)", "children:\(id)"] }
+        expected += ["role:12", "title:12", "children:12"]
+        XCTAssertEqual(calls, expected, "One pass must read each structural node, without control titles or an early candidate return")
+        let choices = entries.map { CapturedMenu(appID: "fixture", appName: "Fixture", path: $0.path) }
+        XCTAssertEqual(MenuCapturePolicy.resolveHelp(title: "TSV…", choices: choices)?.identity.path, ["File", "TSV…"])
+    }
+
+    func testMenuItemsInsideGroupsKeepGlobalIdentityAndLiteralAmbiguity() {
+        let nested = Node(6, .menuItem, "PDF…")
+        let export = Node(4, .menuItem, "Export To", [Node(5, .container, "", [Node(7, .structuralGroup, "", [nested])])])
+        let literal = Node(8, .menuItem, "Export To > PDF…")
+        let group = Node(3, .structuralGroup, "ignored", [export, literal])
+        let root = Node(1, .menuBarItem, "File", [Node(2, .container, "", [group])])
+        let (outcome, calls) = run([.init(node: root)])
+        guard case .complete(let entries, _) = outcome else { return XCTFail("Nested real menu items must be fully traversed") }
+        XCTAssertEqual(entries.map(\.path), [["File", "Export To", "PDF…"], ["File", "Export To > PDF…"]])
+        XCTAssertTrue(calls.contains("children:7"))
+        var choices = entries.map { CapturedMenu(appID: "fixture", appName: "Fixture", path: $0.path) }
+        XCTAssertNil(MenuCapturePolicy.resolveHelp(title: "Export To > PDF…", choices: choices),
+                     "A literal-vs-breadcrumb collision must not disappear behind a structural group")
+        let duplicate = Node(9, .menuItem, "PDF…")
+        group.children = [nested, Node(10, .structuralGroup, "", [duplicate])]
+        guard case .complete(let duplicates, _) = run([.init(node: root)]).0 else { return XCTFail("Duplicate paths must reach resolution") }
+        XCTAssertEqual(duplicates.map(\.path), [["File", "PDF…"], ["File", "PDF…"]])
+        choices = duplicates.map {
+            CapturedMenu(appID: "fixture", appName: "Fixture", path: $0.path, axIdentifier: "id-\($0.node.id)")
+        }
+        XCTAssertNil(MenuCapturePolicy.resolveHelp(title: "PDF…", choices: choices),
+                     "Every grouped member of one identity must survive for identifier conflict checks")
+        group.children = [nested, Node(11, .menuItem, "Other", [Node(12, .container, "", [duplicate])])]
+        guard case .complete(let twoIdentities, _) = run([.init(node: root)]).0 else { return XCTFail("All grouped identities must reach resolution") }
+        choices = twoIdentities.map { CapturedMenu(appID: "fixture", appName: "Fixture", path: $0.path) }
+        XCTAssertNil(MenuCapturePolicy.resolveHelp(title: "PDF…", choices: choices), "Two real menu identities remain ambiguous")
+    }
+
+    func testGroupsAndControlsRequireTheirExactProvenParentRole() {
+        for role in [Traversal.Role.structuralGroup, .controlLeaf] {
+            XCTAssertEqual(failure(run([.init(node: Node(1, role))]).0), .invalidRootRole)
+        }
+        for parentRole in [Traversal.Role.menuBarItem, .menuItem] {
+            let invalidGroup = Node(3, .structuralGroup)
+            let parent = Node(2, parentRole, "Parent", [invalidGroup])
+            let root = parentRole == .menuBarItem ? parent : Node(1, .menuBarItem, "File", [parent])
+            let (outcome, calls) = run([.init(node: root)])
+            XCTAssertEqual(failure(outcome), .invalidGroupParent)
+            XCTAssertEqual(calls.last, "role:3", "Invalid ancestry must reject before title or children queries")
+        }
+        for parentRole in [Traversal.Role.menuBarItem, .menuItem, .container] {
+            let button = Node(3, .controlLeaf)
+            let parent = Node(2, parentRole, "Parent", [button])
+            let root = parentRole == .menuBarItem ? parent : Node(1, .menuBarItem, "File", [parent])
+            let (outcome, calls) = run([.init(node: root)])
+            XCTAssertEqual(failure(outcome), .invalidControlParent)
+            XCTAssertEqual(calls.last, "role:3")
+        }
+        let hidden = Node(5, .menuItem, "Hidden")
+        let button = Node(4, .controlLeaf, "", [hidden])
+        let root = Node(1, .menuBarItem, "File", [Node(2, .container, "", [Node(3, .structuralGroup, "", [button])])])
+        let (outcome, calls) = run([.init(node: root)])
+        XCTAssertEqual(failure(outcome), .nonLeafControl)
+        XCTAssertEqual(calls.last, "children:4")
+        XCTAssertFalse(calls.contains("role:5"), "A childful button is an error, not a container or ignored subtree")
+    }
+
+    func testGroupOrControlReadFailureDiscardsEarlierValidCandidates() {
+        for kind in [Traversal.Role.structuralGroup, .controlLeaf] {
+            for fault in [Fault.unavailable, .failure] {
+                let broken = Node(4, kind)
+                broken.childrenFault = fault
+                let group = kind == .controlLeaf ? Node(3, .structuralGroup, "", [broken]) : broken
+                let root = Node(1, .menuBarItem, "File", [Node(2, .container, "", [Node(5, .menuItem, "Valid"), group])])
+                let (outcome, calls) = run([.init(node: root)])
+                XCTAssertEqual(failure(outcome), fault == .unavailable ? .unavailable(.children) : .readFailure(.children))
+                XCTAssertTrue(calls.contains("title:5"), "An earlier valid candidate must not escape an incomplete final tree")
+                XCTAssertEqual(calls.last, "children:4")
+                broken.childrenFault = .none
+                broken.roleFault = .failure
+                XCTAssertEqual(failure(run([.init(node: root)]).0), .readFailure(.role))
+            }
+        }
+    }
+
+    func testAcceptedStructuralNodesShareExistingNodeDepthAndChildLimits() {
+        let buttons = (5...11).map { Node($0, .controlLeaf) }
+        let inner = Node(4, .structuralGroup, "", buttons)
+        let root = Node(1, .menuBarItem, "File", [Node(2, .container, "", [Node(3, .structuralGroup, "", [inner]),
+                                                                                  Node(12, .menuItem, "TSV…")])])
+        guard case .complete = run([.init(node: root)], limits: .init(nodes: 12, children: 7, depth: 5)).0 else {
+            return XCTFail("Exact structural budget boundary should succeed")
+        }
+        XCTAssertEqual(failure(run([.init(node: root)], limits: .init(nodes: 11)).0), .nodeLimit)
+        XCTAssertEqual(failure(run([.init(node: root)], limits: .init(depth: 4)).0), .depthLimit)
+        let (tooMany, calls) = run([.init(node: root)], limits: .init(children: 6))
+        XCTAssertEqual(failure(tooMany), .childLimit)
+        XCTAssertEqual(calls.last, "children:4")
+        XCTAssertFalse(calls.contains("role:5"))
+    }
+
+    func testDeadlineOrCancellationDuringGroupAndControlChildrenDoesNotContinue() {
+        let root = Node(1, .menuBarItem, "File", [Node(2, .container, "", [Node(3, .structuralGroup, "", [Node(4, .controlLeaf)]),
+                                                                                  Node(5, .menuItem, "Later")])])
+        for stopAt in [3, 4] {
+            var childReads = 0, timeRemains = true
+            let timed = run([.init(node: root)], hasTime: { timeRemains }, didRead: {
+                if $0 == .children { childReads += 1; if childReads == stopAt { timeRemains = false } }
+            })
+            XCTAssertEqual(failure(timed.0), .deadline)
+            XCTAssertEqual(timed.1.last, "children:\(stopAt)")
+            XCTAssertFalse(timed.1.contains("role:5"))
+            childReads = 0
+            var cancel = false
+            let cancelled = run([.init(node: root)], cancelled: { cancel }, didRead: {
+                if $0 == .children { childReads += 1; if childReads == stopAt { cancel = true } }
+            })
+            XCTAssertEqual(failure(cancelled.0), .cancelled)
+            XCTAssertEqual(cancelled.1, timed.1, "A successful provider crossing cancellation or time cannot supply accepted structure")
+        }
     }
 }

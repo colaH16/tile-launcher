@@ -369,21 +369,16 @@ private final class MenuHelpCatalogRead {
         if case .value(let accepted) = result { lastRole = (node, accepted) }
         return result
         #else
-        switch copy(node, kAXRoleAttribute) {
-        case .value(let value):
-            let role: MenuCatalogTraversal.Role
-            switch value as? String {
-            case kAXMenuBarItemRole: role = .menuBarItem
-            case kAXMenuItemRole: role = .menuItem
-            case kAXMenuRole: role = .container
-            // Custom item content and unknown roles fail closed.
-            default: return .failure
-            }
-            lastRole = (node, role)
-            return .value(role)
-        case .unavailable: return .unavailable
-        case .failure: return .failure
+        // The shared production mapping: one AXRole copy, five accepted roles;
+        // custom item content and other roles fail closed.
+        let result = MenuHelpCatalogRoleRead.read {
+            AXUIElementSetMessagingTimeout(node, 0.025)
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, kAXRoleAttribute as CFString, &value)
+            return (error, value)
         }
+        if case .value(let accepted) = result { lastRole = (node, accepted) }
+        return result
         #endif
     }
     private func title(_ node: AXUIElement) -> MenuCatalogTraversal.Read<String> {
@@ -396,6 +391,8 @@ private final class MenuHelpCatalogRead {
         }
     }
     private func children(_ node: AXUIElement) -> MenuCatalogTraversal.Read<[AXUIElement]> {
+        // Only a known menu item may be a leaf by an unsupported AXChildren;
+        // groups and controls always need an explicitly read list.
         let menuItem = lastRole.map { CFEqual($0.node, node) && $0.role == .menuItem } == true
         #if TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS
         let result = elements(node, leafAllowed: menuItem)

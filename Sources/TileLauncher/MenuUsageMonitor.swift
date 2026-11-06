@@ -918,6 +918,9 @@ final class MenuUsageMonitor {
                 case .childLimit: result.deferredFailure = .childLimit
                 case .invalidRootRole: result.deferredFailure = .invalidRootRole
                 case .unnamedBranch: result.deferredFailure = .unnamedBranch
+                case .invalidGroupParent: result.deferredFailure = .invalidGroupParent
+                case .invalidControlParent: result.deferredFailure = .invalidControlParent
+                case .nonLeafControl: result.deferredFailure = .nonLeafControl
                 case .unavailable(let attribute), .readFailure(let attribute):
                     let unavailable: Bool
                     if case .unavailable = traversal { unavailable = true } else { unavailable = false }
