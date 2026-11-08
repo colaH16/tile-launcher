@@ -24,13 +24,17 @@ enum ProfileDiagnostics {
     enum Outcome: String, Encodable { case profile, noProfile, error }
     enum Invocation: String, Encodable { case show, hide, present, manualSelection, followFocusSelection, temporaryCycle }
     /// Mirrors the existing `SettingsStore.activeProfile` priority; it does not replace it.
-    enum Reason: String, Encodable { case focus, manual, firstFallback }
+    enum Reason: String, Encodable { case focus, manual, defaultProfile, firstFallback }
 
     struct Snapshot: Encodable, Equatable {
         var followFocus: Bool
         var focusIDPresent: Bool
         var focusMember: Bool
         var manualMember: Bool
+        var defaultMember: Bool
+        var focusEligible: Bool
+        var activeMatchesDefault: Bool
+        var activeMatchesManual: Bool
         var reason: Reason
         /// The actual `activeProfile` equals the profile `reason` implies.
         var activeMatchesReason: Bool
@@ -41,22 +45,33 @@ enum ProfileDiagnostics {
         var presentationMatchesActive: Bool?
 
         /// Pure form for fixtures; IDs are compared in memory only.
-        static func make(profileIDs: [String], followFocus: Bool, focusProfileID: String?, manualProfileID: String,
+        static func make(profileIDs: [String], defaultProfileID: String = "default", followFocus: Bool, focusProfileID: String?, manualProfileID: String,
                          activeProfileID: String, presentationProfileID: String?, panelVisible: Bool) -> Snapshot {
             let ids = Set(profileIDs)
             let focusMember = focusProfileID.map(ids.contains) ?? false
             let manualMember = ids.contains(manualProfileID)
-            let reason: Reason = followFocus && focusMember ? .focus : manualMember ? .manual : .firstFallback
-            let implied = reason == .focus ? focusProfileID : reason == .manual ? manualProfileID : profileIDs.first
+            let choice = ProfileSelection.selection(profileIDs: profileIDs, defaultProfileID: defaultProfileID,
+                                                    manualProfileID: manualProfileID, focusProfileID: focusProfileID,
+                                                    followFocus: followFocus)
+            let reason: Reason
+            switch choice?.reason {
+            case .focus: reason = .focus
+            case .manual: reason = .manual
+            case .defaultProfile: reason = .defaultProfile
+            case nil: reason = .firstFallback
+            }
             return Snapshot(followFocus: followFocus, focusIDPresent: focusProfileID != nil, focusMember: focusMember,
-                            manualMember: manualMember, reason: reason, activeMatchesReason: implied == activeProfileID,
+                            manualMember: manualMember, defaultMember: ids.contains(defaultProfileID),
+                            focusEligible: ProfileSelection.isEligibleForFocus(focusProfileID, profileIDs: profileIDs, defaultProfileID: defaultProfileID),
+                            activeMatchesDefault: activeProfileID == defaultProfileID, activeMatchesManual: activeProfileID == manualProfileID,
+                            reason: reason, activeMatchesReason: choice?.profileID == activeProfileID,
                             profileCount: profileIDs.count, panelVisible: panelVisible,
                             presentationProfilePresent: presentationProfileID != nil,
                             presentationMatchesActive: presentationProfileID.map { $0 == activeProfileID })
         }
         /// Reads the actual `SettingsStore.activeProfile` once.
         static func make(settings: SettingsStore, presentationProfileID: String?, panelVisible: Bool) -> Snapshot {
-            make(profileIDs: settings.profiles.map(\.id), followFocus: settings.followFocus,
+            make(profileIDs: settings.profiles.map(\.id), defaultProfileID: settings.defaultProfileID, followFocus: settings.followFocus,
                  focusProfileID: settings.focusProfileID, manualProfileID: settings.manualProfileID,
                  activeProfileID: settings.activeProfile.id, presentationProfileID: presentationProfileID,
                  panelVisible: panelVisible)
@@ -75,6 +90,7 @@ enum ProfileDiagnostics {
         var changed: Bool? = nil
         var returnedPresent: Bool? = nil
         var returnedMember: Bool? = nil
+        var returnedEligibleForFocus: Bool? = nil
         var returnedMatchesCached: Bool? = nil
         /// Only when a successful query had a later applied notification.
         var returnedMatchesLatestNotification: Bool? = nil
@@ -95,6 +111,7 @@ enum ProfileDiagnostics {
         let focusProfileID: String?
         let profileIDs: Set<String>
         let snapshot: Snapshot
+        var defaultProfileID: String? = nil
     }
 
     static var defaultDirectory: URL {
@@ -387,6 +404,12 @@ final class ProfileDiagnosticsRecorder {
                                     changed: state.map { $0.focusProfileID != token.before },
                                     returnedPresent: failed ? nil : returned != nil,
                                     returnedMember: failed ? nil : returned.flatMap { id in state.map { $0.profileIDs.contains(id) } },
+                                    returnedEligibleForFocus: failed ? nil : returned.flatMap { id in state.flatMap { value in
+                                        value.defaultProfileID.flatMap { defaultID -> Bool? in
+                                            guard value.profileIDs.contains(defaultID) else { return nil }
+                                            return ProfileSelection.isEligibleForFocus(id, profileIDs: Array(value.profileIDs), defaultProfileID: defaultID)
+                                        }
+                                    } },
                                     returnedMatchesLatestNotification: failed || notificationSerial <= token.serial
                                         ? nil : current.lastNotification.map { $0 == returned },
                                     notificationSerial: notificationSerial,
@@ -452,6 +475,12 @@ final class ProfileDiagnosticsRecorder {
                 changed: changed,
                 returnedPresent: failed ? nil : returned != nil,
                 returnedMember: failed ? nil : returned.flatMap { id in state.map { $0.profileIDs.contains(id) } },
+                returnedEligibleForFocus: failed ? nil : returned.flatMap { id in state.flatMap { value in
+                    value.defaultProfileID.flatMap { defaultID -> Bool? in
+                        guard value.profileIDs.contains(defaultID) else { return nil }
+                        return ProfileSelection.isEligibleForFocus(id, profileIDs: Array(value.profileIDs), defaultProfileID: defaultID)
+                    }
+                } },
                 returnedMatchesCached: failed ? nil : state.map { $0.focusProfileID == returned },
                 returnedMatchesLatestNotification: failed || self.notificationSerial <= serial
                     ? nil : live.lastNotification.map { $0 == returned },

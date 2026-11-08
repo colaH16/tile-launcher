@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let recording = ProfileDiagnosticsRecorder.shared.isRecording
             let before = recording ? self?.settings.focusProfileID : nil
             #endif
-            self?.settings.focusProfileID = note.userInfo?["profileID"] as? String
+            self?.settings.recordFocusObservation(note.userInfo?["profileID"] as? String)
             #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
             if recording, let self {
                 let after = self.settings.focusProfileID
@@ -1033,15 +1033,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             var token: ProfileDiagnosticsRecorder.QueryToken?
             var returned: String?
             do {
-                self?.settings.focusProfileID = try await { @MainActor in
+                self?.settings.recordFocusObservation(try await { @MainActor in
                     token = ProfileDiagnosticsRecorder.shared.beginQuery(source)
                     let id = try await LauncherFocusIntent.current.profile?.id
                     returned = id
                     return id
-                }()
+                }())
                 ProfileDiagnosticsRecorder.shared.completeQuery(token, source: source, returned: returned, failed: false)
             } catch {
-                self?.settings.focusProfileID = nil
+                self?.settings.recordFocusObservation(nil)
                 ProfileDiagnosticsRecorder.shared.completeQuery(token, source: source, returned: nil, failed: true)
             }
             completion?()
@@ -1050,8 +1050,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     #else
     private func refreshFocus(completion: (() -> Void)? = nil) {
         Task { @MainActor [weak self] in
-            do { self?.settings.focusProfileID = try await LauncherFocusIntent.current.profile?.id }
-            catch { self?.settings.focusProfileID = nil }
+            do {
+                self?.settings.recordFocusObservation(try await LauncherFocusIntent.current.profile?.id)
+            }
+            catch { self?.settings.recordFocusObservation(nil) }
             completion?()
         }
     }
@@ -1062,7 +1064,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ProfileDiagnostics.State(focusProfileID: settings.focusProfileID,
                                  profileIDs: Set(settings.profiles.map(\.id)),
                                  snapshot: .make(settings: settings, presentationProfileID: presentation.profile?.id,
-                                                 panelVisible: panel?.isVisible == true))
+                                                 panelVisible: panel?.isVisible == true),
+                                 defaultProfileID: settings.defaultProfileID)
     }
     #endif
     private func changeProfile(_ id: String?) {
@@ -1410,6 +1413,36 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-previews"),
         fputs("Preview export failed: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
+}
+// R390 saved profile/Focus eligibility with isolated defaults only.
+if CommandLine.arguments.contains("--check-focus-profile-policy") {
+    application.setActivationPolicy(.prohibited)
+    do {
+        try MainActor.assumeIsolated { try FocusProfilePolicyValidation.verify() }
+        exit(0)
+    } catch {
+        fputs("Focus profile policy check failed.\n", stderr)
+        exit(1)
+    }
+}
+if let index = CommandLine.arguments.firstIndex(of: "--check-profile-settings-ui") {
+    guard CommandLine.arguments.indices.contains(index + 1) else {
+        fputs("Usage: --check-profile-settings-ui <output directory>\n", stderr)
+        exit(2)
+    }
+    application.setActivationPolicy(.prohibited)
+    let output = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+    Task { @MainActor in
+        do {
+            try await ProfileSettingsUIValidation.verify(to: output)
+            exit(0)
+        } catch {
+            fputs("Profile settings UI check failed.\n", stderr)
+            exit(1)
+        }
+    }
+    application.run()
+    exit(0)
 }
 // R383 synthetic caption/tile rendering; exits before the production instance.
 if let index = CommandLine.arguments.firstIndex(of: "--check-menu-tile-caption") {

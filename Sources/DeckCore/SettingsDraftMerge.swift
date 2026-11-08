@@ -129,10 +129,22 @@ public enum SettingsDraftConflict: Error, Equatable { case profile(String) }
 
 public struct RegisteredSettingsDraft: Equatable {
     public var profiles: [LauncherProfile]
-    public var selectedID: String
+    public var defaultProfileID: String
+    public var manualProfileID: String
     public var followsFocus: Bool
+    /// Compatibility for older fixture/callers: selection meant the persisted
+    /// manual role, never the settings window's current editing target.
+    public var selectedID: String {
+        get { manualProfileID }
+        set { manualProfileID = newValue }
+    }
+    public init(profiles: [LauncherProfile], defaultProfileID: String, manualProfileID: String, followsFocus: Bool) {
+        self.profiles = profiles; self.defaultProfileID = defaultProfileID
+        self.manualProfileID = manualProfileID; self.followsFocus = followsFocus
+    }
     public init(profiles: [LauncherProfile], selectedID: String, followsFocus: Bool) {
-        self.profiles = profiles; self.selectedID = selectedID; self.followsFocus = followsFocus
+        self.init(profiles: profiles, defaultProfileID: profiles.first(where: { $0.id == "default" })?.id ?? profiles.first?.id ?? "default",
+                  manualProfileID: selectedID, followsFocus: followsFocus)
     }
     public func rebased(from before: Self, onto latest: Self) throws -> Self {
         let old = Dictionary(before.profiles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -166,11 +178,12 @@ public struct RegisteredSettingsDraft: Equatable {
         let ids = SettingsDraftMerge.order(before.profiles.map(\.id), profiles.map(\.id), result.map(\.id))
         let values = Dictionary(result.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let merged = ids.compactMap { values[$0] }
-        let selected = SettingsDraftMerge.field(before.selectedID, selectedID, latest.selectedID)
-        guard !merged.isEmpty, merged.contains(where: { $0.id == selected }) else {
-            throw SettingsDraftConflict.profile(profiles.first(where: { $0.id == selected })?.name ?? "선택한 프로필")
+        let defaultID = SettingsDraftMerge.field(before.defaultProfileID, defaultProfileID, latest.defaultProfileID)
+        let manualID = SettingsDraftMerge.field(before.manualProfileID, manualProfileID, latest.manualProfileID)
+        guard !merged.isEmpty, merged.contains(where: { $0.id == defaultID }), merged.contains(where: { $0.id == manualID }) else {
+            throw SettingsDraftConflict.profile("기본 또는 수동 프로필")
         }
-        return Self(profiles: merged, selectedID: selected,
+        return Self(profiles: merged, defaultProfileID: defaultID, manualProfileID: manualID,
                     followsFocus: SettingsDraftMerge.field(before.followsFocus, followsFocus, latest.followsFocus))
     }
 }

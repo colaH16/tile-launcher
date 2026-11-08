@@ -24,11 +24,13 @@ final class IconReadAhead {
         self.hasApp = hasApp; self.readApp = readApp
         self.hasMenu = hasMenu; self.readMenu = readMenu
         // Use the emitted values: @Published sends before properties are set.
-        Publishers.CombineLatest4(settings.$profiles, settings.$manualProfileID,
-                                  settings.$focusProfileID, settings.$followFocus)
-            .map { profiles, manual, focus, follows -> [PinnedItem] in
-                let selected = follows ? profiles.first(where: { $0.id == focus }) : nil
-                return (selected ?? profiles.first(where: { $0.id == manual }) ?? profiles.first)?.items ?? []
+        Publishers.CombineLatest(
+            Publishers.CombineLatest4(settings.$profiles, settings.$manualProfileID,
+                                      settings.$focusProfileID, settings.$followFocus), settings.$defaultProfileID)
+            .map { values, defaultID -> [PinnedItem] in
+                let (profiles, manual, focus, follows) = values
+                return ProfileSelection.resolve(profiles: profiles, defaultProfileID: defaultID, manualProfileID: manual,
+                                                focusProfileID: focus, followFocus: follows)?.profile.items ?? []
             }
             .removeDuplicates()
             .sink { [weak self] in self?.prepareRegistered($0) }

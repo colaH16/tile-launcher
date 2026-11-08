@@ -175,7 +175,8 @@ final class SettingsStore: ObservableObject {
     var onPersistentWrite: (() -> Void)?
     @Published private(set) var importingDock = false
     @Published private var dockImportMessages: [String: String] = [:]
-    var dockImportMessage: String? { dockImportMessages[activeProfile.id] }
+    var dockImportMessage: String? { dockImportMessage(profileID: activeProfile.id) }
+    func dockImportMessage(profileID: String) -> String? { dockImportMessages[profileID] }
     @Published var dockImportPreview: DockImportChange?
     @Published private var dockImportUndo: [String: DockImportChange] = [:]
     private var dockImportRequest: UUID?
@@ -187,6 +188,7 @@ final class SettingsStore: ObservableObject {
             save()
         }
     }
+    @Published var defaultProfileID: String { didSet { save() } }
     @Published var manualProfileID: String { didSet { save() } }
     @Published var followFocus: Bool { didSet { save() } }
     @Published var focusProfileID: String?
@@ -217,9 +219,15 @@ final class SettingsStore: ObservableObject {
     var onRefreshMenuIcons: ((String) -> Void)?
     var onAppSettingsVisibilityChanged: ((Bool) -> Void)?
     var activeProfile: LauncherProfile {
-        if followFocus, let focused = profiles.first(where: { $0.id == focusProfileID }) { return focused }
-        // A filter can still reference a profile the user deleted or no longer has. Fall back to the user's manual choice first.
-        return profiles.first { $0.id == manualProfileID } ?? profiles[0]
+        ProfileSelection.resolve(profiles: profiles, defaultProfileID: defaultProfileID, manualProfileID: manualProfileID,
+                                 focusProfileID: focusProfileID, followFocus: followFocus)?.profile ?? defaultProfile
+    }
+    var defaultProfile: LauncherProfile { profile(id: defaultProfileID) ?? profiles[0] }
+    func profile(id: String) -> LauncherProfile? { profiles.first { $0.id == id } }
+    func items(profileID: String) -> [PinnedItem] { profile(id: profileID)?.items ?? [] }
+    func setDefaultProfile(_ id: String) {
+        guard profile(id: id) != nil, defaultProfileID != id else { return }
+        defaultProfileID = id
     }
     var pins: [PinnedItem] {
         get { activeProfile.items }
@@ -235,17 +243,29 @@ final class SettingsStore: ObservableObject {
         manualProfileID = id
     }
     func addProfile(name: String, copyingCurrent: Bool) {
+        let items = copyingCurrent ? pins : []
+        guard let id = addProfile(name: name, items: items) else { return }
+        selectProfile(id)
+    }
+    /// Editor creation uses an explicit source snapshot; it never changes
+    /// runtime manual/Focus/default roles merely by adding an editable profile.
+    @discardableResult func addProfile(name: String, items: [PinnedItem]) -> String? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        let profile = LauncherProfile(name: name, items: copyingCurrent ? pins : [])
+        guard !name.isEmpty else { return nil }
+        let profile = LauncherProfile(name: name, items: items)
         profiles.append(profile)
-        selectProfile(profile.id)
+        return profile.id
     }
     func removeActiveProfile() {
-        let id = activeProfile.id
-        guard id != "default", profiles.count > 1 else { return }
-        selectProfile(profiles.first { $0.id != id }!.id)
-        profiles.removeAll { $0.id == id }
+        _ = removeProfile(id: activeProfile.id)
+    }
+    @discardableResult func removeProfile(id: String) -> Bool {
+        guard id != defaultProfileID, profiles.count > 1, profile(id: id) != nil else { return false }
+        batchSave {
+            profiles.removeAll { $0.id == id }
+            if manualProfileID == id { manualProfileID = defaultProfile.id }
+        }
+        return true
     }
     func moveProfile(_ id: String, by offset: Int) {
         guard let index = profiles.firstIndex(where: { $0.id == id }),
@@ -348,9 +368,13 @@ final class SettingsStore: ObservableObject {
     init(defaults: UserDefaults = .standard, persistsChanges: Bool = true) {
         self.defaults = defaults
         self.persistsChanges = persistsChanges
-        profiles = LauncherProfile.restore(profiles: defaults.data(forKey: "launcherProfiles"),
-                                           legacyPins: defaults.data(forKey: "pinnedItems"))
-        manualProfileID = defaults.string(forKey: "manualProfileID") ?? "default"
+        let catalog = ProfileCatalog.restore(profilesData: defaults.data(forKey: "launcherProfiles"),
+                                             legacyPinsData: defaults.data(forKey: "pinnedItems"),
+                                             storedDefaultID: defaults.string(forKey: "defaultProfileID"),
+                                             storedManualID: defaults.string(forKey: "manualProfileID"))
+        profiles = catalog.profiles
+        defaultProfileID = catalog.defaultProfileID
+        manualProfileID = catalog.manualProfileID
         followFocus = defaults.object(forKey: "followFocus") as? Bool ?? true
         numberShortcuts = defaults.string(forKey: "numberShortcuts").flatMap(NumberShortcutAssignment.init(rawValue:)) ?? .registeredFirst
         commands = defaults.data(forKey: "menuCommands").flatMap { try? JSONDecoder().decode([MenuCommand].self, from: $0) } ?? []
@@ -372,7 +396,8 @@ final class SettingsStore: ObservableObject {
         let copy = SettingsStore(defaults: defaults, persistsChanges: false)
         copy.syncStatus = syncStatus
         copy.unavailableMenus = unavailableMenus; copy.sharedMenus = sharedMenus
-        copy.profiles = profiles; copy.manualProfileID = manualProfileID; copy.followFocus = followFocus
+        copy.profiles = profiles; copy.defaultProfileID = defaultProfileID
+        copy.manualProfileID = manualProfileID; copy.followFocus = followFocus
         copy.focusProfileID = focusProfileID; copy.numberShortcuts = numberShortcuts
         copy.commands = commands; copy.menuHistory = menuHistory; copy.menuCapture = menuCapture
         copy.menuRecentDaysInput = String(menuHistory.recentDays)
@@ -394,13 +419,14 @@ final class SettingsStore: ObservableObject {
         guard saveDepth == 0 else { pendingSave = true; return }
         onPersistentChange?()
         if let data = try? JSONEncoder().encode(profiles) { defaults.set(data, forKey: "launcherProfiles") }
-        if let data = try? JSONEncoder().encode(profiles.first { $0.id == "default" }?.items ?? profiles[0].items) {
+        if let data = try? JSONEncoder().encode(defaultProfile.items) {
             defaults.set(data, forKey: "pinnedItems")
         }
         if let data = try? JSONEncoder().encode(commands) { defaults.set(data, forKey: "menuCommands") }
         if let data = try? JSONEncoder().encode(menuHistory) { defaults.set(data, forKey: "menuHistoryPreferences") }
         if let data = try? JSONEncoder().encode(menuCapture) { defaults.set(data, forKey: "menuCapturePreferences") }
         defaults.set(showAppSettingsTile, forKey: "showAppSettingsTile")
+        defaults.set(defaultProfileID, forKey: "defaultProfileID")
         defaults.set(manualProfileID, forKey: "manualProfileID")
         defaults.set(followFocus, forKey: "followFocus")
         defaults.set(numberShortcuts.rawValue, forKey: "numberShortcuts")
@@ -412,7 +438,9 @@ final class SettingsStore: ObservableObject {
         defaults.set(manualCount, forKey: "manualWindowCount")
         onPersistentWrite?()
     }
-    func addApplications() {
+    func addApplications() { addApplications(profileID: activeProfile.id) }
+    func addApplications(profileID: String) {
+        guard profile(id: profileID) != nil else { return }
         let panel = NSOpenPanel()
         panel.title = "등록할 앱 선택"
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
@@ -420,43 +448,60 @@ final class SettingsStore: ObservableObject {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls where !pins.contains(where: { $0.path == url.path }) {
+        guard profile(id: profileID) != nil else { return }
+        var items = items(profileID: profileID)
+        for url in panel.urls where !items.contains(where: { $0.path == url.path }) {
             let bundle = Bundle(url: url)
             let name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? url.deletingPathExtension().lastPathComponent
-            pins.append(PinnedItem(kind: .app, path: url.path, bundleID: bundle?.bundleIdentifier, name: name))
+            items.append(PinnedItem(kind: .app, path: url.path, bundleID: bundle?.bundleIdentifier, name: name))
         }
+        setItems(items, profileID: profileID)
     }
-    func addFolder() {
+    func addFolder() { addFolder(profileID: activeProfile.id) }
+    func addFolder(profileID: String) {
+        guard profile(id: profileID) != nil else { return }
         let panel = NSOpenPanel()
         panel.title = "등록할 폴더 선택"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls { addFolderURL(url) }
+        for url in panel.urls { addFolderURL(url, profileID: profileID) }
     }
     func addFolderURL(_ url: URL, kind: PinnedItem.Kind = .folder, name: String? = nil) {
-        guard !pins.contains(where: { $0.path == url.path }) else { return }
-        pins.append(PinnedItem(kind: kind, path: url.path, bundleID: nil,
-                               name: name ?? url.lastPathComponent))
+        addFolderURL(url, kind: kind, name: name, profileID: activeProfile.id)
     }
-    func move(_ pin: PinnedItem, by offset: Int) {
-        guard let old = pins.firstIndex(of: pin) else { return }
+    func addFolderURL(_ url: URL, kind: PinnedItem.Kind = .folder, name: String? = nil, profileID: String) {
+        guard profile(id: profileID) != nil else { return }
+        var items = items(profileID: profileID)
+        guard !items.contains(where: { $0.path == url.path }) else { return }
+        items.append(PinnedItem(kind: kind, path: url.path, bundleID: nil, name: name ?? url.lastPathComponent))
+        setItems(items, profileID: profileID)
+    }
+    func move(_ pin: PinnedItem, by offset: Int) { move(pin, by: offset, profileID: activeProfile.id) }
+    func move(_ pin: PinnedItem, by offset: Int, profileID: String) {
+        var items = items(profileID: profileID)
+        guard let old = items.firstIndex(of: pin) else { return }
         let new = old + offset
-        guard pins.indices.contains(new) else { return }
-        pins.swapAt(old, new)
+        guard items.indices.contains(new) else { return }
+        items.swapAt(old, new)
+        setItems(items, profileID: profileID)
     }
-    func setOpenMode(_ mode: FolderOpenMode, for id: PinnedItem.ID) {
-        guard let index = pins.firstIndex(where: { $0.id == id }) else { return }
-        pins[index].setOpenMode(mode)
+    func setOpenMode(_ mode: FolderOpenMode, for id: PinnedItem.ID) { setOpenMode(mode, for: id, profileID: activeProfile.id) }
+    func setOpenMode(_ mode: FolderOpenMode, for id: PinnedItem.ID, profileID: String) {
+        var items = items(profileID: profileID)
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].setOpenMode(mode)
+        setItems(items, profileID: profileID)
     }
-    func importDock() {
-        guard !importingDock, dockImportPreview == nil else { return }
+    func importDock() { importDock(profileID: activeProfile.id) }
+    func importDock(profileID: String) {
+        guard !importingDock, dockImportPreview == nil, profile(id: profileID) != nil else { return }
         importingDock = true
         let request = UUID()
         dockImportRequest = request
-        let targetProfileID = activeProfile.id
+        let targetProfileID = profileID
         dockImportMessages.removeValue(forKey: targetProfileID)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try DockImporter.load() }
@@ -474,7 +519,7 @@ final class SettingsStore: ObservableObject {
     }
     func previewDockImport(_ imported: DockImportResult, profileID: String) {
         guard let target = profiles.first(where: { $0.id == profileID }) else {
-            dockImportMessages[activeProfile.id] = "가져올 프로필이 없어졌습니다. 프로필을 선택한 뒤 다시 시도하세요."
+            dockImportMessages[profileID] = "가져올 프로필이 없어졌습니다. 프로필을 선택한 뒤 다시 시도하세요."
             return
         }
         let change = DockImportChange(profile: target, imported: imported)
@@ -494,18 +539,21 @@ final class SettingsStore: ObservableObject {
         dockImportPreview = nil
         guard let target = profiles.first(where: { $0.id == change.profileID }),
               let items = change.applying(to: target) else {
-            dockImportMessages[activeProfile.id] = "‘\(change.profileName)’의 목록이 바뀌었습니다. 다시 가져와서 확인하세요."
+            dockImportMessages[change.profileID] = "‘\(change.profileName)’의 목록이 바뀌었습니다. 다시 가져와서 확인하세요."
             return
         }
         setItems(items, profileID: change.profileID)
         dockImportUndo[change.profileID] = change
         dockImportMessages[target.id] = "‘\(target.name)’에 \(change.addedIDs.count)개 추가 · Dock 순서로 정리했습니다."
     }
-    var canUndoDockImport: Bool {
-        dockImportUndo[activeProfile.id]?.undoing(in: activeProfile) != nil
+    var canUndoDockImport: Bool { canUndoDockImport(profileID: activeProfile.id) }
+    func canUndoDockImport(profileID: String) -> Bool {
+        guard let target = profile(id: profileID) else { return false }
+        return dockImportUndo[profileID]?.undoing(in: target) != nil
     }
-    func undoDockImport() {
-        let target = activeProfile
+    func undoDockImport() { undoDockImport(profileID: activeProfile.id) }
+    func undoDockImport(profileID: String) {
+        guard let target = profile(id: profileID) else { return }
         guard let change = dockImportUndo[target.id], let items = change.undoing(in: target) else { return }
         dockImportUndo.removeValue(forKey: target.id)
         setItems(items, profileID: target.id)

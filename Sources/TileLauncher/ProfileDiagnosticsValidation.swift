@@ -60,6 +60,7 @@ enum ProfileDiagnosticsValidation {
         let store = SettingsStore(defaults: defaults, persistsChanges: false)
         let manual = "PRIVATE_PROFILE_MANUAL", work = "PRIVATE_PROFILE_WORK", worship = "PRIVATE_PROFILE_WORSHIP"
         store.profiles = [manual, work, worship].map { LauncherProfile(id: $0, name: "PRIVATE_NAME_" + $0) }
+        store.defaultProfileID = manual
         store.manualProfileID = manual
         var visible: String? = manual
         var panelVisible = true
@@ -75,14 +76,18 @@ enum ProfileDiagnosticsValidation {
         visible = work
         try check(snapshot().presentationMatchesActive == true, "Matching visible and active profiles must be recognized")
         store.focusProfileID = nil
-        try check(snapshot().reason == .manual && !snapshot().focusIDPresent,
+        try check(snapshot().reason == .defaultProfile && !snapshot().focusIDPresent,
                   "A cleared filter must differ from an unknown non-nil ID")
         store.focusProfileID = "PRIVATE_DELETED_ID"
-        try check(snapshot().reason == .manual && snapshot().focusIDPresent && !snapshot().focusMember,
+        try check(snapshot().reason == .defaultProfile && snapshot().focusIDPresent && !snapshot().focusMember,
                   "A stale ID must report presence and failed membership separately")
+        store.focusProfileID = manual
+        try check(snapshot().reason == .defaultProfile && snapshot().focusMember && !snapshot().focusEligible
+                  && snapshot().defaultMember && snapshot().activeMatchesDefault,
+                  "A valid identity with the default role is present but ineligible for Focus")
         store.manualProfileID = "PRIVATE_MISSING_MANUAL"
-        try check(snapshot().reason == .firstFallback && snapshot().activeMatchesReason,
-                  "Missing manual ID must reflect the actual first-profile fallback")
+        try check(snapshot().reason == .defaultProfile && snapshot().activeMatchesReason,
+                  "Missing manual ID must not replace the explicit default role")
         store.manualProfileID = manual; store.focusProfileID = nil; visible = nil; panelVisible = false
         try check(snapshot().presentationMatchesActive == nil && !snapshot().presentationProfilePresent,
                   "A closed/absent presentation is not a stale visible profile")
@@ -98,7 +103,8 @@ enum ProfileDiagnosticsValidation {
             observer: { try await provider.read() }, schedule: { _, callback in scheduled.append(callback) }, entityBridge: bridge)
         recorder.stateProvider = {
             stateReads += 1
-            return .init(focusProfileID: store.focusProfileID, profileIDs: Set(store.profiles.map(\.id)), snapshot: snapshot())
+            return .init(focusProfileID: store.focusProfileID, profileIDs: Set(store.profiles.map(\.id)), snapshot: snapshot(),
+                         defaultProfileID: store.defaultProfileID)
         }
         recorder.noteInvocation(.show, held: true)
         recorder.noteFocusPerform(hasProfile: true)
@@ -157,10 +163,11 @@ enum ProfileDiagnosticsValidation {
         try await completeProbe(worship)
         try await completeProbe(nil)
         try await completeProbe(nil)
+        try await completeProbe(manual)
         try check(store.focusProfileID == beforeProbe, "Diagnostic current results must never apply product state")
         queue.sync {}
         var observations = events(try rows(secondURL), "observerCompleted").map(values)
-        try check(observations.count == 7 && observations[0]["changed"] == nil
+        try check(observations.count == 8 && observations[0]["changed"] == nil
                   && observations[1]["changed"] as? Bool == true && observations[2]["changed"] as? Bool == false
                   && observations[3]["outcome"] as? String == "error" && observations[3]["changed"] == nil
                   && observations[4]["changed"] as? Bool == false && observations[5]["changed"] as? Bool == true
@@ -170,7 +177,11 @@ enum ProfileDiagnosticsValidation {
                   && observations[0]["returnedMatchesCached"] as? Bool == false
                   && observations[0]["timedOut"] as? Bool == true,
                   "OS-observed membership and stale cached Focus state must remain separate")
-        for _ in 7..<ProfileDiagnosticsRecorder.maximumObserverReads { try await completeProbe(nil) }
+        try check(observations[7]["returnedMember"] as? Bool == true
+                  && observations[7]["returnedEligibleForFocus"] as? Bool == false
+                  && observations[7]["returnedMatchesCached"] as? Bool == false,
+                  "A raw default result remains observable without treating it as an eligible Focus command")
+        for _ in 8..<ProfileDiagnosticsRecorder.maximumObserverReads { try await completeProbe(nil) }
         let callsAtCap = provider.calls
         recorder.requestObservation(.show)
         await Task.yield()
@@ -194,6 +205,9 @@ enum ProfileDiagnosticsValidation {
         recorder.completeQuery(nilQuery, source: .autoSelect, returned: nil, failed: false)
         let errorQuery = recorder.beginQuery(.appLaunch)
         recorder.completeQuery(errorQuery, source: .appLaunch, returned: nil, failed: true)
+        let defaultQuery = recorder.beginQuery(.wake)
+        store.focusProfileID = manual
+        recorder.completeQuery(defaultQuery, source: .wake, returned: manual, failed: false)
         recorder.noteInvocation(.temporaryCycle)
         recorder.noteFocusPerform(hasProfile: true)
         let resolved = bridge.begin(requestedCount: 2)
@@ -205,7 +219,7 @@ enum ProfileDiagnosticsValidation {
         recorder.stop()
         let sessionRows = try rows(secondURL)
         let completed = events(sessionRows, "queryCompleted").map(values)
-        try check(completed.count == 4 && completed[0]["notificationsSinceStart"] as? Int == 1
+        try check(completed.count == 5 && completed[0]["notificationsSinceStart"] as? Int == 1
                   && completed[0]["outcome"] as? String == "profile"
                   && completed[0]["returnedMatchesLatestNotification"] as? Bool == false
                   && completed[1]["returnedMatchesLatestNotification"] as? Bool == true
@@ -213,7 +227,14 @@ enum ProfileDiagnosticsValidation {
                   && completed[2]["returnedPresent"] as? Bool == false && completed[2]["returnedMatchesLatestNotification"] == nil
                   && completed[3]["outcome"] as? String == "error" && completed[3]["returnedPresent"] == nil,
                   "Current nil/error/success and intervening notification must have distinct metadata")
-        try check(store.focusProfileID == nil, "Recording must not repair or otherwise alter product query assignments")
+        let defaultSnapshot = completed[4]["snapshot"] as? [String: Any]
+        try check(completed[4]["returnedMember"] as? Bool == true
+                  && completed[4]["returnedEligibleForFocus"] as? Bool == false
+                  && defaultSnapshot?["focusMember"] as? Bool == true
+                  && defaultSnapshot?["focusEligible"] as? Bool == false
+                  && defaultSnapshot?["reason"] as? String == "defaultProfile",
+                  "Raw product Focus retains membership while default eligibility alone blocks its selection")
+        try check(store.focusProfileID == manual, "Recording must preserve the raw product query assignment")
         let entityStarts = events(sessionRows, "entityQueryStarted").map(values)
         let entityResults = events(sessionRows, "entityQueryCompleted").map(values)
         try check(entityStarts.count == 3 && entityStarts[0]["requestedCount"] as? Int == 2
@@ -343,7 +364,7 @@ enum ProfileDiagnosticsValidation {
         let allowedStrings: Set<String> = ["started", "stopped", "focusPerform", "focusNotification", "queryStarted", "queryCompleted",
             "observerRequested", "observerCompleted", "observerTimeout", "invocation", "appLaunch", "wake", "autoSelect", "recordingStart",
             "show", "profile", "noProfile", "error", "hide", "present", "manualSelection", "followFocusSelection", "temporaryCycle",
-            "focus", "manual", "firstFallback", "entityQueryStarted", "entityQueryCompleted"]
+            "focus", "manual", "defaultProfile", "firstFallback", "entityQueryStarted", "entityQueryCompleted"]
         func inspect(_ value: Any) throws {
             if let text = value as? String {
                 try check(allowedStrings.contains(text), "Serialized strings must be fixed diagnostic enums only")

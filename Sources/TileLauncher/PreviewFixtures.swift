@@ -183,13 +183,16 @@ final class PreviewFixture: ObservableObject {
     func verifyFocusSelection() throws {
         let originalProfiles = settings.profiles
         let originalManual = settings.manualProfileID
+        let originalDefault = settings.defaultProfileID
         let originalFollow = settings.followFocus
         let originalFocus = settings.focusProfileID
         defer {
             settings.profiles = originalProfiles; settings.manualProfileID = originalManual
+            settings.defaultProfileID = originalDefault
             settings.followFocus = originalFollow; settings.focusProfileID = originalFocus
         }
         settings.profiles = ["default", "manual", "work"].map { LauncherProfile(id: $0, name: $0) }
+        settings.defaultProfileID = "default"
         settings.manualProfileID = "manual"
         settings.focusProfileID = "work"
         settings.followFocus = false
@@ -197,12 +200,12 @@ final class PreviewFixture: ObservableObject {
         settings.followFocus = true
         guard settings.activeProfile.id == "work" else { throw NSError(domain: "TileLauncher.Preview", code: 21) }
         settings.focusProfileID = nil
-        guard settings.activeProfile.id == "manual" else { throw NSError(domain: "TileLauncher.Preview", code: 22) }
+        guard settings.activeProfile.id == "default" else { throw NSError(domain: "TileLauncher.Preview", code: 22) }
         settings.focusProfileID = "deleted-profile"
-        guard settings.activeProfile.id == "manual" else { throw NSError(domain: "TileLauncher.Preview", code: 23) }
+        guard settings.activeProfile.id == "default" else { throw NSError(domain: "TileLauncher.Preview", code: 23) }
         settings.manualProfileID = "deleted-manual"
         guard settings.activeProfile.id == "default" else { throw NSError(domain: "TileLauncher.Preview", code: 24) }
-        print("SettingsStore: Focus opt-in, active mapping, cleared/deleted filter and missing manual fallback passed.")
+        print("SettingsStore: Focus opt-in, active mapping, explicit default after cleared/deleted filters and missing manual passed.")
     }
     func verifySettingsRoundTrip() throws {
         let before = content.snapshot

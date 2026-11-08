@@ -10,7 +10,29 @@ struct SettingsView: View {
     let openAppManagementSettings: () -> Void
     var applicationProvider: (() -> [AppItem])? = nil
     @StateObject private var editor: SettingsEditingSession
-    @State private var profileName = ""
+
+    /// One modal at a time: the Dock import confirmation or the profile name sheet.
+    private enum RegisteredModal: Identifiable {
+        case dock(DockImportChange)
+        case profile(ProfileCreationRequest)
+        var id: String {
+            switch self {
+            case .dock(let change): return "dock:\(String(describing: change.id))"
+            case .profile(let request): return "profile:\(request.id)"
+            }
+        }
+    }
+    private var modal: Binding<RegisteredModal?> {
+        Binding(get: {
+            if let change = editor.registered.dockImportPreview { return .dock(change) }
+            if let request = editor.profileCreation { return .profile(request) }
+            return nil
+        }, set: { value in
+            guard value == nil else { return }
+            if editor.registered.dockImportPreview != nil { editor.registered.dockImportPreview = nil }
+            else if editor.profileCreation != nil { editor.cancelProfileCreation() }
+        })
+    }
 
     init(settings: SettingsStore, loginItem: LoginItemManager, navigation: SettingsNavigation,
          requestPermission: @escaping () -> Void, openAppManagementSettings: @escaping () -> Void,
@@ -37,47 +59,72 @@ struct SettingsView: View {
                                      additionSize: MenuAdditionLayout.size(for: geometry.size), applicationProvider: applicationProvider)
                 }
                     .tabItem { Label("메뉴", systemImage: "command") }.tag(SettingsTab.menus)
-                SettingsEditorPane(session: editor, draft: editor.registered, tab: .registered, onCancel: { profileName = "" }) { draft in
-                    registeredPane(settings: draft)
+                SettingsEditorPane(session: editor, draft: editor.registered, tab: .registered, onCancel: {
+                    if editor.profileCreation != nil { editor.cancelProfileCreation() }
+                }) { draft in
+                    RegisteredProfileSettingsPane(settings: draft, editor: editor)
                 }.tabItem { Label("등록 항목·프로필", systemImage: "square.grid.2x2") }.tag(SettingsTab.registered)
             }.padding(SettingsWindowLayout.outerPadding)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in loginItem.refresh() }
         }
         .onAppear { editor.activate(); settings.syncStatus.setSettingsVisible?(true); settings.syncStatus.refresh?() }
-        .sheet(item: Binding(get: { editor.registered.dockImportPreview }, set: { editor.registered.dockImportPreview = $0 }),
-               onDismiss: editor.registered.cancelDockImport) { change in
-            DockImportPreview(change: change, apply: { editor.registered.applyDockImport(change) },
-                              cancel: editor.registered.cancelDockImport)
+        .sheet(item: modal, onDismiss: editor.registered.cancelDockImport) { modal in
+            switch modal {
+            case .dock(let change):
+                DockImportPreview(change: change, apply: { editor.registered.applyDockImport(change) },
+                                  cancel: editor.registered.cancelDockImport)
+            case .profile(let request):
+                ProfileNameSheet(request: request, onConfirm: { editor.confirmProfileCreation(name: $0) },
+                                 onCancel: { editor.cancelProfileCreation() })
+            }
         }
         .onDisappear { editor.registered.cancelDockImport(); editor.pause(); settings.syncStatus.setSettingsVisible?(false) }
     }
-    private func registeredPane(settings: SettingsStore) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+}
+
+/// Actual registered-tab content shared by the settings window and offscreen
+/// UI validation, without constructing unrelated tabs or system services.
+struct RegisteredProfileSettingsPane: View {
+    @ObservedObject var settings: SettingsStore
+    @ObservedObject var editor: SettingsEditingSession
+    var body: some View {
+        // Every registered-item read and change in this pane targets this one
+        // editor profile, never the active/manual profile.
+        let profileID = editor.editorProfileID
+        let isDefault = profileID == settings.defaultProfileID
+        let pins = settings.items(profileID: profileID)
+        let creationBlocked = !editor.canBeginProfileCreation || editor.profileCreation != nil
+            || settings.importingDock || settings.dockImportPreview != nil
+        return VStack(alignment: .leading, spacing: 12) {
             Label("이 Mac에만 저장 · iCloud 동기화 안 함", systemImage: "desktopcomputer").font(.caption).foregroundStyle(.secondary)
             GroupBox("프로필") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Picker("구성", selection: Binding(get: { settings.activeProfile.id }, set: settings.selectProfile)) {
-                            ForEach(settings.profiles) { Text($0.name).tag($0.id) }
+                        Picker("편집할 프로필", selection: Binding(get: { editor.editorProfileID }, set: editor.selectEditingProfile)) {
+                            ForEach(settings.profiles) { profile in
+                                Text(profile.id == settings.defaultProfileID ? "\(profile.name) (기본값)" : profile.name).tag(profile.id)
+                            }
                         }
-                        Button("프로필 삭제", action: settings.removeActiveProfile)
-                            .disabled(settings.activeProfile.id == "default" || settings.profiles.count < 2)
-                            .help("이 프로필의 등록만 삭제합니다. 앱과 파일은 삭제하지 않습니다.")
+                        Button("기본값으로 설정", action: editor.setEditingProfileAsDefault)
+                            .disabled(isDefault)
+                            .help("집중 모드 필터가 없을 때 사용할 기본값으로 지정합니다. 저장 버튼을 누르면 적용됩니다.")
+                        Button("프로필 삭제", action: editor.deleteEditingProfile)
+                            .disabled(isDefault || settings.profiles.count < 2)
+                            .help(isDefault ? "기본값 프로필은 삭제할 수 없습니다. 다른 프로필을 기본값으로 정한 뒤 삭제하세요."
+                                  : "이 프로필의 등록만 삭제합니다. 앱과 파일은 삭제하지 않습니다.")
+                    }
+                    if isDefault {
+                        Label("이 프로필이 기본값입니다.", systemImage: "star.fill").font(.caption).foregroundStyle(.secondary)
                     }
                     HStack {
-                        TextField("새 프로필 이름", text: $profileName)
-                        Button("빈 프로필 추가") {
-                            settings.addProfile(name: profileName, copyingCurrent: false)
-                            profileName = ""
-                        }
-                        .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Button("현재 구성을 복제") {
-                            settings.addProfile(name: profileName, copyingCurrent: true)
-                            profileName = ""
-                        }
-                            .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("빈 프로필 추가…") { editor.beginProfileCreation(copyingCurrent: false) }
+                            .disabled(creationBlocked)
+                        Button("이 프로필 복제…") { editor.beginProfileCreation(copyingCurrent: true) }
+                            .disabled(creationBlocked)
                     }
-                    Toggle("집중 모드 필터에 따라 프로필 자동 선택", isOn: $settings.followFocus)
+                    // The window-local draft (`settings` here), not the live store.
+                    Toggle("집중 모드 필터에 따라 프로필 자동 선택",
+                           isOn: editor.followFocusBinding)
                     DisclosureGroup("프로필 순서") {
                         ScrollView {
                             VStack(spacing: 8) {
@@ -98,41 +145,45 @@ struct SettingsView: View {
                     }
                     Text("왼쪽으로 쓸면 다음, 오른쪽으로 쓸면 이전 프로필입니다. 이 순서대로 순환하며, 오버레이를 닫으면 임시 선택은 해제됩니다.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Text("시스템 설정 → 집중 모드 → 앱 필터에서 Tile Launcher와 프로필을 연결하세요. 필터가 없거나 해제되면 수동으로 선택한 구성으로 돌아갑니다.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("시스템 설정 → 집중 모드 → 앱 필터에서 Tile Launcher와 프로필을 연결하세요. 자동 선택 중 필터가 없거나 해제되면 저장된 기본값 프로필을 사용합니다. 기본값 프로필은 새 집중 모드 필터 후보에 나오지 않습니다. 이미 연결된 필터는 시스템 설정에서 직접 바꿔 주세요.")
                         .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }.padding(8)
             }
             HStack {
                 Text("등록 앱·폴더").font(.headline)
                 Spacer()
-                Button(settings.importingDock ? "가져오는 중…" : "Dock에서 가져오기", action: settings.importDock)
-                    .disabled(settings.importingDock)
+                Button(settings.importingDock ? "가져오는 중…" : "Dock에서 가져오기") { settings.importDock(profileID: profileID) }
+                    .disabled(settings.importingDock || editor.profileCreation != nil)
                 Menu {
-                    Button("앱 추가…", action: settings.addApplications)
-                    Button("폴더 추가…", action: settings.addFolder)
+                    Button("앱 추가…") { settings.addApplications(profileID: profileID) }
+                    Button("폴더 추가…") { settings.addFolder(profileID: profileID) }
                     Button("다운로드 추가") {
-                        settings.addFolderURL(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0], name: "다운로드")
+                        settings.addFolderURL(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0], name: "다운로드",
+                                              profileID: profileID)
                     }
                     Button("휴지통 추가") {
-                        settings.addFolderURL(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"), kind: .trash, name: "휴지통")
+                        settings.addFolderURL(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"), kind: .trash,
+                                              name: "휴지통", profileID: profileID)
                     }
                 } label: { Label("추가", systemImage: "plus") }.fixedSize()
             }
-            if settings.dockImportMessage != nil || settings.canUndoDockImport {
+            if settings.dockImportMessage(profileID: profileID) != nil || settings.canUndoDockImport(profileID: profileID) {
                 HStack(alignment: .top) {
-                    if let message = settings.dockImportMessage {
+                    if let message = settings.dockImportMessage(profileID: profileID) {
                         Text(message).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    if settings.canUndoDockImport {
-                        Button("가져오기 되돌리기", action: settings.undoDockImport)
+                    if settings.canUndoDockImport(profileID: profileID) {
+                        Button("가져오기 되돌리기") { settings.undoDockImport(profileID: profileID) }
                             .controlSize(.small).fixedSize()
                             .help("이 프로필의 다른 등록 항목을 수정하거나 앱을 종료하기 전까지 되돌릴 수 있습니다.")
                     }
                 }
             }
             List {
-                ForEach(settings.pins) { pin in
+                ForEach(pins) { pin in
                     HStack {
                         if pin.kind == .trash { Image(systemName: "trash").font(.system(size: 24)).frame(width: 28, height: 28) }
                         else { Icon(url: pin.url, size: 28) }
@@ -142,26 +193,32 @@ struct SettingsView: View {
                                 Text("휴지통은 Finder에서만 열 수 있습니다.").font(.caption).foregroundStyle(.secondary)
                             } else if pin.kind == .app { Text("앱").font(.caption).foregroundStyle(.secondary) }
                             else {
-                                Picker("여는 방식", selection: Binding(get: { pin.openMode }, set: { settings.setOpenMode($0, for: pin.id) })) {
+                                Picker("여는 방식", selection: Binding(get: { pin.openMode },
+                                                                     set: { settings.setOpenMode($0, for: pin.id, profileID: profileID) })) {
                                     ForEach(FolderOpenMode.allCases) { Text($0.title).tag($0) }
                                 }.labelsHidden().pickerStyle(.menu).fixedSize().accessibilityLabel("\(pin.name) 여는 방식")
                             }
                         }
                         Spacer()
-                        Button { settings.move(pin, by: -1) } label: { Image(systemName: "chevron.up") }
-                            .help("앞으로 이동").disabled(settings.pins.first == pin)
-                        Button { settings.move(pin, by: 1) } label: { Image(systemName: "chevron.down") }
-                            .help("뒤로 이동").disabled(settings.pins.last == pin)
-                        Button { settings.pins.removeAll { $0.id == pin.id } } label: { Image(systemName: "minus.circle") }.help("등록 해제")
+                        Button { settings.move(pin, by: -1, profileID: profileID) } label: { Image(systemName: "chevron.up") }
+                            .help("앞으로 이동").disabled(pins.first == pin)
+                        Button { settings.move(pin, by: 1, profileID: profileID) } label: { Image(systemName: "chevron.down") }
+                            .help("뒤로 이동").disabled(pins.last == pin)
+                        Button {
+                            settings.setItems(settings.items(profileID: profileID).filter { $0.id != pin.id }, profileID: profileID)
+                        } label: { Image(systemName: "minus.circle") }.help("등록 해제")
                     }.buttonStyle(.borderless).padding(.vertical, 4)
-                }.onMove { settings.pins.move(fromOffsets: $0, toOffset: $1) }
+                }.onMove { offsets, destination in
+                    var items = settings.items(profileID: profileID)
+                    items.move(fromOffsets: offsets, toOffset: destination)
+                    settings.setItems(items, profileID: profileID)
+                }
             }.overlay {
-                if settings.pins.isEmpty { Text("추가 버튼으로 앱과 폴더를 등록하세요.").foregroundStyle(.secondary) }
+                if pins.isEmpty { Text("추가 버튼으로 앱과 폴더를 등록하세요.").foregroundStyle(.secondary) }
             }.frame(minHeight: 150)
             Text("앞의 10개에 1–9, 0이 표시됩니다. 순서를 바꾸면 숫자도 바뀝니다.").font(.caption).foregroundStyle(.secondary)
         }.modifier(SettingsPaneInsets())
     }
-
 }
 
 struct MenuSettingsView: View {

@@ -1,6 +1,7 @@
 import Combine
 import DeckCore
 import Foundation
+import SwiftUI
 
 /// A window-local edit buffer for each tab. Only the source store drives the
 /// overlay, automatic collection and persistent defaults.
@@ -8,6 +9,9 @@ final class SettingsEditingSession: ObservableObject {
     let appearance: SettingsStore
     let menus: SettingsStore
     let registered: SettingsStore
+    /// This window's editing target is not a persisted selection role.
+    @Published private(set) var editorProfileID: String
+    @Published var profileCreation: ProfileCreationRequest?
     @Published private(set) var errors: [SettingsTab: String] = [:]
     private let source: SettingsStore
     private var appearanceBase: AppearanceSettingsDraft
@@ -25,6 +29,7 @@ final class SettingsEditingSession: ObservableObject {
         appearance = source.makeEditingCopy()
         menus = source.makeEditingCopy()
         registered = source.makeEditingCopy()
+        editorProfileID = source.activeProfile.id
         appearanceBase = Self.appearanceState(source)
         menuBase = Self.menuState(source, usingInputs: false)
         registeredBase = Self.registeredState(source)
@@ -51,6 +56,43 @@ final class SettingsEditingSession: ObservableObject {
         observationRevision += 1
         syncScheduled = false
     }
+    var canBeginProfileCreation: Bool {
+        profileCreation == nil && !registered.importingDock && registered.dockImportPreview == nil
+            && registered.profile(id: editorProfileID) != nil
+    }
+    /// The production Toggle and native regression use this exact binding.
+    /// Avoid `$settings` in a view whose draft parameter shadows the live store.
+    var followFocusBinding: Binding<Bool> {
+        Binding(get: { self.registered.followFocus }, set: { self.registered.followFocus = $0 })
+    }
+    func selectEditingProfile(_ id: String) {
+        guard registered.profile(id: id) != nil else { return }
+        editorProfileID = id
+    }
+    func beginProfileCreation(copyingCurrent: Bool) {
+        guard canBeginProfileCreation, let profile = registered.profile(id: editorProfileID) else { return }
+        // Retain both the source identity and its value snapshot. Neither a
+        // Focus update nor an external edit can redirect a pending duplicate.
+        profileCreation = ProfileCreationRequest(sourceProfileID: copyingCurrent ? profile.id : nil,
+                                                sourceName: copyingCurrent ? profile.name : nil,
+                                                copiedItems: copyingCurrent ? profile.items : [])
+    }
+    func confirmProfileCreation(name: String) {
+        guard let request = profileCreation,
+              let id = registered.addProfile(name: name, items: request.copiedItems) else { return }
+        editorProfileID = id
+        profileCreation = nil
+    }
+    func cancelProfileCreation() { profileCreation = nil }
+    func deleteEditingProfile() {
+        guard registered.removeProfile(id: editorProfileID) else { return }
+        restoreValidEditorProfile()
+    }
+    func setEditingProfileAsDefault() { registered.setDefaultProfile(editorProfileID) }
+    private func restoreValidEditorProfile() {
+        guard registered.profile(id: editorProfileID) == nil else { return }
+        editorProfileID = registered.defaultProfile.id
+    }
     func activateMenuIcons() {
         guard menuIcons == nil, source.onRefreshMenuIcons != nil else { return }
         menuIcons = MenuIconService(settings: menus, resolveExisting: false, resolveAdded: false)
@@ -71,7 +113,7 @@ final class SettingsEditingSession: ObservableObject {
     }
     func canSave(_ tab: SettingsTab) -> Bool {
         !(syncStatus.locked && (tab == .appearance || tab == .menus)) && hasChanges(tab) && (tab != .menus || (menus.validMenuHistoryInput != nil && menus.refreshingMenuIcons.isEmpty))
-            && (tab != .registered || (!registered.importingDock && registered.dockImportPreview == nil))
+            && (tab != .registered || (!registered.importingDock && registered.dockImportPreview == nil && profileCreation == nil))
     }
     func synchronize() {
         let appearanceNow = Self.appearanceState(source)
@@ -98,6 +140,7 @@ final class SettingsEditingSession: ObservableObject {
             setError("등록 목록이 다른 곳에서 바뀌었습니다. 변경 취소로 최신 목록을 불러온 뒤 다시 편집해 주세요.", for: .registered)
         }
         registered.focusProfileID = source.focusProfileID
+        restoreValidEditorProfile()
     }
     func save(_ tab: SettingsTab) {
         synchronize()
@@ -158,9 +201,11 @@ final class SettingsEditingSession: ObservableObject {
             apply(menuBase, to: menus)
             activateMenuIcons()
         case .registered:
+            cancelProfileCreation()
             registered.cancelDockImport()
             registeredBase = Self.registeredState(source)
             apply(registeredBase, to: registered)
+            restoreValidEditorProfile()
         }
         if tab == .menus { source.syncStatus.clearIconEdits?() }
         setError(nil, for: tab)
@@ -179,7 +224,8 @@ final class SettingsEditingSession: ObservableObject {
     }
     private static func registeredState(_ store: SettingsStore) -> RegisteredSettingsDraft {
         .init(profiles: store.profiles,
-              selectedID: store.profiles.contains(where: { $0.id == store.manualProfileID }) ? store.manualProfileID : store.activeProfile.id,
+              defaultProfileID: store.defaultProfileID,
+              manualProfileID: store.manualProfileID,
               followsFocus: store.followFocus)
     }
     private func apply(_ value: AppearanceSettingsDraft, to store: SettingsStore) {
@@ -198,7 +244,8 @@ final class SettingsEditingSession: ObservableObject {
     }
     private func apply(_ value: RegisteredSettingsDraft, to store: SettingsStore) {
         if store.profiles != value.profiles { store.profiles = value.profiles }
-        if store.manualProfileID != value.selectedID { store.manualProfileID = value.selectedID }
+        if store.defaultProfileID != value.defaultProfileID { store.defaultProfileID = value.defaultProfileID }
+        if store.manualProfileID != value.manualProfileID { store.manualProfileID = value.manualProfileID }
         if store.followFocus != value.followsFocus { store.followFocus = value.followsFocus }
     }
 }
