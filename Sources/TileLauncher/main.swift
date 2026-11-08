@@ -62,6 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var scrollMonitor: Any?
     private var profileScroll = ProfileScrollGesture()
     private var profileChangeRevision = 0
+    #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+    private let profileDiagnosticsMenu = ProfileDiagnosticsMenuController()
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         settingsSync = SettingsSyncCoordinator(settings: settings)
@@ -80,6 +83,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "종료", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        // Opt-in only; items target their own controller.
+        let diagnosticItems = profileDiagnosticsMenu.makeItems()
+        let quitIndex = menu.items.count - 1
+        menu.insertItem(.separator(), at: quitIndex)
+        for (offset, item) in diagnosticItems.enumerated() { menu.insertItem(item, at: quitIndex + offset) }
+        #endif
         statusMenu = menu
         // A permanently attached menu consumes both mouse buttons before the
         // target/action can distinguish them. Keep it separate for right-click.
@@ -166,9 +176,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(reopenNotification(_:)),
             name: InstanceCoordinator.reopenName, object: String(getuid()))
         observers.append(NotificationCenter.default.addObserver(forName: .launcherFocusChanged, object: nil, queue: .main) { [weak self] note in
+            #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            let recording = ProfileDiagnosticsRecorder.shared.isRecording
+            let before = recording ? self?.settings.focusProfileID : nil
+            #endif
             self?.settings.focusProfileID = note.userInfo?["profileID"] as? String
+            #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            if recording, let self {
+                let after = self.settings.focusProfileID
+                ProfileDiagnosticsRecorder.shared.noteFocusNotification(hasProfile: after != nil, changed: after != before)
+            }
+            #endif
         })
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        ProfileDiagnosticsRecorder.shared.stateProvider = { [weak self] in self?.profileDiagnosticState() }
+        refreshFocus(source: .appLaunch)
+        #else
         refreshFocus()
+        #endif
         updateApps()
         menuUsage.onCapture = { [weak self] in self?.scheduleOverlayRefresh() }
         menuUsage.start()
@@ -203,7 +228,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                    let item = self.item(app) {
                     self.appSettingsMenu.preloadLaunchedApp(item)
                 }
-                if name == NSWorkspace.didWakeNotification { self?.refreshFocus() }
+                #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            if name == NSWorkspace.didWakeNotification { self?.refreshFocus(source: .wake) }
+            #else
+            if name == NSWorkspace.didWakeNotification { self?.refreshFocus() }
+            #endif
             })
         }
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
@@ -413,6 +442,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// `anchor` is the Option gesture's detection-time cursor; manual calls pass
     /// nil and use the cursor at the call.
     private func show(held: Bool, restoring previousLayout: PanelLayout? = nil, anchor: CGPoint? = nil) {
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        // Includes the visible-panel early return below; no-op unless recording.
+        ProfileDiagnosticsRecorder.shared.noteInvocation(.show, held: held)
+        ProfileDiagnosticsRecorder.shared.requestObservation(.show)
+        #endif
         if MainActor.assumeIsolated({ settingsSync?.presentAccountChangeIfNeeded() == true }) { return }
         guard panel?.isVisible != true else {
             if !held { pinOverlay() }
@@ -570,6 +604,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Receive local shortcuts without activating the launcher or changing the
         // captured app context. Global monitors cannot consume another app's keys.
         window.makeKeyAndOrderFront(nil)
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        // After the presentation profile and visible panel are assigned.
+        ProfileDiagnosticsRecorder.shared.noteInvocation(.present, held: held)
+        #endif
 
         #if TILE_LAUNCHER_DIAGNOSTICS
         if let index = CommandLine.arguments.firstIndex(of: "--render-check"),
@@ -650,6 +688,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     private func hide(reason: OverlayDismissal = .interruption, at time: TimeInterval = 0) {
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        // Before teardown, so the visible presentation is still observable.
+        ProfileDiagnosticsRecorder.shared.noteInvocation(.hide)
+        #endif
         clearKeyboardFeedback()
         // A held overlay can be dragged now; reopen where it actually is.
         let shownLayout = visibleSnapshot.map { layout in
@@ -982,6 +1024,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         print("AppDelegate: Option keeps window/Space transitions only for Option-held overlays; manual overlays abandon on release, held overlays close unless pinned, Escape always closes.")
     }
     #endif
+    #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+    /// Same optional-LHS query, assignments and completion order as the
+    /// flag-off body; the token begins inside the RHS, so the OS query (and its
+    /// record) happens exactly when the original would perform it.
+    private func refreshFocus(source: ProfileDiagnostics.Source, completion: (() -> Void)? = nil) {
+        Task { @MainActor [weak self] in
+            var token: ProfileDiagnosticsRecorder.QueryToken?
+            var returned: String?
+            do {
+                self?.settings.focusProfileID = try await { @MainActor in
+                    token = ProfileDiagnosticsRecorder.shared.beginQuery(source)
+                    let id = try await LauncherFocusIntent.current.profile?.id
+                    returned = id
+                    return id
+                }()
+                ProfileDiagnosticsRecorder.shared.completeQuery(token, source: source, returned: returned, failed: false)
+            } catch {
+                self?.settings.focusProfileID = nil
+                ProfileDiagnosticsRecorder.shared.completeQuery(token, source: source, returned: nil, failed: true)
+            }
+            completion?()
+        }
+    }
+    #else
     private func refreshFocus(completion: (() -> Void)? = nil) {
         Task { @MainActor [weak self] in
             do { self?.settings.focusProfileID = try await LauncherFocusIntent.current.profile?.id }
@@ -989,21 +1055,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             completion?()
         }
     }
+    #endif
+    #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+    /// Called by the recorder only while recording.
+    private func profileDiagnosticState() -> ProfileDiagnostics.State {
+        ProfileDiagnostics.State(focusProfileID: settings.focusProfileID,
+                                 profileIDs: Set(settings.profiles.map(\.id)),
+                                 snapshot: .make(settings: settings, presentationProfileID: presentation.profile?.id,
+                                                 panelVisible: panel?.isVisible == true))
+    }
+    #endif
     private func changeProfile(_ id: String?) {
         pendingAction = nil
         if let id {
             settings.selectProfile(id)
             redisplayProfile()
+            #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            ProfileDiagnosticsRecorder.shared.noteInvocation(.manualSelection)
+            #endif
         } else {
             settings.followFocus = true
+            #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            ProfileDiagnosticsRecorder.shared.noteInvocation(.followFocusSelection)
+            #endif
             let originalPanel = panel
             let revision = profileChangeRevision
+            #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            refreshFocus(source: .autoSelect) { [weak self, weak originalPanel] in
+                guard let self, let originalPanel, self.settings.followFocus,
+                      self.profileChangeRevision == revision,
+                      self.panel === originalPanel, originalPanel.isVisible else { return }
+                self.redisplayProfile()
+            }
+            #else
             refreshFocus { [weak self, weak originalPanel] in
                 guard let self, let originalPanel, self.settings.followFocus,
                       self.profileChangeRevision == revision,
                       self.panel === originalPanel, originalPanel.isVisible else { return }
                 self.redisplayProfile()
             }
+            #endif
         }
     }
     private func redisplayProfile() {
@@ -1038,6 +1129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let next = ProfileNavigation.target(in: settings.profiles, currentID: currentID, step: step) else { return }
         // This is a presentation override, never a change to Focus or saved manual selection.
         displayProfile(next)
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        ProfileDiagnosticsRecorder.shared.noteInvocation(.temporaryCycle)
+        #endif
     }
     private func selectNumber(_ index: Int, command: Bool) {
         guard let snapshot = visibleSnapshot, browser?.current == nil else { NSSound.beep(); return }
@@ -1277,6 +1371,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return false
     }
     func applicationWillTerminate(_ notification: Notification) {
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        ProfileDiagnosticsRecorder.shared.stop()   // bounded drain of accepted writes
+        #endif
         MainActor.assumeIsolated { settingsSync?.shutdown() }
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         dockHandoff.stopMonitoring()
@@ -1449,6 +1546,31 @@ if let index = CommandLine.arguments.firstIndex(of: "--check-menu-capture-diagno
         fputs("Menu capture diagnostics check failed: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
+}
+#endif
+#if TILE_LAUNCHER_DIAGNOSTICS && TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+// R386 synthetic profile-diagnostics validation (Debug + profile flag only; no
+// runtime recording start). Runs on the main run loop so injected async
+// observers can complete; exits before the instance lock, delegate, status
+// item and global monitors.
+if let index = CommandLine.arguments.firstIndex(of: "--check-profile-diagnostics") {
+    guard CommandLine.arguments.indices.contains(index + 1) else {
+        fputs("Usage: --check-profile-diagnostics <output directory>\n", stderr)
+        exit(2)
+    }
+    application.setActivationPolicy(.prohibited)
+    let output = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+    Task { @MainActor in
+        do {
+            try await ProfileDiagnosticsValidation.verify(to: output)
+            exit(0)
+        } catch {
+            fputs("Profile diagnostics check failed.\n", stderr)
+            exit(1)
+        }
+    }
+    application.run()
+    exit(0)
 }
 #endif
 let instanceLock: InstanceLock

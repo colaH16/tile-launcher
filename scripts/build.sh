@@ -11,6 +11,11 @@ case "${TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS:-0}" in
     1) SWIFT_BUILD_OPTIONS+=(-Xswiftc -DTILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS) ;;
     *) printf '%s\n' 'TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS must be 0 or 1.' >&2; exit 2 ;;
 esac
+case "${TILE_LAUNCHER_PROFILE_DIAGNOSTICS:-0}" in
+    0) ;;
+    1) SWIFT_BUILD_OPTIONS+=(-Xswiftc -DTILE_LAUNCHER_PROFILE_DIAGNOSTICS) ;;
+    *) printf '%s\n' 'TILE_LAUNCHER_PROFILE_DIAGNOSTICS must be 0 or 1.' >&2; exit 2 ;;
+esac
 swift build "${SWIFT_BUILD_OPTIONS[@]}" -debug-info-format none
 BINARY_DIR="$(swift build "${SWIFT_BUILD_OPTIONS[@]}" --show-bin-path)"
 OUTPUT_DIR="${TILE_LAUNCHER_OUTPUT_DIR:-$HOME/Library/Developer/TileLauncher/build}"

@@ -4,7 +4,7 @@ import XCTest
 final class MenuDiagnosticsBuildTests: XCTestCase {
     /// Runs only shell/argument plumbing. Both swift calls are stubs; the first
     /// copy is another stub that stops before metadata, xattr or signing steps.
-    private func options(_ option: String?) throws -> (status: Int32, calls: String) {
+    private func options(menu: String?, profile: String?) throws -> (status: Int32, calls: String) {
         let fm = FileManager.default
         let directory = fm.temporaryDirectory.appendingPathComponent("tile-menu-build-options-" + UUID().uuidString)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -38,7 +38,10 @@ final class MenuDiagnosticsBuildTests: XCTestCase {
         environment["TILE_LAUNCHER_TEST_SWIFT_ARGUMENTS"] = args.path
         environment["TILE_LAUNCHER_TEST_BINARY_DIRECTORY"] = bin.path
         environment["TILE_LAUNCHER_OUTPUT_DIR"] = directory.appendingPathComponent("synthetic-products").path
-        environment["TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS"] = option
+        // Each case owns both switches, independent of the parent build matrix.
+        // A nil value removes an inherited setting and checks the default OFF.
+        environment["TILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS"] = menu
+        environment["TILE_LAUNCHER_PROFILE_DIAGNOSTICS"] = profile
         process.environment = environment
         let output = Pipe()
         process.standardOutput = output
@@ -48,21 +51,32 @@ final class MenuDiagnosticsBuildTests: XCTestCase {
         _ = output.fileHandleForReading.readDataToEndOfFile()
         return (process.terminationStatus, (try? String(contentsOf: args, encoding: .utf8)) ?? "")
     }
-    func testDiagnosticFlagIsExplicitAndAppliedToBuildAndBinPath() throws {
-        let flag = "-DTILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS"
-        for option in [nil, "0", "1"] as [String?] {
-            let result = try options(option)
+    func testDiagnosticFlagsAreExplicitAndAppliedToBuildAndBinPath() throws {
+        let cases: [(String?, String?)] = [(nil, nil), ("0", "0"), ("1", "0"), ("0", "1"), ("1", "1")]
+        for (menu, profile) in cases {
+            let result = try options(menu: menu, profile: profile)
             XCTAssertEqual(result.status, 73, "The stub copy stops before every signing/install step")
             let calls = result.calls.split(separator: "\n").map(String.init)
             XCTAssertEqual(calls.filter { $0 == "@call" }.count, 2)
             XCTAssertEqual(calls.filter { $0 == "--show-bin-path" }.count, 1)
-            XCTAssertEqual(calls.filter { $0 == flag }.count, option == "1" ? 2 : 0)
-            XCTAssertEqual(calls.filter { $0 == "-Xswiftc" }.count, option == "1" ? 2 : 0)
+            let invocations = result.calls.components(separatedBy: "@call\n").dropFirst()
+                .map { $0.split(separator: "\n").map(String.init) }
+            XCTAssertEqual(invocations.count, 2)
+            let enabled = (menu == "1" ? 1 : 0) + (profile == "1" ? 1 : 0)
+            for arguments in invocations {
+                XCTAssertEqual(arguments.filter { $0 == "-DTILE_LAUNCHER_MENU_CAPTURE_DIAGNOSTICS" }.count,
+                               menu == "1" ? 1 : 0)
+                XCTAssertEqual(arguments.filter { $0 == "-DTILE_LAUNCHER_PROFILE_DIAGNOSTICS" }.count,
+                               profile == "1" ? 1 : 0)
+                XCTAssertEqual(arguments.filter { $0 == "-Xswiftc" }.count, enabled)
+            }
         }
     }
     func testInvalidDiagnosticFlagStopsBeforeAnyBuild() throws {
-        let result = try options("yes")
-        XCTAssertEqual(result.status, 2)
-        XCTAssertTrue(result.calls.isEmpty)
+        for (menu, profile) in [("yes", "0"), ("0", "yes")] {
+            let result = try options(menu: menu, profile: profile)
+            XCTAssertEqual(result.status, 2)
+            XCTAssertTrue(result.calls.isEmpty)
+        }
     }
 }

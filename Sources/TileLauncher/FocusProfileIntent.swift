@@ -11,7 +11,21 @@ struct ProfileEntity: AppEntity {
 }
 struct ProfileQuery: EntityQuery {
     func entities(for identifiers: [String]) async throws -> [ProfileEntity] {
+        #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+        // Counts only (requested vs resolved); same single await/filter; the
+        // same error is rethrown. Invisible when no session is recording here.
+        let token = ProfileDiagnosticsEntityBridge.shared.begin(requestedCount: identifiers.count)
+        do {
+            let result = try await suggestedEntities().filter { identifiers.contains($0.id) }
+            ProfileDiagnosticsEntityBridge.shared.finish(token, resolvedCount: result.count, failed: false)
+            return result
+        } catch {
+            ProfileDiagnosticsEntityBridge.shared.finish(token, resolvedCount: nil, failed: true)
+            throw error
+        }
+        #else
         try await suggestedEntities().filter { identifiers.contains($0.id) }
+        #endif
     }
     func suggestedEntities() async throws -> [ProfileEntity] {
         let defaults = UserDefaults.standard
@@ -30,6 +44,10 @@ struct LauncherFocusIntent: SetFocusFilterIntent {
     func perform() async throws -> some IntentResult {
         let id = profile?.id
         await MainActor.run {
+            #if TILE_LAUNCHER_PROFILE_DIAGNOSTICS
+            // Process-local: a perform in another process is not observed here.
+            ProfileDiagnosticsRecorder.shared.noteFocusPerform(hasProfile: id != nil)
+            #endif
             NotificationCenter.default.post(name: .launcherFocusChanged, object: nil,
                                              userInfo: ["profileID": id as Any])
         }
