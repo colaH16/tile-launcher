@@ -1,6 +1,6 @@
 # R390–R391 프로필 기본값·편집 UI 구현
 
-기준일: 2026-11-08 (Asia/Seoul). 코드 구현·집중 native 검증을 완료하고 전체 격리 matrix 검증을 준비한다. 실제 사용자 앱·설정·배포를 변경하지 않았다. canonical cdf17e95를 기반으로 별도 R390 clean source에서 작업한다. R389 회사 오마 자동 선택의 실제 원인은 미확정이다.
+기준일: 2026-11-08 (Asia/Seoul). 코드 구현·전체 격리 matrix 검증·로컬 코드 커밋/증거 보존을 완료했다. R392의 버전 메타데이터는 별도 단계다. 실제 사용자 앱·설정·배포를 변경하지 않았다. canonical cdf17e95를 기반으로 별도 R390 clean source에서 작업한다. R389 회사 오마 자동 선택의 실제 원인은 미확정이다.
 
 ## 사용자 요청과 이번 정책
 
@@ -40,8 +40,17 @@ Picker뿐 아니라 등록 목록·삭제·드래그/버튼 순서·여는 방�
 - SettingsView가 실제 사용하는 RegisteredProfileSettingsPane과 SettingsEditorPane footer/이름 창/Dock 확인 창을 offscreen NSHostingView로 출력했다. 투명 배경과 TabView 선택 탭 캡처 문제는 실제 pane 공유·windowBackground/colorScheme·같은 outer padding으로 해결했다. 전체 TabView 표시/실제 물리 입력의 검증은 아니다.
 - 기본 폭580·최소 폭540에서 일반/긴 가짜 이름을660높이로 출력했다. outer16+pane16을 양쪽 적용해 GroupBox 전 가용 폭516/476을 확인했다. 기본 badge·버튼·footer가 잘리지 않고 긴 이름은 native popup 말줄임으로 표시된다. 설명 두 Text는 vertical fixedSize로 끝까지 줄바꿈한다. 총12PNG를 직접 확인했고 독립 리뷰도8개 기본 렌더를 확인했다.
 - 합성 전용 UserDefaults와 가짜 등록 항목만 사용한다. 실제 OS Focus 조회·Dock 읽기·권한 변경·실행 앱·사용자 설정·A11y 전역 입력은 사용하지 않는다.
-- 실제 Claude 읽기 교차 리뷰와 Codex 독립 UI 리뷰는 차단점 없음이다. 모든 소유자의 코드 동결 뒤 전체 matrix 검증은 root가 진행한다.
+- 실제 Claude 읽기 교차 리뷰와 Codex 독립 UI 리뷰는 차단점 없음이다. 동결한 코드의 전체 matrix 검증327입력/30단계를 완료했다.
 
 ## 남은 단계와 보존
 
-최종 집중 UI 근거는 `/private/tmp/tile-launcher-r390-ui-native-20261108-minwidth-final/`의 native.log(exit0), receipt.json과 rendered12PNG다. 초기 캡처는 보존하고 최종 결과와 구분한다. 전체 격리 회귀는 아직 실행 전이며 결과를 외부 영수증으로 연결한다. 버전/config/릴리스 노트·서명·공증·Homebrew·원격 main/태그·설치 앱은 이번에 변경하지 않는다. 별도 사용자 시험 배포본은 다음 작업이며 현재 새 빌드/배포가 진행 중이라고 안내하지 않는다. 기존 R389 재검토와 원본 증거는 유지한다.
+최종 집중 UI 근거는 `/private/tmp/tile-launcher-r390-ui-native-20261108-minwidth-final/`의 native.log(exit0), receipt.json과 rendered12PNG다. 초기 캡처는 보존하고 최종 결과와 구분한다. 전체 격리 회귀는327입력/30단계 모두 통과했고 Swift349/349/357·Python30·새Focus/UI native와 기존Profile/Option/Help/caption·ReleaseOFF 제거를 확인했다. 코드 커밋은9302353f2e8939f903d90829557cc698d46931ee이며 외부 receipt.json/source-manifest.json으로 연결한다. R390 코드 단계에서는 버전/config/릴리스 노트를 유지했다. 이어진 R392는 버전 메타데이터만 바꾸며 서명·공증·Homebrew·원격 main/태그·설치 앱은 계속 변경하지 않는다. 별도 사용자 시험 배포본은 다음 작업이며 현재 새 빌드/배포가 진행 중이라고 안내하지 않는다. 기존 R389 재검토와 원본 증거는 유지한다.
+
+
+## 로컬 커밋·원본 미러와 R392 버전 정리
+
+코드 커밋9302353(부모cdf17e95)은 전체 입력327개와 검증30단계의 종료/해시를 다시 읽어 일치를 확인한 뒤 만들었다. 기존 원본223canonical을 cdf blob과 비교해 불일치0, 새6개 부재를 확인하고 변경16개만 복사했다. 최종229canonical의 bytes/mode 일치를 확인했다. cloud 복사본53개는 별도 preserved extras로 남겼으며 삭제·소스 복사·빌드 혼입하지 않았다. `.build/evidence/r390`에 완전 history source.bundle·전체 source.tar.gz·base/diff·manifest/receipt·30logs/driver·대표12PNG를 보존했다.
+
+R392 사용자는 메뉴/설정 UI 변경을 포함하므로 마이너 버전을 올리자고 요청했다. 활성 메타데이터는2.3.0(85), 이전 공개v2.1.10과 included_versions2.1.11/2.2.0/2.3.0으로 정리한다. 다음 공개 계획v2.3.0이 이전v2.2.0 단일 계획을 대체하며2.1.11 별도 공개/태그는 만들지 않는다. 2.1.11 두 수정·2.2.0 메뉴 경로·2.3.0 기본 프로필/설정 편집을 분리하고, 이전84 진단 안내는 과거 기록으로 보존한다. 확인된 설정 Toggle binding 수정은2.3 개선에 포함하지만 R389 회사 원인 해결로 주장하지 않는다.
+
+이 버전 단계는9302353 대비 코드0변경을 확인하고 Python30/노트 범위 검사를 별도로 수행한다. 327입력/30단계의 전체 검증은9302353 코드에 적용된 결과이며 새 메타데이터 전체를 같은 manifest로 다시 검사한 것은 아니다. 아직85앱 빌드·서명·공증·설치·브루/원격 공개는0건이다. 현재 코드/메타데이터 준비 뒤 다음 지시를 기다린다.
