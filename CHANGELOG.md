@@ -1,4 +1,8 @@
-## 현재 배포 · 2.3.0(86) 정식 공개 완료 (2026-11-08)
+## 현재 배포 · 2.3.1(87) 정식 공개 완료 (2026-11-16)
+
+사용자 실기 8항목 통과 뒤 사용자 지시로 같은 87 공증본을 [GitHub v2.3.1](https://github.com/colaH16/tile-launcher/releases/tag/v2.3.1)(Latest, 태그 → 소스 `9b2f4f5`)로 공개했다. 정식 `tile-launcher`와 `tile-launcher@dev` cask는 모두 이 릴리스의 ZIP 자산(ID 754967910, SHA256 `44422ce6…d217378`)을 가리킨다(tap main `554e272`). 공개 자산 익명 재다운로드 해시·티켓·Gatekeeper, 두 cask의 strict online audit·style·fetch를 통과했다. 다음 버전의 직전 공개 기준은 v2.3.1이다.
+
+## 이전 배포 · 2.3.0(86) 정식 공개 완료 (2026-11-08)
 
 Claude 최종 검수·Developer ID/CloudKit 서명·Apple 공증을 마치고 [GitHub v2.3.0](https://github.com/colaH16/tile-launcher/releases/tag/v2.3.0)과 일반/@dev Homebrew 채널에 같은 ZIP을 게시했다. 출시 소스7af3fdea, 최종 tap f3bf73fb이며 진단 플래그는 둘 다 OFF다. 공개 API 익명 다운로드와 두 cask의 strict audit/style/force fetch를 통과했다. 회사85의 세 시나리오는 사용자 확인으로 통과했고 추가 사용자 응답 대기는 없다.
 
@@ -6,7 +10,7 @@ Claude 최종 검수·Developer ID/CloudKit 서명·Apple 공증을 마치고 [G
 
 # Tile Launcher 버전 이력
 
-## 2.3.1 · Option 유지·고정 상태의 실행/닫힘 규칙 (87 공증 @dev 게시 완료)
+## 2.3.1 · Option 유지·고정 상태의 실행/닫힘 규칙 (87 정식 공개 완료)
 
 - 2026-11-16 사용자 실기: 시험 안내 8항목(AC-003~008, AC-011) 모두 정상 — "모두 정상 … 완벽하다." 정식 공개는 사용자 지시를 기다린다.
 - 2026-11-16 @dev 게시: 소스 `9b2f4f5`(공개 main), 진단 둘 다 OFF. Developer ID/CloudKit 서명, Apple 공증 Accepted `81becfc8-181d-4069-8e1f-0e9813581374`, 티켓·Gatekeeper 통과. 최종 ZIP SHA256 `44422ce67be79dfc213eb9e6a444c067c2e6e622cc4e9702ab1735a98d217378`.
