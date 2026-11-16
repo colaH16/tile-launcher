@@ -85,7 +85,7 @@ DEVELOPER_DIR="/Applications/Develop/Xcode-beta.app/Contents/Developer" bash scr
 
 - [릴리스 노트](https://github.com/colaH16/tile-launcher/releases) · [버전 이력](CHANGELOG.md)
 - [설치 안내](docs/installation.md)
-- [현재 요구사항](docs/requirements.md) · [사용자 요청 기록](docs/request-log.md)
+- [원칙](docs/sdd/constitution.md) · [명세](docs/sdd/spec.md) · [구현 계획](docs/sdd/plan.md) · [결정 기록](docs/sdd/decisions.md)
 - [검증 기록](docs/validation.md) · [macOS 업그레이드 지침](docs/macos-upgrade-guide.md)
 - [조작·크기 설계](docs/interaction-design.md) · [아이콘 원본](Resources/Brand/README.md)
 

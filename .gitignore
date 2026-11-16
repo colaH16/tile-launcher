@@ -19,3 +19,6 @@ docs/reviews/diagnostics/
 
 # Machine-local collaboration permissions.
 .claude/settings.local.json
+
+# Finished agent handoff notes contain personal details; keep them local (decisions.md D-087).
+docs/handoff/
