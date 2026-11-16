@@ -15,6 +15,7 @@
 | `a` | agent-proposed→accepted — 에이전트 제안을 사용자가 수락 |
 | `d` | agent-default — 에이전트 기본값. 더 나은 방법이 있으면 제안 후 바꿀 수 있음 |
 | `h` / `s` | hard(바꾸려면 사용자에게 먼저 물음) / soft |
+| `AC-nnn` | 완료 조건(Given/When/Then) 시나리오 번호. 자동 테스트와 수동 확인 항목이 이 번호로 이어진다. 추적표는 [verification.md](verification.md) [a/s D-089] |
 | ⚠️ TODO-00n | 현재 코드가 이 요구를 아직 따르지 않음. 아래 "완료 조건"에서 해당 시나리오는 실패한다 (지금은 없음) |
 
 ---
@@ -71,19 +72,19 @@ Mac에서 터치바·Stream Deck이 하던 일, 즉 손 가까운 곳에서 앱�
 ### 완료 조건
 
 ```gherkin
-Scenario: Option 홀드로 열고 떼면 닫힌다
+Scenario: AC-001 Option 홀드로 열고 떼면 닫힌다
   Given 오버레이가 닫혀 있고 Option 호출이 켜져 있다
   When  Option만 250ms 이상 누른다
   Then  커서 위치를 중심으로 오버레이가 열린다
   When  아무것도 고르지 않고 Option을 뗀다
   Then  오버레이가 닫힌다
 
-Scenario: 대기 중 커서가 움직여도 처음 누른 자리에 연다
+Scenario: AC-002 대기 중 커서가 움직여도 처음 누른 자리에 연다
   Given 커서가 화면 A 지점에 있다
   When  Option을 누르고 250ms 안에 커서를 B 지점으로 옮긴다
   Then  오버레이의 중심은 A 지점이다 (화면 가장자리면 화면 안쪽으로 보정)
 
-Scenario: ⌥+숫자는 누르는 즉시 실행한다
+Scenario: AC-003 ⌥+숫자는 누르는 즉시 실행한다
   Given Option을 누른 채 오버레이가 열려 있고, 등록 항목 2번이 앱이다
   When  Option을 누른 채 2를 누른다
   Then  2번 앱이 그 순간 실행된다
@@ -91,46 +92,46 @@ Scenario: ⌥+숫자는 누르는 즉시 실행한다
   When  Option을 뗀다
   Then  오버레이가 닫히고, 2번 앱은 다시 실행되지 않는다
 
-Scenario: 고정 상태에서 실행하면 닫힌다
+Scenario: AC-004 고정 상태에서 실행하면 닫힌다
   Given 오버레이가 고정돼 있다
   When  최근 창 타일 하나를 클릭한다
   Then  그 창으로 전환되고 오버레이가 닫힌다
 
-Scenario: 고정 상태에서 ⌥+숫자도 즉시 실행하고 닫힌다
+Scenario: AC-005 고정 상태에서 ⌥+숫자도 즉시 실행하고 닫힌다
   Given 오버레이가 고정돼 있고, 등록 항목 2번이 앱이다
   When  ⌥2를 누른다
   Then  2번 앱이 그 순간 실행되고 오버레이가 닫힌다
 
-Scenario: Option을 누르고 있어도 Finder 폴더·휴지통 열기는 닫힌다
+Scenario: AC-006 Option을 누르고 있어도 Finder 폴더·휴지통 열기는 닫힌다
   Given Option을 누른 채 오버레이가 열려 있고, 등록 항목에 Finder로 여는 폴더가 있다
   When  그 폴더 타일을 클릭한다
   Then  Finder에서 폴더가 열리고 오버레이가 닫힌다
 
-Scenario: 고정 상태에서도 창 없는 앱 종료는 오버레이를 닫지 않는다
+Scenario: AC-007 고정 상태에서도 창 없는 앱 종료는 오버레이를 닫지 않는다
   Given 오버레이가 고정돼 있고, 창 없는 앱 타일이 두 개 있다
   When  첫 번째 앱 타일을 우클릭해 종료한다
   Then  오버레이는 열려 있어 두 번째 앱도 바로 종료할 수 있다
 
-Scenario: Option을 누르는 동안 메뉴를 실행해도 닫히지 않는다
+Scenario: AC-008 Option을 누르는 동안 메뉴를 실행해도 닫히지 않는다
   Given Option을 누른 채 오버레이가 열려 있다
   When  메뉴 타일을 클릭한다
   Then  메뉴가 실행되고 오버레이는 열려 있다
   When  Option을 뗀다
   Then  오버레이가 닫힌다
 
-Scenario: 메뉴 막대 좌클릭은 고정 오버레이를 연다
+Scenario: AC-009 메뉴 막대 좌클릭은 고정 오버레이를 연다
   Given 오버레이가 닫혀 있다
   When  메뉴 막대 아이콘을 좌클릭한다
   Then  오버레이가 고정 상태(× 버튼)로 열린다
   When  메뉴 막대 아이콘을 우클릭한다
   Then  앱 메뉴가 열린다
 
-Scenario: 실수로 Option을 뗐다가 바로 다시 누르면 같은 자리에 연다
+Scenario: AC-010 실수로 Option을 뗐다가 바로 다시 누르면 같은 자리에 연다
   Given 오버레이를 드래그로 옮긴 뒤 고르지 않고 Option을 떼서 닫았다
   When  0.6초 안에 Option만 다시 누른다
   Then  오버레이가 닫히기 직전 위치에 바로 열린다
 
-Scenario: 실행한 뒤 Option을 떼서 닫혀도 같은 자리에 다시 연다
+Scenario: AC-011 실행한 뒤 Option을 떼서 닫혀도 같은 자리에 다시 연다
   Given Option을 누른 채 ⌥2로 앱을 실행했고, 오버레이는 열려 있다
   When  Option을 떼서 닫은 뒤 0.6초 안에 Option만 다시 누른다
   Then  오버레이가 닫히기 직전 위치에 바로 열린다
@@ -155,14 +156,14 @@ Scenario: 실행한 뒤 Option을 떼서 닫혀도 같은 자리에 다시 연�
 ### 완료 조건
 
 ```gherkin
-Scenario: 타일 위 짧은 움직임은 클릭, 긴 움직임은 드래그
+Scenario: AC-012 타일 위 짧은 움직임은 클릭, 긴 움직임은 드래그
   Given 오버레이가 고정돼 있다
   When  타일을 누른 채 5물리픽셀 움직였다가 놓는다
   Then  그 타일이 실행되고 오버레이는 움직이지 않는다
   When  타일을 누른 채 20물리픽셀 움직였다가 놓는다
   Then  오버레이가 움직이고 타일은 실행되지 않는다
 
-Scenario: 프로필을 바꾸면 높이가 바뀐다
+Scenario: AC-013 프로필을 바꾸면 높이가 바뀐다
   Given 등록 항목 1줄짜리 프로필로 오버레이가 열려 있다
   When  등록 항목 3줄짜리 프로필로 넘긴다
   Then  오버레이 윗변은 그대로이고 높이만 늘어난다
@@ -184,7 +185,7 @@ Scenario: 프로필을 바꾸면 높이가 바뀐다
 ### 완료 조건
 
 ```gherkin
-Scenario: 다른 데스크탑의 창도 보인다
+Scenario: AC-014 다른 데스크탑의 창도 보인다
   Given 데스크탑 1에 Safari 창, 데스크탑 2에 Terminal 창이 열려 있고 지금 데스크탑 1이다
   When  오버레이를 연다
   Then  Safari와 Terminal 창 타일이 모두 보이고 Safari 타일만 현재 데스크탑 강조색이다
@@ -211,23 +212,23 @@ Scenario: 다른 데스크탑의 창도 보인다
 ### 완료 조건
 
 ```gherkin
-Scenario: 메뉴로 실행한 명령이 수집된다
+Scenario: AC-015 메뉴로 실행한 명령이 수집된다
   Given 자동 수집이 켜져 있고 Numbers가 앞에 있다
   When  메뉴 막대에서 파일 › 내보내기 › PDF…를 클릭한다
   Then  Numbers의 메뉴 영역에 "PDF…" 타일이 추가되고 경로 "파일 › 내보내기"가 이름 위에 보인다
 
-Scenario: Help 검색 결과 클릭도 수집된다
+Scenario: AC-016 Help 검색 결과 클릭도 수집된다
   Given 자동 수집이 켜져 있다
   When  Help 검색 결과에서 메뉴 항목을 마우스로 클릭한다
   Then  그 메뉴가 수집된다
 
-Scenario: 한 달에 한 번 쓰는 메뉴가 사라지지 않는다
+Scenario: AC-017 한 달에 한 번 쓰는 메뉴가 사라지지 않는다
   Given Excel 메뉴 6개를 썼고, 그중 "이미지 크기 줄이기"는 40일 전에 마지막으로 썼으며 나머지 5개는 그보다 최근이다
   When  오버레이를 연다
   Then  "이미지 크기 줄이기"는 최근 목록에서 숨겨진다 (30일이 지났고 최근 5개 밖)
   And   설정 → 메뉴에는 기록이 남아 있다
 
-Scenario: 다른 앱으로 잘못 실행하지 않는다
+Scenario: AC-018 다른 앱으로 잘못 실행하지 않는다
   Given 오버레이를 고정한 뒤 앞의 앱이 Safari에서 Finder로 바뀌었다
   When  고정 전 Safari 문맥으로 표시된 메뉴 타일을 누른다
   Then  Safari가 아니면 실행하지 않는다
@@ -248,14 +249,14 @@ Scenario: 다른 앱으로 잘못 실행하지 않는다
 ### 완료 조건
 
 ```gherkin
-Scenario: 집중 모드 필터가 없으면 기본 프로필
+Scenario: AC-019 집중 모드 필터가 없으면 기본 프로필
   Given 프로필 "기본"이 기본값이고, "Work" 집중 모드에만 "Work" 프로필 필터가 연결돼 있다
   When  Work 집중 모드를 켜고 오버레이를 연다
   Then  등록 항목은 "Work" 프로필이다
   When  집중 모드를 끄고 오버레이를 연다
   Then  등록 항목은 "기본" 프로필이다
 
-Scenario: 넘긴 프로필은 다음 호출에 유지되지 않는다
+Scenario: AC-020 넘긴 프로필은 다음 호출에 유지되지 않는다
   Given 오버레이에서 ⌥D로 다음 프로필로 넘겼다
   When  오버레이를 닫고 다시 연다
   Then  원래 프로필(집중 모드 또는 기본)로 열린다
@@ -274,7 +275,7 @@ Scenario: 넘긴 프로필은 다음 호출에 유지되지 않는다
 ### 완료 조건
 
 ```gherkin
-Scenario: 오프라인 편집도 실제 시각으로 합친다
+Scenario: AC-021 오프라인 편집도 실제 시각으로 합친다
   Given 두 Mac 모두 동기화가 켜져 있고, Mac B가 오프라인이다
   When  Mac A에서 10:00에 메뉴 X를 삭제하고, Mac B에서 10:05에 메뉴 X의 아이콘을 바꾼 뒤 Mac B가 온라인이 된다
   Then  두 Mac 모두에서 메뉴 X가 남아 있고 바뀐 아이콘을 쓴다
@@ -295,7 +296,7 @@ Scenario: 오프라인 편집도 실제 시각으로 합친다
 ### 완료 조건
 
 ```gherkin
-Scenario: 저장/취소 탭은 저장 전까지 반영되지 않는다
+Scenario: AC-022 저장/취소 탭은 저장 전까지 반영되지 않는다
   Given 설정 → 모양에서 메뉴 색을 바꿨다
   When  저장하지 않고 오버레이를 연다
   Then  오버레이의 메뉴 색은 바뀌기 전 색이다

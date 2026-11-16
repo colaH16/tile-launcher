@@ -146,7 +146,7 @@ API나 네트워크 서비스는 없다. 외부에서 이 앱에 닿는 지점�
 | 동작 | 구현 | 출처 |
 |---|---|---|
 | 호출 | `HoldMonitor`: 좌/우 Option 단독 250ms, 다른 키면 취소 | [a/s D-032-2] |
-| 실행 후 닫힘 | 모든 실행은 `performImmediately(overlay:)` 한 곳을 지난다. 종류는 셋: `.run`(앱·창·메뉴·앱 설정·Handoff·파일 — 고정이면 닫고 아니면 유지), `.leave`(Finder 폴더·휴지통·권한 — 항상 닫음), `.quit`(창 없는 앱 종료 — 유지하고 고정). 판정은 `OverlayPresentation.closesAfterAction(_:)`(DeckCore, 단위 테스트 대상) | [u/h D-034-3, D-066-1, u/s D-043-2], 방법은 [d/s Phase 5 구현] |
+| 실행 후 닫힘 | 모든 실행은 `performImmediately(_:_:)` 한 곳을 지난다. 종류는 셋: `.run`(앱·창·메뉴·앱 설정·Handoff·파일 — 고정이면 닫고 아니면 유지), `.leave`(Finder 폴더·휴지통·권한 — 항상 닫음), `.quit`(창 없는 앱 종료 — 유지하고 고정). 판정은 `OverlayPresentation.closesAfterAction(_:)`(DeckCore, 단위 테스트 대상) | [u/h D-034-3, D-066-1, u/s D-043-2], 방법은 [d/s Phase 5 구현] |
 | ⌥+숫자 | `selectNumber`가 클릭과 같은 `select(...)`를 바로 부른다. Option을 뗄 때 실행하던 대기칸(`pendingAction`, `presentation.selection`)은 없앴다. 오버레이가 남으면 0.45초 실행 표시(`showExecution`)를 보여준다 | [u/h D-036-2], 대기칸 삭제 [u/s 2026-11-16 사용자 선택], 표시 방법 [d/s] |
 | 빠른 재열기 | `OptionReopenMemory.record`: Option을 떼서(`.release`) 닫힌 Option 호출 오버레이면 실행 여부와 상관없이 위치를 기억 | [u/h D-037-1] |
 | 위치 | `PanelLayout.calculate` → `fittingContent` → `centered(on:)`. Option을 누른 순간 좌표를 저장해 사용. 화면 여백 24pt | [u/h D-033-2, D-033-3] |
@@ -167,13 +167,14 @@ API나 네트워크 서비스는 없다. 외부에서 이 앱에 닿는 지점�
 
 ## 7. 빌드·테스트·배포·운영
 
-협업 방식(대화·결정·진행·확인)은 [working-agreement.md](working-agreement.md)에 있다.
+협업 방식(대화·결정·진행·확인)은 [working-agreement.md](working-agreement.md)에, 검증 방법·추적표는 [verification.md](verification.md)에 있다.
 
 | 항목 | 방법 | 출처 |
 |---|---|---|
 | 빌드 위치 | iCloud 밖: 개발 `~/Library/Developer/TileLauncher/build`, Claude 실험 `~/Downloads/tempbuild` | [u/h D-020-1, d/s D-020-2] |
 | 배포 빌드 | 깨끗한 Git 커밋을 독립 디렉터리로 꺼내 빌드 | [d/s D-020-2] |
 | 테스트 | XCTest(`DeckCoreTests`), Debug 검증 모드(`--check-*`), 화면 밖 PNG 렌더, Python(`scripts/tests`) | [a/s D-028-2] |
+| ⌥+숫자 Debug 검증 | `--check-option-hold-anchor`의 `verifyNumberExecutionForPreview`: Debug 빌드에서만 있는 `interceptRun`이 앱 실행·창 전환 대신 실행 횟수를 세고, 실제 `selectNumber` 경로를 지난다. 정식 빌드에는 없다 | 연결점 추가 [u/s 2026-11-16 사용자 선택(Codex 리뷰 ③ A안)], 방법 [d/s] |
 | 화면 조작 검증 | working-agreement.md 4절 참고 | [u/s D-028-1] |
 | 서명·공증 | Developer ID + Apple 공증, Keychain 프로필 재사용 | [u/h D-017-2, u/s D-074] |
 | 채널 | GitHub Releases + `colah16/tap`의 `tile-launcher`(정식) / `tile-launcher@dev`(시험) | [u/h D-017-1, D-017-3] |

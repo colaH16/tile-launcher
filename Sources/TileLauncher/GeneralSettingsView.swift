@@ -44,7 +44,7 @@ struct GeneralSettingsContent: View {
                         Picker("기본 조합", selection: $settings.numberShortcuts) {
                             ForEach(NumberShortcutAssignment.allCases) { Text($0.title).tag($0) }
                         }.pickerStyle(.radioGroup)
-                        Text("1–9, 0으로 선택하고 Option을 놓으면 실행합니다. 0은 10번째이며 등록 항목 번호는 현재 프로필을 따릅니다.")
+                        Text("1–9, 0을 누르는 즉시 실행합니다. Option을 누르고 있으면 오버레이가 남고, 고정 상태면 닫힙니다. 0은 10번째이며 등록 항목 번호는 현재 프로필을 따릅니다.")
                             .font(.caption).foregroundStyle(.secondary)
                         Text("⌥X 고정 · ⌘, / ⌥, 설정 · Esc / ⌘W / ⌥W 닫기").font(.caption)
                         Text("⌥A 또는 ⌥S: 이전 프로필 · ⌥D 또는 ⌥F: 다음 프로필").font(.caption)

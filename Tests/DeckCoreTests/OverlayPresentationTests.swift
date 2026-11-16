@@ -44,7 +44,7 @@ final class OverlayPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.dismisses(for: .spaceChange))
         XCTAssertTrue(presentation.dismisses(for: .escape))
     }
-    /// Spec 2절 닫히는 규칙 (D-034-3, D-066-1, D-043-2).
+    /// AC-004 AC-006 AC-007 AC-008 — spec 2절 닫히는 규칙 (D-034-3, D-066-1, D-043-2).
     func testRunKeepsHeldOverlayAndClosesPinnedOne() {
         let presentation = OverlayPresentation()
         XCTAssertFalse(presentation.closesAfterAction(.run))

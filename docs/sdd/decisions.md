@@ -37,7 +37,7 @@
 - 시스템: D-001 ~ D-022 (D-004-1은 목표라 범주를 feature로 둠)
 - 코드: D-023 ~ D-031
 - 기능: D-032 ~ D-066
-- 작업 방식: D-067 ~ D-088
+- 작업 방식: D-067 ~ D-089
 - TODO: 결정과 코드가 다른 것
 
 ## 최종 통계 (Phase 4 끝, 2026-11-16)
@@ -702,7 +702,7 @@
 - 출처: user (2026-11-16 확정)
 - 강도: soft
 - 범주: feature
-- 결정: 클릭은 Option을 누르고 있든 아니든 즉시 실행한다. 클릭하면 대기 중인 숫자 선택은 취소된다.
+- 결정: 클릭은 Option을 누르고 있든 아니든 즉시 실행한다. (2.3.0까지는 클릭하면 대기 중인 숫자 선택이 취소됐다. Phase 5에서 숫자도 즉시 실행으로 바뀌어 대기 상태가 없어졌다.)
 - 근거: requirements R109. 초기 구현(f5b81df)은 클릭도 Option을 뗄 때 실행했는데, 사용자 보고로 바뀌었다.
 - 검토된 대안: 클릭도 Option 해제 때 실행(초기 구현) — 폐기: 설정·앱 실행이 Option을 뗄 때까지 안 떠서 불편.
 - 출처 증거: [원문] 10-13 "옵션 누르고 x 누르지 않아서 고정 안된 상태에서 +나 설정 아이콘 누르면 바로 설정 화면이 안떠. 옵션키를 떼야 뜨네. 앱 전환도 옵션 떼면, 그 때 앱 실행/전환이 되."
@@ -1518,14 +1518,15 @@
 - 출처 증거: [원문] 10-18 "최종 확인은 빌드해서 iCloud 에 올려두면 내가 최종확인하는걸로 대신 뭘 확인하면 좋은지 잘 정리해서 알려줘야되 나는 개발자는 아니라서 코드는 잘 모르니깐 UI 같은 부분에서 확인할거 알려주면 되" / [원문] 10-27 "이 맥에 설치해주면 내가 확인해볼께.그 이후 내가 오케이 하면 GitHub 소스·릴리스와 Homebrew cask 갱신 해주면 되구."
 - 위치: `AGENTS.md`, `docs/release-guide.md`
 
-## D-071: Claude와 교차 리뷰한다 (한쪽이 편집, 다른 쪽이 검토)
+## D-071: Claude와 Codex가 서로 교차 리뷰한다 (한쪽이 편집, 다른 쪽이 검토)
 - 출처: user (2026-11-16 확정)
 - 강도: hard
 - 범주: process
-- 결정: 큰 변경은 Codex와 Claude가 근거를 대조한다. 공유 파일은 한쪽만 편집한다. 모델 간 합의를 검증 완료로 보지 않는다.
+- 결정: 큰 변경은 Codex와 Claude가 근거를 대조한다. 방향은 양쪽 모두다: Codex가 편집했으면 Claude가, Claude가 편집했으면 Codex가 검토한다(2026-11-16 사용자). 공유 파일은 한쪽만 편집한다. 모델 간 합의를 검증 완료로 보지 않는다.
+- 방법: 이 Mac에서 Claude가 Codex에 맡길 때는 `codex exec -s read-only -C <clone>`으로 읽기 전용 리뷰만 시키고 수정은 Claude가 한다 [d/s]. 모델·강도는 그때 사용자가 정한다(Phase 5 리뷰는 `gpt-6.1-sol` xhigh, 사용자 지정). 리뷰 원문은 저장소에 남기지 않는다. 방법은 verification.md 층 5, 반영 내역은 CHANGELOG·커밋 메시지, 새 결정은 decisions.md에 둔다(2026-11-16, 에이전트 추천을 사용자가 선택).
 - 근거: AGENTS R284, R300, R306.
 - 검토된 대안: 단일 에이전트.
-- 출처 증거: [원문] 10-15 "클로드한테도 코드 리뷰 부탁했어." / [원문] 10-18 "요건 클로드랑도 같이 이야기 해볼까?" / [원문] 10-27 "클로드 opus 5.5 high로 ㄱㄱ"
+- 출처 증거: [원문] 10-15 "클로드한테도 코드 리뷰 부탁했어." / [원문] 10-18 "요건 클로드랑도 같이 이야기 해볼까?" / [원문] 10-27 "클로드 opus 5.5 high로 ㄱㄱ" / [원문] 2026-11-16 Phase 5 "codex한테 방금 수정한 폴더 읽을수 있게 권한 주고 검증하라고 해봐. gpt 6.1 sol xhigh로", "거긴 codex 기준으로 claude랑 같이 하라고 적혀있었긴 하지만, 반대도 성립해야지."
 - 위치: `AGENTS.md`, `docs/reviews/evidence/`
 
 ## D-072: 단계별로 진행하고, 매 단계 뒤 사용자 지시를 기다리며 대기 상태를 알린다
@@ -1552,11 +1553,11 @@
 
 ## D-075: (삭제 — 2026-11-16 사용자 제거. 각 수치는 D-014-2, D-016-2, D-032-2, D-045-3, D-049-3, D-060-3으로 나뉨)
 
-## D-076: SDD 문서는 constitution / spec / plan / decisions + working-agreement 5개로 한다
-- 출처: agent-proposed→accepted (2026-11-16 확정. working-agreement 추가는 user, 같은 날)
+## D-076: SDD 문서는 constitution / spec / plan / decisions / working-agreement / verification 6개로 한다
+- 출처: agent-proposed→accepted (2026-11-16 확정. working-agreement 추가는 user, 같은 날. verification 추가는 D-089, 같은 날)
 - 강도: soft
 - 범주: process
-- 결정: `docs/sdd/`에 constitution.md(user+hard 원칙), spec.md(무엇을·왜, Given/When/Then), plan.md(어떻게, 항목마다 출처. 데이터 모델·외부 인터페이스·빌드·배포·운영도 여기), decisions.md(ADR), working-agreement.md(사용자와 에이전트의 협업 방식)를 둔다. research는 decisions의 `근거`·`검토된 대안`으로 대신한다. working-agreement의 내용은 `AGENTS.md`에도 복사해 두어, Codex와 Claude가 시작할 때 자동으로 읽게 한다(원본은 working-agreement.md). `CLAUDE.md`는 `@AGENTS.md` 한 줄로 그 복사본을 불러온다(Claude Code가 AGENTS.md를 직접 읽지 않는 환경 대비).
+- 결정: `docs/sdd/`에 constitution.md(user+hard 원칙), spec.md(무엇을·왜, Given/When/Then), plan.md(어떻게, 항목마다 출처. 데이터 모델·외부 인터페이스·빌드·배포·운영도 여기), decisions.md(ADR), working-agreement.md(사용자와 에이전트의 협업 방식), verification.md(검증 전략·spec 시나리오 추적표·실기 확인 양식, D-089)를 둔다. research는 decisions의 `근거`·`검토된 대안`으로 대신한다. working-agreement의 내용은 `AGENTS.md`에도 복사해 두어, Codex와 Claude가 시작할 때 자동으로 읽게 한다(원본은 working-agreement.md). `CLAUDE.md`는 `@AGENTS.md` 한 줄로 그 복사본을 불러온다(Claude Code가 AGENTS.md를 직접 읽지 않는 환경 대비).
 - 근거: 앱이 작아서 research/data-model/contracts를 따로 두면 중복되고 어긋날 위험이 커진다. 협업 규칙은 "운영(ops)"이 아니라서 plan과 분리했다.
 - 검토된 대안: spec-kit 전체(constitution·spec·plan·research·data-model·contracts/), 최소 3개(spec에 원칙 포함), 운영 메모를 plan에 합치기, 협업+운영을 한 파일에, 이름 `ops.md`/`collaboration.md`/`workflow.md`.
 - 출처 증거: 사용자는 처음에 spec-kit 6분할을 제안했다가 "이렇게까지 분류할 필요 없을만큼 작은 앱인것 같아서" 비교를 요청했고 "A로 가자"(4개)를 골랐다. 4개 구성은 원래 `docs/handoff/HANDOFF-reverse-sdd.md`(claude.ai 대화에서 Claude가 작성)에 있던 것이다. 이후 [원문] "working agreement로 하고,, 협업만 따로 빼는걸로 하자. 운영은 plan에 그대로. agents.md에도 남겨줘." / Phase 4 배치 비교(AGENTS.md만 / CLAUDE.md에 @AGENTS.md / CLAUDE.md에 전체 복사)에서 사용자가 "CLAUDE.md에 @AGENTS.md"를 선택.
@@ -1683,6 +1684,16 @@
 - 검토된 대안: 레포 자체를 iCloud 밖으로 옮기기 — 아직 별도 결정 대상(미정).
 - 출처 증거: [원문] 2026-11-16 Phase 5 작업 지시 "iCloud 동기화 문제 때문에 iCloud 안의 레포에서는 작업하지 않는다. iCloud 밖에 새로 clone해서 거기서 작업·커밋·push한다. 마지막에 iCloud 레포에서 git fetch를 실행한다." (다른 세션을 거쳐 전달됨)
 - 위치: 이 Mac의 `~/dev/tile-launcher`
+
+## D-089: 검증 방법은 verification.md에 두고(B), 확인 내용은 테스트 코드가 원본이며 AC 번호로 잇는다(C)
+- 출처: agent-proposed→accepted (2026-11-16. 에이전트가 세 안을 비교해 B를 추천했고, 사용자가 B와 C를 합친 안을 골랐다)
+- 강도: soft (2026-11-16 사용자 확정)
+- 범주: process
+- 결정: `docs/sdd/verification.md`에 검증 전략(층별 도구, 매번 돌릴 명령, 자동/실기 기준), spec 시나리오 추적표, 실기 확인 양식을 둔다. spec의 Given/When/Then 시나리오에는 `AC-001` 같은 번호를 붙이고, 자동 테스트는 확인하는 AC 번호를 바로 위 `///` 주석에 적는다. 문서에는 규칙과 표만 두고 실제 확인 내용은 테스트 코드가 원본이다. 적용은 TODO-001~003 테스트부터 하고, 나머지는 그 영역을 고칠 때 단다.
+- 근거: 에이전트가 코드를 짤 때마다 검증 방법을 새로 만들지 않게 하고, 문서와 코드 양쪽에서 서로를 찾을 수 있게 하려고. 문서에 확인 내용까지 쓰면 테스트와 어긋난다.
+- 검토된 대안: A. plan.md에 검증 절 추가 — 채택 안 함(plan이 커지고 추적표가 묻힘). B만 — C와 합침. C만(문서 없이 테스트만) — 채택 안 함(전략·실기 기준을 둘 곳이 없음).
+- 출처 증거: [원문] 2026-11-16 "SDD에서 검증 방법론은 어떻게 관리해? 매번 agent가 코드 짤 때마다 검증 방법을 새로 만들진 않을 거잖아" / [선택] A·B·C 비교에서 "B+C" (Phase 0 세션이 전달). 사용자는 이 방법론을 나중에 다른 프로젝트에도 쓸 일반화된 AGENTS.md로 만들 계획이다(지금 범위 아님).
+- 위치: `docs/sdd/verification.md`, `docs/sdd/spec.md`(AC 번호), 테스트 주석
 
 ---
 

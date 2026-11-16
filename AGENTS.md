@@ -8,7 +8,8 @@
 2. [docs/sdd/working-agreement.md](docs/sdd/working-agreement.md) — 사용자와 함께 일하는 방식 (아래 "작업 약속"이 그 복사본)
 3. [docs/sdd/spec.md](docs/sdd/spec.md) — 무엇을, 왜. 완료 조건(Given/When/Then)
 4. [docs/sdd/plan.md](docs/sdd/plan.md) — 어떻게. 항목마다 출처 표시. 7절 빌드·배포·운영, 8절 할 일(TODO)
-5. [docs/sdd/decisions.md](docs/sdd/decisions.md) — 결정 기록. 작업과 관련된 D-번호의 출처·강도를 확인한다
+5. [docs/sdd/verification.md](docs/sdd/verification.md) — 검증 방법. 매번 돌릴 명령, spec 시나리오(AC 번호) 추적표, 실기 확인 양식
+6. [docs/sdd/decisions.md](docs/sdd/decisions.md) — 결정 기록. 작업과 관련된 D-번호의 출처·강도를 확인한다
 
 ## 작업 약속
 
@@ -28,6 +29,7 @@
 - 한 단계씩 진행하고, 단계가 끝나면 사용자 지시를 기다린다. 기다릴 때는 누구를 기다리는지 말한다. (D-072)
 - 작업 중 새 지시가 와도 하던 일과 충돌하지 않으면 멈추거나 바꾸지 않는다. (D-079)
 - 큰 변경은 Claude와 Codex가 교차 리뷰한다. 공유 파일은 한쪽만 편집한다. (D-071)
+- 검증은 `docs/sdd/verification.md`를 따른다. 자동 테스트에는 확인하는 spec 시나리오의 AC 번호를 주석으로 단다. (D-089)
 - Computer Use처럼 화면을 조작하는 검사는 매번 먼저 묻는다. (D-028-1)
 - 시험 빌드를 줄 때는 빌드 번호·변경점과 "어디를 어떻게 조작하면 어떤 결과가 정상인지"를 안내한다. (D-070)
 

@@ -55,6 +55,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var permissionTimer: Timer?
     private var trusted = false
     private var keyboardFeedbackCleanup: DispatchWorkItem?
+    #if TILE_LAUNCHER_DIAGNOSTICS
+    /// Debug checks only: receives the run instead of launching an app or
+    /// focusing a window, so the real ⌥+number path can be counted.
+    private var interceptRun: ((String) -> Void)?
+    #endif
     private var heldPresentation = false
     private var optionReopen = OptionReopenMemory<PanelLayout>()
     private var browser: FolderBrowser?
@@ -682,8 +687,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             PanelLayout(frame: panel?.frame ?? layout.layout.frame, compact: layout.layout.compact,
                         supported: layout.layout.supported, scale: layout.layout.scale)
         }
-        optionReopen.record(shownLayout, at: time, reason: reason,
-                            held: heldPresentation && panel?.isVisible == true, preferences: settings.optionReopen)
+        // A late Space notification for an overlay Option already closed must
+        // not wipe the place that close remembered (D-037-1). Other closes of an
+        // invisible overlay (screen change, settings) still clear it.
+        if reason != .spaceChange || panel?.isVisible == true {
+            optionReopen.record(shownLayout, at: time, reason: reason,
+                                held: heldPresentation && panel?.isVisible == true, preferences: settings.optionReopen)
+        }
         overlayRefresh?.cancel()
         overlayRefresh = nil
         dockHandoff.stopMonitoring()
@@ -716,6 +726,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     /// A ⌥+number run has no pressed button, so briefly mark the tile that ran
     /// while the overlay stays open. A pinned overlay has already closed.
+    /// True when a Debug check took the run; release builds always run it.
+    private func intercepted(_ target: String) -> Bool {
+        #if TILE_LAUNCHER_DIAGNOSTICS
+        if let interceptRun { interceptRun(target); return true }
+        #endif
+        return false
+    }
     private func showKeyboardExecution(target: String, title: String) {
         guard panel?.isVisible == true else { return }
         let id = presentation.showExecution(target: target, title: title)
@@ -729,9 +746,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: cleanup)
     }
     private func clearKeyboardFeedback() {
+        // A refresh skipped while the feedback showed would otherwise wait for
+        // the next app/window change once the feedback is cleared early (D-062).
+        let deferredRefresh = presentation.execution != nil
         keyboardFeedbackCleanup?.cancel()
         keyboardFeedbackCleanup = nil
         presentation.clearExecution()
+        if deferredRefresh { scheduleOverlayRefresh() }
     }
     #if TILE_LAUNCHER_DIAGNOSTICS
     /// Synthetic button/menu and an offscreen panel; no status item, real menu
@@ -849,7 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         print("Option anchor placement: prepared, rebuilt and taken overlays agree for centered and edge anchors without showing a panel.")
     }
-    /// Isolated native verification: synthetic callbacks, no windows or app launch.
+    /// AC-004 AC-006 AC-007 — Isolated native verification: synthetic callbacks, no windows or app launch.
     /// Spec 2절 닫히는 규칙: with Option held a run keeps the overlay, pinned
     /// closes it; Finder places always close; a windowless quit never closes.
     func verifyClickExecutionForPreview() throws {
@@ -899,6 +920,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         print("AppDelegate: runs keep a held overlay and close a pinned one, Finder places close both, windowless quits keep both; nothing waits for the Option release. No real apps launched or terminated.")
+    }
+    /// AC-003 AC-005 AC-011 — The real ⌥+number path (selectNumber → select → performImmediately) on an
+    /// offscreen panel with fixture content. interceptRun counts each run instead
+    /// of launching an app or focusing a window; Option is synthetic flagsChanged.
+    func verifyNumberExecutionForPreview(content: OverlayContent) throws {
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { throw NSError(domain: "TileLauncher.Number", code: 80,
+                                          userInfo: [NSLocalizedDescriptionKey: message]) }
+        }
+        func flags(_ modifiers: NSEvent.ModifierFlags, _ time: TimeInterval) throws -> NSEvent {
+            guard let event = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: modifiers,
+                                               timestamp: time, windowNumber: 0, context: nil, characters: "",
+                                               charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) else {
+                throw NSError(domain: "TileLauncher.Number", code: 81)
+            }
+            return event
+        }
+        let pins = content.snapshot.pins, windows = content.snapshot.windows
+        try check(pins.count >= 3 && !windows.isEmpty && !content.snapshot.shortcuts.targetsWindows(command: false),
+                  "Fixture lacks registered apps/windows or the default number mapping")
+        let window = DeckPanel(contentRect: NSRect(x: -20000, y: -20000, width: 32, height: 32),
+                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        var runs: [String] = []
+        var time: TimeInterval = 100
+        interceptRun = { runs.append($0) }
+        installHoldDismissal()
+        hold.hasPressedMouseButtons = { false }
+        hold.canTriggerHold = { true }
+        // Stands in for the 0.25 s show timer so the release counts as a held close.
+        hold.onQuickReopen = { _, _ in true }
+        defer {
+            interceptRun = nil
+            hide()
+            hold.stop()
+            hold.onHide = nil; hold.onQuickReopen = nil; hold.canTriggerHold = nil
+            hold.hasPressedMouseButtons = { NSEvent.pressedMouseButtons != 0 }
+            heldPresentation = false
+            optionReopen.cancel()
+            window.close()
+        }
+        func open(pinned: Bool) throws {
+            hide()
+            panel = window
+            visibleContent = content
+            window.orderFront(nil)
+            hold.isShowing = false
+            time += 1
+            _ = hold.handle(try flags(.option, time), external: false)
+            hold.isShowing = true
+            heldPresentation = true
+            if pinned { presentation.pin() }
+            runs = []
+            try check(window.isVisible && hold.optionDown && presentation.isPinned == pinned, "Fixture overlay did not open")
+        }
+        func release() throws {
+            time += 1
+            _ = hold.handle(try flags([], time), external: false)
+        }
+        // Held: ⌥2 runs at the press and stays open; releasing closes without a
+        // second run and still remembers the place (D-036-2, D-037-1).
+        try open(pinned: false)
+        selectNumber(1, command: false)
+        try check(runs.count == 1 && runs[0].hasPrefix("app:") && window.isVisible
+                  && presentation.execution?.target == "pin:\(pins[1].id)", "Held ⌥2 did not run at once and stay open")
+        selectNumber(2, command: false)
+        try check(runs.count == 2 && window.isVisible && presentation.execution?.target == "pin:\(pins[2].id)",
+                  "A second held number did not run at once")
+        // An early clear (invalid number, profile switch) resumes a deferred refresh.
+        clearKeyboardFeedback()
+        try check(presentation.execution == nil && overlayRefresh != nil, "Early feedback clear dropped the refresh")
+        try release()
+        try check(runs.count == 2 && !window.isVisible && optionReopen.take(at: time + 0.1) != nil,
+                  "Release ran again, stayed open or forgot the place after a run")
+        // ⌥⌘1 on a window, then a Space notification arriving after the release.
+        try open(pinned: false)
+        selectNumber(0, command: true)
+        try check(runs == ["window:\(windows[0].id)"] && window.isVisible, "Held ⌥⌘1 did not switch at once and stay open")
+        try release()
+        hide(reason: .spaceChange)
+        try check(!window.isVisible && optionReopen.take(at: time + 0.1) != nil,
+                  "A late Space notification wiped the quick-reopen place")
+        // Pinned: ⌥2 runs and closes (D-034-3).
+        try open(pinned: true)
+        selectNumber(1, command: false)
+        try check(runs.count == 1 && !window.isVisible && presentation.execution == nil, "Pinned ⌥2 did not run and close")
+        try release()
+        try check(runs.count == 1, "Release after a pinned run ran again")
+        // ⌥X while holding, then a number: pinned rule applies.
+        try open(pinned: false)
+        pinOverlay()
+        selectNumber(1, command: false)
+        try check(runs.count == 1 && !window.isVisible, "⌥X then ⌥2 did not run and close")
+        try release()
+        print("AppDelegate numbers: ⌥+number runs at the press through selectNumber, held stays open, pinned and ⌥X close, release never reruns, quick reopen survives a run and a late Space notification, early feedback clear refreshes. Runs were intercepted; no app launched or window focused.")
     }
     /// Real HoldMonitor gestures through the production dismissal wiring and
     /// decision, with synthetic modifier events only: no panel, window, Space or app.
@@ -1173,6 +1289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Only an unpinned overlay that Option no longer holds leaves with it.
         let kind: OverlayAction = window.isApplication || !dismissesFollowingOptionHold(.windowSelection) ? .run : .leave
         performImmediately(kind) { [weak self] in
+            if self?.intercepted("window:\(window.id)") == true { return }
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
             }
@@ -1198,6 +1315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func launchApplication(at url: URL, title: String? = nil) {
         guard !launches.isBlocked(url) else { return }
         performImmediately(.run) { [weak self] in
+            if self?.intercepted("app:\(url.path)") == true { return }
             self?.launches.launch(at: url, title: title ?? url.deletingPathExtension().lastPathComponent) { [weak self] message in
                 self?.error(message)
             }
@@ -1412,6 +1530,10 @@ if CommandLine.arguments.contains("--check-option-hold-anchor") {
                           { try $0.verifyOptionAnchorPlacementForPreview() }] as [(AppDelegate) throws -> Void] {
                 let fixture = PreviewFixture(theme: .classic)
                 try withExtendedLifetime(fixture) { try check(delegate(fixture)) }
+            }
+            let numberFixture = PreviewFixture(theme: .classic)
+            try withExtendedLifetime(numberFixture) {
+                try delegate(numberFixture).verifyNumberExecutionForPreview(content: numberFixture.content)
             }
         }
         exit(0)
