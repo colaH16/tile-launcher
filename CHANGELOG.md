@@ -8,6 +8,7 @@ Claude 최종 검수·Developer ID/CloudKit 서명·Apple 공증을 마치고 [G
 
 ## 2.3.1 · Option 유지·고정 상태의 실행/닫힘 규칙 (87 공증 @dev 게시 완료)
 
+- 2026-11-16 사용자 실기: 시험 안내 8항목(AC-003~008, AC-011) 모두 정상 — "모두 정상 … 완벽하다." 정식 공개는 사용자 지시를 기다린다.
 - 2026-11-16 @dev 게시: 소스 `9b2f4f5`(공개 main), 진단 둘 다 OFF. Developer ID/CloudKit 서명, Apple 공증 Accepted `81becfc8-181d-4069-8e1f-0e9813581374`, 티켓·Gatekeeper 통과. 최종 ZIP SHA256 `44422ce67be79dfc213eb9e6a444c067c2e6e622cc4e9702ab1735a98d217378`.
 - 자산은 tap `dev-builds` 불변 커밋 `b19a0a3`의 `tile-launcher/2.3.1-87/`, cask는 tap main `b0bad99`. 익명 재다운로드 해시·서명·티켓·Gatekeeper, `brew audit --strict --online`·style·fetch 통과. 정식(GitHub·`tile-launcher` cask)은 2.3.0 유지, 사용자 실기 확인 뒤에만 갱신한다(D-070).
 - 공증이 처음엔 "약관 미동의/만료"(403)로 막혔고, 사용자가 Apple Developer Program License Agreement(2026-10-30판)에 동의한 뒤 열렸다. Homebrew 7은 개인 tap을 `brew trust`해야 불러온다. 검증은 임시 `XDG_CONFIG_HOME`으로 했고 사용자 설정은 바꾸지 않았다.

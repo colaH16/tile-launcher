@@ -72,22 +72,22 @@ swift build -c release "${F[@]}"
 
 상태: `통과`(자동 테스트가 시나리오 전체를 확인, 마지막 실행에서 통과) / `부분`(자동 테스트가 규칙 일부만 확인, 나머지는 실기) / `실기`(사용자 확인만 가능) / `미작성`(자동으로 할 수 있는데 테스트가 없음).
 
-- **TODO-001~003 행(★)** 은 Phase 5에서 Claude가 테스트를 쓰고 AC 주석을 단 것이다. 2026-11-16 `swift test` 351/351, `--check-option-hold-anchor` 통과.
+- **TODO-001~003 행(★)** 은 Phase 5에서 Claude가 테스트를 쓰고 AC 주석을 단 것이다. 2026-11-16 `swift test` 351/351, `--check-option-hold-anchor` 통과. 사용자 실기(2.3.1(87) @dev, 2026-11-16)도 모두 정상 — 아래 3.1절.
 - **나머지 행은 [현황]** 이다. 기존 테스트 이름을 보고 Claude가 대응시킨 것이라, 시나리오를 정확히 덮는지는 그 영역을 고칠 때 다시 확인한다.
 
 | AC | 시나리오 | 자동 테스트 (층) | 수동 확인 | 상태 |
 |---|---|---|---|---|
 | AC-001 | Option 홀드로 열고 떼면 닫힌다 | `AppDelegate.verifyOptionHoldDismissalForPreview` (2), `OverlayPresentationTests.testClosingAndReopeningRestoresHoldBehavior` (1) | 실제 250ms 홀드로 열림 | 부분 |
 | AC-002 | 대기 중 커서가 움직여도 처음 누른 자리에 연다 | `HoldAnchorValidation.verify`, `AppDelegate.verifyOptionAnchorPlacementForPreview` (2) | - | 통과 |
-| AC-003 ★ | ⌥+숫자는 누르는 즉시 실행한다 | `AppDelegate.verifyNumberExecutionForPreview` (2) | 실제 앱이 그 순간 뜨는지 | 통과 (실기 남음) |
-| AC-004 ★ | 고정 상태에서 실행하면 닫힌다 | `OverlayPresentationTests.testRunKeepsHeldOverlayAndClosesPinnedOne` (1), `AppDelegate.verifyClickExecutionForPreview` (2) | 최근 창 타일 클릭으로 전환·닫힘 | 부분 (클릭 → 창 전환 연결은 실기) |
-| AC-005 ★ | 고정 상태에서 ⌥+숫자도 즉시 실행하고 닫힌다 | `AppDelegate.verifyNumberExecutionForPreview` (2) | - | 통과 |
-| AC-006 ★ | Option을 누르고 있어도 Finder 폴더·휴지통 열기는 닫힌다 | `OverlayPresentationTests.testRunKeepsHeldOverlayAndClosesPinnedOne` (1), `AppDelegate.verifyClickExecutionForPreview` (2) | Finder 폴더 타일 클릭 | 부분 (타일 → `.leave` 연결은 코드 리뷰) |
-| AC-007 ★ | 고정 상태에서도 창 없는 앱 종료는 오버레이를 닫지 않는다 | `AppDelegate.verifyClickExecutionForPreview` (2) | 실제 앱 두 개 연속 종료 | 통과 (실기 남음) |
-| AC-008 ★ | Option을 누르는 동안 메뉴를 실행해도 닫히지 않는다 | `OverlayPresentationTests.testRunKeepsHeldOverlayAndClosesPinnedOne` (1) | 메뉴 타일 클릭 → 실행·유지 → Option 떼면 닫힘 | 부분 (`performMenu` 연결과 AX 실행은 실기) |
+| AC-003 ★ | ⌥+숫자는 누르는 즉시 실행한다 | `AppDelegate.verifyNumberExecutionForPreview` (2) | 실제 앱이 그 순간 뜨는지 — 87 실기 정상 | 통과 |
+| AC-004 ★ | 고정 상태에서 실행하면 닫힌다 | `OverlayPresentationTests.testRunKeepsHeldOverlayAndClosesPinnedOne` (1), `AppDelegate.verifyClickExecutionForPreview` (2) | 최근 창 타일 클릭으로 전환·닫힘 — 87 실기 정상 | 통과 (클릭 → 창 전환 연결은 실기로 확인) |
+| AC-005 ★ | 고정 상태에서 ⌥+숫자도 즉시 실행하고 닫힌다 | `AppDelegate.verifyNumberExecutionForPreview` (2) | ⌥X 뒤 ⌥2 — 87 실기 정상 | 통과 |
+| AC-006 ★ | Option을 누르고 있어도 Finder 폴더·휴지통 열기는 닫힌다 | `OverlayPresentationTests.testRunKeepsHeldOverlayAndClosesPinnedOne` (1), `AppDelegate.verifyClickExecutionForPreview` (2) | Finder 폴더 타일 클릭 — 87 실기 정상 | 통과 (타일 → `.leave` 연결은 실기로 확인) |
+| AC-007 ★ | 고정 상태에서도 창 없는 앱 종료는 오버레이를 닫지 않는다 | `AppDelegate.verifyClickExecutionForPreview` (2) | 실제 앱 두 개 연속 종료 — 87 실기 정상 | 통과 |
+| AC-008 ★ | Option을 누르는 동안 메뉴를 실행해도 닫히지 않는다 | `OverlayPresentationTests.testRunKeepsHeldOverlayAndClosesPinnedOne` (1) | 메뉴 타일 클릭 → 실행·유지 → Option 떼면 닫힘 — 87 실기 정상 | 통과 (`performMenu` 연결과 AX 실행은 실기로 확인) |
 | AC-009 | 메뉴 막대 좌클릭은 고정 오버레이를 연다 | `AppDelegate.verifyStatusItemPinningForPreview` (2) | - | 통과 |
 | AC-010 | 실수로 Option을 뗐다가 바로 다시 누르면 같은 자리에 연다 | `OptionReopenTests.testRepressRestoresExactPriorLocationThroughSixHundredMilliseconds` (1), `PreviewExport.verifyQuickOptionReopen` (2) | - | 통과 |
-| AC-011 ★ | 실행한 뒤 Option을 떼서 닫혀도 같은 자리에 다시 연다 | `OptionReopenTests.testReleaseAfterRunningAnItemStillRestoresLocation` (1), `AppDelegate.verifyNumberExecutionForPreview` (2) | - | 통과 |
+| AC-011 ★ | 실행한 뒤 Option을 떼서 닫혀도 같은 자리에 다시 연다 | `OptionReopenTests.testReleaseAfterRunningAnItemStillRestoresLocation` (1), `AppDelegate.verifyNumberExecutionForPreview` (2) | ⌥+숫자 실행 → Option 뗐다 0.6초 안에 다시 — 87 실기 정상 | 통과 |
 | AC-012 | 타일 위 짧은 움직임은 클릭, 긴 움직임은 드래그 | `OverlayDragMotionTests.testSevenPhysicalPixelsPreserveOriginalGrabAtBothScales` (1) | 실제 트랙패드로 5px·20px | 부분 |
 | AC-013 | 프로필을 바꾸면 높이가 바뀐다 | `DesktopLayoutTests.testProfileRefittingShrinksAndGrowsWithoutRecentAreaGapOrLosingDraggedPosition` (1) | - | 통과 |
 | AC-014 | 다른 데스크탑의 창도 보인다 | `DesktopLayoutTests.testCurrentIncludesActiveDesktopOnEachDisplay` (1) | 실제 데스크탑 두 개 | 부분 |
@@ -124,3 +124,9 @@ swift build -c release "${F[@]}"
 
 - 결과를 받으면 추적표의 `수동 확인` 칸에 해당하는 행의 상태를 고친다. [a/s D-089]
 - 정식 배포는 사용자가 실기 확인을 마친 뒤에만 한다 [u/h D-070].
+
+### 3.1 실기 기록
+
+| 날짜 | 빌드 | 확인한 사람 | 항목 | 결과 |
+|---|---|---|---|---|
+| 2026-11-16 | 2.3.1(87) @dev, 공증본 | 사용자 | AC-003(1·2번), AC-008, AC-004, AC-005, AC-007, AC-006, AC-011 — 시험 안내 8항목 | 모두 정상. 사용자 원문: "모두 정상. 8번도 옵션 + 숫자 누르고 option 떼고 다시 누르니까 커서 옮긴 위치가 아니라 원래 위치에 열리는것까지. 완벽하다." |
