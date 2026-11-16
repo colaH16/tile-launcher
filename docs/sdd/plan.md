@@ -179,6 +179,8 @@ API나 네트워크 서비스는 없다. 외부에서 이 앱에 닿는 지점�
 | 서명·공증 | Developer ID + Apple 공증, Keychain 프로필 재사용 | [u/h D-017-2, u/s D-074] |
 | 채널 | GitHub Releases + `colah16/tap`의 `tile-launcher`(정식) / `tile-launcher@dev`(시험) | [u/h D-017-1, D-017-3] |
 | 배포 게이트 | 정식은 사용자 확인 후, @dev는 확인 전에도 가능 | [u/h D-070] |
+| @dev 자산 | tap `colaH16/homebrew-tap`의 `dev-builds` 브랜치에 `tile-launcher/<버전>-<빌드>/` 폴더를 새로 추가하고(기존 폴더 불변), `tile-launcher@dev` cask는 그 커밋의 raw URL을 가리킨다 | [현황] |
+| Homebrew 신뢰 | Homebrew 7부터 개인 tap은 `brew trust colah16/tap`이 있어야 불러온다(사용자가 각 Mac에서 직접). 에이전트 검증은 임시 `XDG_CONFIG_HOME`으로 하고 사용자 설정을 바꾸지 않는다 | [현황], 방법 [d/s] |
 | 버전 | `release/config.json`이 원본, 빌드 번호는 산출물마다 증가. patch/minor 규칙 | [u/h D-018-1, d/s D-018-2, D-018-3] |
 | 노트 | 직전 공개 이후 누적, `notes-range.json`으로 검사 | [u/h D-019-1, d/s D-019-2] |
 | 진단 코드 | 정식 빌드는 진단 플래그 0, 바이너리에 진단 문자열이 없는지 검사 | [u/h D-029-1, d/s D-029-2] |

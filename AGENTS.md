@@ -35,8 +35,8 @@
 
 ## 현재 상태
 
-- 최신 공개: v2.3.0(86), 2026-11-08. GitHub Release와 Homebrew 정식·`@dev`가 같은 공증 ZIP을 가리킨다. 다음 릴리스 노트 범위의 기준은 v2.3.0이다.
-- TODO-001~003(Option 유지·고정 상태의 실행/닫힘 규칙)은 Phase 5(2026-11-16)에서 코드에 반영했다. 아직 빌드·배포하지 않았다. 다음은 버전(patch/minor, D-018) 결정 → 사용자 지시 시 `@dev` 빌드 → 사용자 실기 확인.
+- 최신 정식 공개: v2.3.0(86), 2026-11-08. GitHub Release와 Homebrew 정식이 이 ZIP을 가리킨다.
+- 2.3.1(87) 공증본을 `@dev`에 게시했다(2026-11-16, TODO-001~003 포함). 정식은 2.3.0(86) 그대로다. 다음은 사용자 실기 확인(시험 안내: tap `dev-builds`의 `tile-launcher/2.3.1-87/test-guide.md`) → 확인 뒤 정식 공개. 다음 릴리스 노트 범위의 기준은 아직 v2.3.0이다.
 - 이 Mac에서는 iCloud 밖 clone(`~/dev/tile-launcher`)에서 작업·push하고, 끝나면 iCloud 레포에서 `git fetch`한다(D-088). iCloud 레포의 로컬 `main`·파일은 fetch로 바뀌지 않으므로 뒤처질 수 있다.
 
 ## 빌드·배포 요약
