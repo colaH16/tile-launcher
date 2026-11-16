@@ -54,7 +54,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var observers: [NSObjectProtocol] = []
     private var permissionTimer: Timer?
     private var trusted = false
-    private var pendingAction: (() -> Void)?
     private var keyboardFeedbackCleanup: DispatchWorkItem?
     private var heldPresentation = false
     private var optionReopen = OptionReopenMemory<PanelLayout>()
@@ -141,12 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hold.onReopenCancelled = { [weak self] in self?.optionReopen.cancel() }
         installHoldDismissal()
         hold.onCancel = { [weak self] in
-            self?.pendingAction = nil
-            self?.presentation.selection = nil
             self?.clearKeyboardFeedback()
-        }
-        hold.onRelease = { [weak self] in
-            self?.finishOptionSelection()
         }
         hold.canTriggerHold = { [weak self] in self?.settings.optionTriggerEnabled == true }
         hold.ownsKeyboard = { [weak self] in self?.panel?.isKeyWindow == true }
@@ -352,7 +346,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
     private func openAppManagementSettings() {
-        pendingAction = nil
         hide()
         // Opens the page only. System authorization remains the user's choice.
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles")!)
@@ -553,22 +546,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                             openInFinder: { [weak self] in self?.selectFolderInFinder($0) },
                             openTrash: { [weak self] in self?.selectTrash() },
                             showSettings: { [weak self] destination in self?.showSettings(destination, context: content.snapshot.context) },
-                            requestPermission: { [weak self] in self?.performImmediately { self?.requestPermission() } },
+                            requestPermission: { [weak self] in self?.performImmediately(.leave) { self?.requestPermission() } },
                             pinOverlay: { [weak self] in self?.pinOverlay() },
                             resizeForContent: { [weak self] count, rows in self?.resizeOverlay(registeredCount: count, workRows: rows) },
                             quitApplication: { [weak self] window in self?.requestQuit(windowless: window) },
-                            dismiss: { [weak self] in
-                                self?.pendingAction = nil
-                                self?.hide()
-                            })
+                            dismiss: { [weak self] in self?.hide() })
         let hosting = NSHostingView(rootView: view)
         let surface = DeckSurfaceView(content: hosting, frame: CGRect(origin: .zero, size: layout.frame.size))
         let window = DeckPanel(contentRect: layout.frame, styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered, defer: false)
-        window.onClose = { [weak self] in
-            self?.pendingAction = nil
-            self?.hide()
-        }
+        window.onClose = { [weak self] in self?.hide() }
         window.onKeyEquivalent = { [weak self] in self?.hold.handleOverlayShortcut($0) ?? false }
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -630,8 +617,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func pinOverlay() {
         guard let panel, panel.isVisible else { return }
-        pendingAction = nil
-        presentation.selection = nil
         presentation.pin()
         // A held panel leaves the source app active. Pinning opts into normal
         // app keyboard ownership, including the macOS command/menu route.
@@ -660,8 +645,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         overlayRefresh = nil
         guard panel?.isVisible == true else { return }
         let mouseDown = NSEvent.pressedMouseButtons != 0
-        guard OverlayRefreshPolicy.allows(hasSelection: presentation.selection != nil || presentation.execution != nil,
-                                          hasPendingAction: pendingAction != nil, mouseDown: mouseDown) else {
+        guard OverlayRefreshPolicy.allows(showsExecution: presentation.execution != nil, mouseDown: mouseDown) else {
             // Native window dragging may not deliver mouse-up. Retry only while
             // a known refresh is deferred by that gesture, never poll app contents.
 
@@ -699,8 +683,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         supported: layout.layout.supported, scale: layout.layout.scale)
         }
         optionReopen.record(shownLayout, at: time, reason: reason,
-                            held: heldPresentation && panel?.isVisible == true,
-                            actionPending: pendingAction != nil, preferences: settings.optionReopen)
+                            held: heldPresentation && panel?.isVisible == true, preferences: settings.optionReopen)
         overlayRefresh?.cancel()
         overlayRefresh = nil
         dockHandoff.stopMonitoring()
@@ -715,12 +698,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         presentation.reset()
         profileScroll.reset()
     }
-    private enum ActionOverlay { case dismissUnlessPinned, preserve, pin }
-    private func performImmediately(overlay: ActionOverlay = .dismissUnlessPinned, _ action: () -> Void) {
+    /// Every item runs here at once, by click or ⌥+number (D-036-1, D-036-2).
+    /// Whether the overlay stays is OverlayPresentation.closesAfterAction:
+    /// Option held keeps it, pinned closes it, a windowless quit never closes.
+    private func performImmediately(_ kind: OverlayAction, _ action: () -> Void) {
         clearKeyboardFeedback()
-        pendingAction = nil
-        presentation.selection = nil
-        if overlay == .pin {
+        if kind == .quit {
             // Batch quit is an in-overlay action. Survive Option release and
             // app focus changes just like a user-pinned presentation.
             presentation.pin()
@@ -728,29 +711,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 NSApp.activate()
                 panel.makeKeyAndOrderFront(nil)
             }
-        } else if overlay == .dismissUnlessPinned && !presentation.isPinned { hide() }
+        } else if presentation.closesAfterAction(kind) { hide() }
         action()
     }
-    private func finishOptionSelection() {
-        let action = pendingAction
-        let target = presentation.selection
-        let title = presentation.selectionTitle
-        let pinned = presentation.isPinned
-        pendingAction = nil
-        presentation.selection = nil
-        action?()
-        if action != nil, pinned, presentation.isPinned, let target, let title {
-            let id = presentation.showExecution(target: target, title: title)
-            keyboardFeedbackCleanup?.cancel()
-            let cleanup = DispatchWorkItem { [weak self] in
-                self?.presentation.clearExecution(id: id)
-                self?.keyboardFeedbackCleanup = nil
-                self?.scheduleOverlayRefresh()
-            }
-            keyboardFeedbackCleanup = cleanup
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: cleanup)
+    /// A ⌥+number run has no pressed button, so briefly mark the tile that ran
+    /// while the overlay stays open. A pinned overlay has already closed.
+    private func showKeyboardExecution(target: String, title: String) {
+        guard panel?.isVisible == true else { return }
+        let id = presentation.showExecution(target: target, title: title)
+        keyboardFeedbackCleanup?.cancel()
+        let cleanup = DispatchWorkItem { [weak self] in
+            self?.presentation.clearExecution(id: id)
+            self?.keyboardFeedbackCleanup = nil
+            self?.scheduleOverlayRefresh()
         }
-        scheduleOverlayRefresh()
+        keyboardFeedbackCleanup = cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: cleanup)
     }
     private func clearKeyboardFeedback() {
         keyboardFeedbackCleanup?.cancel()
@@ -792,9 +768,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for held in [false, true] {
             heldPresentation = held
             presentation.reset()
-            var staleSelectionRan = false
-            pendingAction = { staleSelectionRan = true }
-            presentation.selection = "stale-number"
             handleStatusItemClick(.rightMouseUp, sender: button)
             try check(!presentation.isPinned && !button.isHighlighted,
                       "Right-click changed pin state or left button highlighted")
@@ -804,7 +777,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                       "Option hold invocation pinned or replaced the visible overlay")
             handleStatusItemClick(.leftMouseUp, sender: button)
             try check(panel === window && window.isVisible && presentation.isPinned
-                      && pendingAction == nil && presentation.selection == nil && !staleSelectionRan
                       && !hold.optionDown && !presentation.dismisses(for: .release)
                       && !dismissesFollowingOptionHold(.windowSelection)
                       && !dismissesFollowingOptionHold(.spaceChange)
@@ -835,7 +807,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                   "Control-click did not open only the menu")
         hide()
         try check(!window.isVisible && !presentation.isPinned, "Explicit close did not dismiss/reset the overlay")
-        print("Status item/manual show: right/left and control-click routing; status, menu Open and manual show pin an existing manual/held panel, Option hold invocation stays unpinned, profile redisplay keeps the pin; reuse, queued selection cancellation and explicit close passed without Option input.")
+        print("Status item/manual show: right/left and control-click routing; status, menu Open and manual show pin an existing manual/held panel, Option hold invocation stays unpinned, profile redisplay keeps the pin; reuse and explicit close passed without Option input.")
     }
     /// R357: the prepared overlay and the rebuild fallback place one anchor
     /// identically, and taking the preload for that anchor keeps it. Uses a real
@@ -878,86 +850,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         print("Option anchor placement: prepared, rebuilt and taken overlays agree for centered and edge anchors without showing a panel.")
     }
     /// Isolated native verification: synthetic callbacks, no windows or app launch.
+    /// Spec 2절 닫히는 규칙: with Option held a run keeps the overlay, pinned
+    /// closes it; Finder places always close; a windowless quit never closes.
     func verifyClickExecutionForPreview() throws {
         hold.canTriggerHold = { false }
-        hold.isShowing = true
         guard let option = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: .option,
                                             timestamp: 1, windowNumber: 0, context: nil, characters: "",
                                             charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) else {
             throw NSError(domain: "TileLauncher.Preview", code: 60)
         }
         _ = hold.handle(option, external: false)
-        defer { hold.stop(); hold.onRelease = nil; pendingAction = nil; clearKeyboardFeedback(); presentation.reset() }
+        defer { hold.stop(); clearKeyboardFeedback(); presentation.reset() }
         for pinned in [false, true] {
-            presentation.reset()
-            if pinned { presentation.pin() }
-            heldPresentation = true
-            var clicks = 0, queued = 0
-            pendingAction = { queued += 1 }
-            presentation.selection = "pending-number"
-            performImmediately { clicks += 1 }
-            guard hold.optionDown, clicks == 1, queued == 0, pendingAction == nil,
-                  presentation.selection == nil, presentation.isPinned == pinned else {
-                throw NSError(domain: "TileLauncher.Preview", code: 61)
+            for kind in [OverlayAction.run, .leave] {
+                presentation.reset()
+                if pinned { presentation.pin() }
+                hold.isShowing = true
+                heldPresentation = true
+                var runs = 0
+                // Twice: an overlay kept after the first run takes another at once.
+                performImmediately(kind) { runs += 1 }
+                if hold.isShowing { performImmediately(kind) { runs += 1 } }
+                let stays = kind == .run && !pinned
+                guard hold.optionDown, runs == (stays ? 2 : 1), hold.isShowing == stays else {
+                    throw NSError(domain: "TileLauncher.Preview", code: 61, userInfo: [NSLocalizedDescriptionKey:
+                        "Run rule: kind=\(kind), pinned=\(pinned), runs=\(runs), showing=\(hold.isShowing)"])
+                }
+                if stays {
+                    // Still held and unpinned: releasing Option is what closes it.
+                    guard !presentation.isPinned, presentation.dismisses(for: .release) else {
+                        throw NSError(domain: "TileLauncher.Preview", code: 62)
+                    }
+                }
             }
-            finishOptionSelection()
-            guard clicks == 1, queued == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 62) }
         }
-        // App clicks keep a held overlay visible without silently pinning it or
-        // changing Option state. More apps can be opened before releasing Option.
         for pinned in [false, true] {
             presentation.reset()
             if pinned { presentation.pin() }
             hold.isShowing = true
-            var apps = 0, queued = 0
-            pendingAction = { queued += 1 }
-            presentation.selection = "stale-number"
-            for _ in 0..<2 { performImmediately(overlay: .preserve) { apps += 1 } }
-            finishOptionSelection()
-            guard hold.isShowing, hold.optionDown, apps == 2, queued == 0,
-                  pendingAction == nil, presentation.selection == nil,
-                  presentation.isPinned == pinned,
-                  presentation.dismisses(for: .release) == !pinned else {
-                throw NSError(domain: "TileLauncher.Preview", code: 66)
-            }
-        }
-        var numbers = 0
-        presentation.pin()
-        presentation.selection = "pin:preview"
-        presentation.selectionTitle = "테스트 앱"
-        pendingAction = { numbers += 1 }
-        guard numbers == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 63) }
-        hold.onRelease = { [weak self] in self?.finishOptionSelection() }
-        guard let release = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: [],
-                                             timestamp: 2, windowNumber: 0, context: nil, characters: "",
-                                             charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) else {
-            throw NSError(domain: "TileLauncher.Preview", code: 63)
-        }
-        _ = hold.handle(release, external: false)
-        _ = hold.handle(release, external: false)
-        guard !hold.optionDown, numbers == 1, pendingAction == nil,
-              presentation.execution?.target == "pin:preview", presentation.execution?.title == "테스트 앱",
-              presentation.isPinned else {
-            throw NSError(domain: "TileLauncher.Preview", code: 64)
-        }
-        for pinned in [false, true] {
-            presentation.reset()
-            if pinned { presentation.pin() }
-            var quits = 0, queued = 0
-            pendingAction = { queued += 1 }
-            presentation.selection = "stale-number"
+            var quits = 0
             let target = WindowItem(id: UUID(), pid: 123, appName: "Synthetic", appURL: nil, title: "Synthetic", minimized: false,
                                     isApplication: true)
             requestQuit(windowless: target, request: { _ in quits += 1; return nil })
             requestQuit(windowless: target, request: { _ in quits += 1; return nil })
-            finishOptionSelection()
-            guard quits == 2, queued == 0, pendingAction == nil, presentation.selection == nil,
-                  presentation.isPinned, !presentation.dismisses(for: .release),
+            guard quits == 2, hold.isShowing, presentation.isPinned, !presentation.dismisses(for: .release),
                   !presentation.dismisses(for: .outsideClick), presentation.dismisses(for: .escape) else {
                 throw NSError(domain: "TileLauncher.Preview", code: 65)
             }
         }
-        print("AppDelegate: app actions keep held/pinned overlays visible without pinning or changing Option; repeated clicks cancel queued numbers. Immediate clicks/numbers and batch quit policy preserved without launching or terminating real apps.")
+        print("AppDelegate: runs keep a held overlay and close a pinned one, Finder places close both, windowless quits keep both; nothing waits for the Option release. No real apps launched or terminated.")
     }
     /// Real HoldMonitor gestures through the production dismissal wiring and
     /// decision, with synthetic modifier events only: no panel, window, Space or app.
@@ -1069,7 +1010,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     #endif
     private func changeProfile(_ id: String?) {
-        pendingAction = nil
         if let id {
             settings.selectProfile(id)
             redisplayProfile()
@@ -1105,8 +1045,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func displayProfile(_ profile: LauncherProfile) {
         guard panel?.isVisible == true else { return }
-        pendingAction = nil
-        presentation.selection = nil
         browser?.close()
         clearKeyboardFeedback()
         profileChangeRevision += 1
@@ -1136,37 +1074,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ProfileDiagnosticsRecorder.shared.noteInvocation(.temporaryCycle)
         #endif
     }
+    /// ⌥+number runs the item the moment it is pressed, exactly like a click
+    /// (D-036-2). Nothing waits for the Option release.
     private func selectNumber(_ index: Int, command: Bool) {
         guard let snapshot = visibleSnapshot, browser?.current == nil else { NSSound.beep(); return }
-        pendingAction = nil
-        presentation.selection = nil
         if snapshot.shortcuts.targetsWindows(command: command) {
             guard snapshot.windows.indices.contains(index) else { NSSound.beep(); return }
             let window = snapshot.windows[index]
             if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
-            presentation.selection = "window:\(window.id)"
-            presentation.selectionTitle = window.isApplication ? window.appName : "\(window.appName) — \(window.title)"
-            pendingAction = { [weak self] in self?.select(window: window) }
+            select(window: window)
+            showKeyboardExecution(target: "window:\(window.id)",
+                                  title: window.isApplication ? window.appName : "\(window.appName) — \(window.title)")
         } else {
             let pins = presentation.profile?.items ?? snapshot.pins
             guard pins.indices.contains(index) else { NSSound.beep(); return }
             let pin = pins[index]
             if pin.kind == .app && launches.isBlocked(pin.url) { return }
-            if pin.opensInOverlay {
-                select(pin: pin)
-                return
-            }
-            presentation.selection = "pin:\(pin.id)"
-            presentation.selectionTitle = pin.name
-            pendingAction = { [weak self] in self?.select(pin: pin) }
+            select(pin: pin)
+            // Browsing a folder inside the overlay is navigation, not a run.
+            if !pin.opensInOverlay { showKeyboardExecution(target: "pin:\(pin.id)", title: pin.name) }
         }
     }
     private func select(pin: PinnedItem) {
         if pin.kind == .trash { selectTrash() }
         else if pin.kind == .app { launchApplication(at: pin.url, title: pin.name) }
         else if pin.opensInOverlay {
-            pendingAction = nil
-            presentation.selection = nil
+            clearKeyboardFeedback()
             browser?.open(pin)
         }
         else { selectFolderInFinder(pin.url) }
@@ -1200,7 +1133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     private func performMenu(in context: AppItem, window: WindowItem?, run: @escaping () -> Void) {
-        performImmediately { [weak self] in
+        performImmediately(.run) { [weak self] in
             guard let self else { return }
             guard let running = NSRunningApplication(processIdentifier: context.pid), !running.isTerminated else {
                 self.error("메뉴를 사용할 앱이 종료되었습니다.")
@@ -1219,7 +1152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func select(app: AppItem) {
         if let url = app.url, launches.isBlocked(url) { return }
-        performImmediately(overlay: .preserve) { [weak self] in
+        performImmediately(.run) { [weak self] in
             guard let running = NSRunningApplication(processIdentifier: app.pid) else {
                 self?.error("앱이 종료되었습니다.")
                 return
@@ -1230,14 +1163,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private func select(window: WindowItem) {
         if let handoff = window.handoff {
-            performImmediately { [weak self] in
+            performImmediately(.run) { [weak self] in
                 self?.dockHandoff.press(handoff) { message in if let message { self?.error(message) } }
             }
             return
         }
         if window.isApplication, let url = window.appURL, launches.isBlocked(url) { return }
-        let keepOverlay = window.isApplication || !dismissesFollowingOptionHold(.windowSelection)
-        performImmediately(overlay: keepOverlay ? .preserve : .dismissUnlessPinned) { [weak self] in
+        // A held overlay survives the switch, even to another desktop (D-066-2).
+        // Only an unpinned overlay that Option no longer holds leaves with it.
+        let kind: OverlayAction = window.isApplication || !dismissesFollowingOptionHold(.windowSelection) ? .run : .leave
+        performImmediately(kind) { [weak self] in
             self?.tracker.focus(id: window.id) { message in
                 if let message { self?.error(message) }
             }
@@ -1246,7 +1181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func requestQuit(windowless window: WindowItem,
                              request: (NSRunningApplication?) -> String? = ApplicationTermination.request) {
         guard window.isApplication else { return }
-        performImmediately(overlay: .pin) { [weak self] in
+        performImmediately(.quit) { [weak self] in
             if let message = request(window.runningApplication) { self?.error(message) }
             self?.scheduleOverlayRefresh()
         }
@@ -1256,13 +1191,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             launchApplication(at: url)
             return
         }
-        performImmediately { [weak self] in
+        performImmediately(.run) { [weak self] in
             if !NSWorkspace.shared.open(url) { self?.error("항목을 열지 못했습니다. 이동되었거나 삭제되었는지 확인해 주세요.") }
         }
     }
     private func launchApplication(at url: URL, title: String? = nil) {
         guard !launches.isBlocked(url) else { return }
-        performImmediately(overlay: .preserve) { [weak self] in
+        performImmediately(.run) { [weak self] in
             self?.launches.launch(at: url, title: title ?? url.deletingPathExtension().lastPathComponent) { [weak self] message in
                 self?.error(message)
             }
@@ -1272,7 +1207,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showSettings(.general, context: lastContext)
     }
     private func showSettings(_ destination: SettingsDestination, context: AppItem?) {
-        pendingAction = nil
         hide()
         settingsNavigation.open(destination, app: context)
         if let preferences {
@@ -1332,7 +1266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.runModal()
     }
     private func selectFolderInFinder(_ url: URL) {
-        performImmediately { [weak self] in
+        performImmediately(.leave) { [weak self] in
             guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
                 self?.error("Finder를 찾지 못했습니다.")
                 return
@@ -1349,7 +1283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     private func selectTrash() {
-        performImmediately { [weak self] in
+        performImmediately(.leave) { [weak self] in
             guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
                 self?.error("Finder를 찾지 못했습니다.")
                 return
@@ -1474,6 +1408,7 @@ if CommandLine.arguments.contains("--check-option-hold-anchor") {
             try HoldAnchorValidation.verify()
             try PreviewExport.verifyQuickOptionReopen()
             for check in [{ try $0.verifyOptionHoldDismissalForPreview() }, { try $0.verifyStatusItemPinningForPreview() },
+                          { try $0.verifyClickExecutionForPreview() },
                           { try $0.verifyOptionAnchorPlacementForPreview() }] as [(AppDelegate) throws -> Void] {
                 let fixture = PreviewFixture(theme: .classic)
                 try withExtendedLifetime(fixture) { try check(delegate(fixture)) }

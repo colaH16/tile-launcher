@@ -1,6 +1,7 @@
 # Tile Launcher 구현 계획 (Plan) — 어떻게
 
 - 작성: 2026-11-16 (Phase 3). 기준 코드: 2.3.0(86), GitHub `main` `e99cb78`
+- 갱신: 2026-11-16 (Phase 5). 6절에 실행 후 닫힘 규칙을 넣고, 8절 TODO-001~003을 완료로 옮겼다.
 - 무엇을·왜는 [spec.md](spec.md), 원칙은 [constitution.md](constitution.md), 근거와 대안은 [decisions.md](decisions.md)에 있다.
 - **모든 항목에 출처를 붙였다.** 꼬리표 형식은 spec.md와 같다: `[u|a|d/h|s D-번호]`. decisions.md에 없는 사실 기록(현재 구조 설명)은 `[현황]`으로 표시했다. 이런 항목은 결정이 아니라 코드에서 읽은 사실이다.
 - `d`(agent-default) 항목은 제약이 아니다. 더 나은 방법이 있으면 비교표를 들고 바꾸자고 제안해도 된다. `h` 항목은 출처와 상관없이 사용자에게 먼저 묻는다.
@@ -145,6 +146,9 @@ API나 네트워크 서비스는 없다. 외부에서 이 앱에 닿는 지점�
 | 동작 | 구현 | 출처 |
 |---|---|---|
 | 호출 | `HoldMonitor`: 좌/우 Option 단독 250ms, 다른 키면 취소 | [a/s D-032-2] |
+| 실행 후 닫힘 | 모든 실행은 `performImmediately(overlay:)` 한 곳을 지난다. 종류는 셋: `.run`(앱·창·메뉴·앱 설정·Handoff·파일 — 고정이면 닫고 아니면 유지), `.leave`(Finder 폴더·휴지통·권한 — 항상 닫음), `.quit`(창 없는 앱 종료 — 유지하고 고정). 판정은 `OverlayPresentation.closesAfterAction(_:)`(DeckCore, 단위 테스트 대상) | [u/h D-034-3, D-066-1, u/s D-043-2], 방법은 [d/s Phase 5 구현] |
+| ⌥+숫자 | `selectNumber`가 클릭과 같은 `select(...)`를 바로 부른다. Option을 뗄 때 실행하던 대기칸(`pendingAction`, `presentation.selection`)은 없앴다. 오버레이가 남으면 0.45초 실행 표시(`showExecution`)를 보여준다 | [u/h D-036-2], 대기칸 삭제 [u/s 2026-11-16 사용자 선택], 표시 방법 [d/s] |
+| 빠른 재열기 | `OptionReopenMemory.record`: Option을 떼서(`.release`) 닫힌 Option 호출 오버레이면 실행 여부와 상관없이 위치를 기억 | [u/h D-037-1] |
 | 위치 | `PanelLayout.calculate` → `fittingContent` → `centered(on:)`. Option을 누른 순간 좌표를 저장해 사용. 화면 여백 24pt | [u/h D-033-2, D-033-3] |
 | 크기 | 기준 패널 1120×840(최소 512×420), 간격 8pt. `preferredScale = 1.4`는 타일에만, 간격은 1.3배에서 멈춤 | [a/s D-045-3, u/h D-045-2] |
 | 최근 창 | `WindowTracker` + `DesktopWindows`: AX 창 목록과 WindowServer 창 ID를 연결, Space 판별 | [d/s D-008] |
@@ -183,15 +187,17 @@ API나 네트워크 서비스는 없다. 외부에서 이 앱에 닿는 지점�
 
 ## 8. 알려진 차이·할 일 (TODO)
 
-spec.md의 요구를 현재 코드가 따르지 않는 곳이다. Phase 5에서 고친다. 아래 "고칠 곳"은 위치만 적은 것이고, 방법은 고칠 때 비교표로 정한다.
+spec.md의 요구를 현재 코드가 따르지 않는 곳이다. **지금은 없다.**
 
-| ID | 요구 | 현재 (2.3.0) | 고칠 곳 |
+### 완료 (Phase 5, 2026-11-16)
+
+| ID | 요구 | 2.3.0까지 | 고친 방법 |
 |---|---|---|---|
-| TODO-001 | ⌥+숫자는 누르는 즉시 실행 [u/h D-036-2] | 숫자를 누르면 `pendingAction`에 넣고, Option을 뗄 때 `finishOptionSelection`에서 실행 | `main.swift` `selectNumber` |
-| TODO-002 | 고정 상태에서 실행하면 닫힘, 창 없는 앱 종료는 예외 [u/h D-034-3] | `performImmediately(.dismissUnlessPinned)`라서 고정 중엔 안 닫힘 | `main.swift` `performImmediately` 호출부 (종료는 `.pin` 경로 유지) |
-| TODO-003 | Option을 누르는 동안 메뉴를 실행해도 유지 [u/h D-066-1] | `performMenu`가 `.dismissUnlessPinned`라서 Option 유지 중에도 닫힘 | `main.swift` `performMenu` |
+| TODO-001 | ⌥+숫자는 누르는 즉시 실행 [u/h D-036-2] | 숫자를 누르면 `pendingAction`에 넣고, Option을 뗄 때 `finishOptionSelection`에서 실행 | `selectNumber`가 바로 실행. 대기칸 삭제 |
+| TODO-002 | 고정 상태에서 실행하면 닫힘, 창 없는 앱 종료는 예외 [u/h D-034-3] | `performImmediately(.dismissUnlessPinned)`라서 고정 중엔 안 닫힘 | `.run`은 고정이면 닫음. 종료는 `.quit` |
+| TODO-003 | Option을 누르는 동안 메뉴를 실행해도 유지 [u/h D-066-1] | `performMenu`가 `.dismissUnlessPinned`라서 Option 유지 중에도 닫힘 | `performMenu`를 `.run`으로 |
 
-세 TODO는 하나의 규칙으로 정리된다: **Option을 누르고 있으면 즉시 실행하고 유지, 고정 상태면 즉시 실행하고 닫힘(앱 종료만 예외).** 함께 고치는 것이 자연스럽다.
+세 TODO는 하나의 규칙으로 정리됐다: **Option을 누르고 있으면 즉시 실행하고 유지, 고정 상태면 즉시 실행하고 닫힘(앱 종료만 예외).** 함께 정한 것(2026-11-16 사용자 선택): Option 유지 중 Handoff·폴더 탐색 속 파일은 유지, Finder 폴더·휴지통은 닫힘. 빠른 재열기는 실행 뒤에도 켠다. 권한 요청 버튼은 spec대로 고정 상태에서도 닫는다(2.3.0은 고정 중 유지).
 
 ## 9. 열린 질문
 

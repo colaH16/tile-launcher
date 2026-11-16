@@ -44,13 +44,20 @@ final class OverlayPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.dismisses(for: .spaceChange))
         XCTAssertTrue(presentation.dismisses(for: .escape))
     }
-    func testFeedbackSurvivesSelectionClearButCannotClearANewerRequest() {
+    /// Spec 2절 닫히는 규칙 (D-034-3, D-066-1, D-043-2).
+    func testRunKeepsHeldOverlayAndClosesPinnedOne() {
         let presentation = OverlayPresentation()
-        presentation.selection = "pin:a"
-        presentation.selectionTitle = "App A"
+        XCTAssertFalse(presentation.closesAfterAction(.run))
+        XCTAssertTrue(presentation.closesAfterAction(.leave))
+        XCTAssertFalse(presentation.closesAfterAction(.quit))
+        presentation.pin()
+        XCTAssertTrue(presentation.closesAfterAction(.run))
+        XCTAssertTrue(presentation.closesAfterAction(.leave))
+        XCTAssertFalse(presentation.closesAfterAction(.quit))
+    }
+    func testFeedbackCannotClearANewerRequest() {
+        let presentation = OverlayPresentation()
         let first = presentation.showExecution(target: "pin:a", title: "App A")
-        presentation.selection = nil
-        XCTAssertNil(presentation.selectionTitle)
         XCTAssertEqual(presentation.execution?.target, "pin:a")
         let next = presentation.showExecution(target: "pin:b", title: "App B")
         presentation.clearExecution(id: first)
@@ -64,7 +71,6 @@ final class OverlayPresentationTests: XCTestCase {
         presentation.showExecution(target: "window:x", title: "Document")
         presentation.reset()
         XCTAssertNil(presentation.execution)
-        XCTAssertNil(presentation.selectionTitle)
     }
     func testPinnedOverlaySurvivesReleaseScreenshotKeysAndOutsideClick() {
         let presentation = OverlayPresentation()

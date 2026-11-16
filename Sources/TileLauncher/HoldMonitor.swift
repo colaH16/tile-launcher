@@ -9,7 +9,6 @@ final class HoldMonitor {
     var onQuickReopen: ((TimeInterval, CGPoint) -> Bool)?
     var onReopenCancelled: (() -> Void)?
     var onCancel: (() -> Void)?
-    var onRelease: (() -> Void)?
     var onShortcut: ((OverlayShortcut) -> Void)?
     /// Start building the overlay while the hold timer runs; abandon it if no overlay follows.
     var onPrepare: ((CGPoint) -> Void)?
@@ -132,7 +131,6 @@ final class HoldMonitor {
             timer = nil
             if triggered { onHide?(.release, time) } else { onAbandon?() }
             triggered = false
-            onRelease?()
         }
     }
 }

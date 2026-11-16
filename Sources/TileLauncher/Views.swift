@@ -267,8 +267,7 @@ struct DeckView: View {
                 }
                 HStack(spacing: 8) {
                     Image(systemName: presentation.execution != nil || launches.statusText != nil ? "arrow.up.right" : presentation.isPinned ? "pin.fill" : "option")
-                    Text(presentation.selectionTitle.map { "\($0) · Option을 놓으면 실행" }
-                         ?? launches.statusText
+                    Text(launches.statusText
                          ?? presentation.execution.map { "실행 요청: \($0.title)" }
                          ?? (compact ? "⌥X 고정 · ⌥W 닫기 · ⌥, 설정"
                          : presentation.isPinned ? "빈 배경 드래그로 이동 · ⌥W 닫기 · ⌥, 설정" : "놓으면 닫기 · ⌥X 고정 · ⌥, 설정"))
@@ -665,7 +664,7 @@ struct DeckView: View {
                                 }.padding(u(6)).frame(width: grid.side, height: grid.side)
                                     .overlay(alignment: .topTrailing) { numberBadge(index).padding(u(3)) }
                                 }
-                            }.buttonStyle(RegisteredTileStyle(selected: presentation.selection == "pin:\(pin.id)" || presentation.execution?.target == "pin:\(pin.id)",
+                            }.buttonStyle(RegisteredTileStyle(selected: presentation.execution?.target == "pin:\(pin.id)",
                                                               emphasized: pin.kind == .app))
                                 .overlayDragAction("pin:\(pin.id)", enabled: !(pin.kind == .app && launches.isBlocked(pin.url)), cornerRadius: feedbackRadius(12)) { selectPin(pin) }
                                 .disabled(pin.kind == .app && launches.isBlocked(pin.url))
@@ -893,7 +892,7 @@ struct DeckView: View {
                     }
                 }
         }.buttonStyle(TileStyle(section: section, emphasized: emphasized,
-                                selected: presentation.selection == "window:\(window.id)" || presentation.execution?.target == "window:\(window.id)", compact: small || window.isApplication))
+                                selected: presentation.execution?.target == "window:\(window.id)", compact: small || window.isApplication))
             .overlayDragAction("window:\(window.id)", enabled: !(window.isApplication && window.appURL.map(launches.isBlocked) == true), cornerRadius: feedbackRadius(small || window.isApplication ? 8 : 14)) { selectWindow(window) }
             .disabled(window.isApplication && window.appURL.map(launches.isBlocked) == true)
             .overlay {

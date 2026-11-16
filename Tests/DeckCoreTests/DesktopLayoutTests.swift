@@ -107,15 +107,15 @@ final class DesktopLayoutTests: XCTestCase {
         XCTAssertFalse(WindowRetention.keepMissing(serverStillContains: true, axInvalid: true, destroyed: false))
         XCTAssertFalse(WindowRetention.keepMissing(serverStillContains: true, axInvalid: false, destroyed: true))
     }
-    func testPinnedDesktopTintCanChangeWithoutUnpinningOrChangingSelection() {
+    func testPinnedDesktopTintCanChangeWithoutUnpinningOrChangingFeedback() {
         let presentation = OverlayPresentation()
         let window = UUID()
         presentation.pin()
-        presentation.selection = "window:test"
+        presentation.showExecution(target: "window:test", title: "Test")
         presentation.windowDesktops = [window: .current]
         presentation.windowDesktops = [window: .other]
         XCTAssertTrue(presentation.isPinned)
-        XCTAssertEqual(presentation.selection, "window:test")
+        XCTAssertEqual(presentation.execution?.target, "window:test")
         presentation.reset()
         XCTAssertTrue(presentation.windowDesktops.isEmpty)
     }

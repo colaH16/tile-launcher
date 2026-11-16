@@ -845,7 +845,6 @@ enum PreviewExport {
                                            cursor: .zero, scale: PanelLayout.preferredScale).fittingContent(registeredCount: 18)
         fixture.content.snapshot.layout = layout
         fixture.presentation.pin()
-        if selected, let command = fixture.content.snapshot.commands.first { fixture.presentation.selection = "menu:\(command.id)" }
         let view = DeckView(content: fixture.content, settings: fixture.settings, browser: fixture.browser,
             presentation: fixture.presentation, selectApp: { _ in }, selectPin: { _ in }, selectMenu: { _, _, _ in },
             changeProfile: { _ in }, cycleProfile: { _ in }, selectWindow: { _ in }, openURL: { _ in },
@@ -1421,18 +1420,14 @@ enum PreviewExport {
         let monitor = HoldMonitor()
         var memory = OptionReopenMemory<CGRect>()
         let frame = CGRect(x: -900, y: 80, width: 800, height: 650)
-        var quick = 0, ordinary = 0, executions = 0
-        var actionPending = false
+        var quick = 0, ordinary = 0
         monitor.canTriggerHold = { true }
         monitor.hasPressedMouseButtons = { false }
         monitor.onReopenCancelled = { memory.cancel() }
         monitor.onShow = { _ in ordinary += 1; monitor.isShowing = true }
         monitor.onHide = { reason, time in
-            memory.record(frame, at: time, reason: reason, held: monitor.isShowing, actionPending: actionPending)
+            memory.record(frame, at: time, reason: reason, held: monitor.isShowing)
             monitor.isShowing = false
-        }
-        monitor.onRelease = {
-            if actionPending { executions += 1; actionPending = false }
         }
         monitor.onQuickReopen = { time, _ in
             guard memory.take(at: time) == frame else { return false }
@@ -1452,7 +1447,7 @@ enum PreviewExport {
             }
             _ = monitor.handle(event, external: true)
         }
-        memory.record(frame, at: 10, reason: .release, held: true, actionPending: false)
+        memory.record(frame, at: 10, reason: .release, held: true)
         try event(.flagsChanged, .option, 10.55)
         guard quick == 1, ordinary == 0, monitor.isShowing else { throw NSError(domain: "TileLauncher.Preview", code: 41) }
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
@@ -1463,11 +1458,12 @@ enum PreviewExport {
         guard quick == 1, ordinary == 0 else { throw NSError(domain: "TileLauncher.Preview", code: 43) }
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         guard ordinary == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 44) }
-        actionPending = true
+        // D-037-1: items run immediately while held, so a release after running
+        // something is an ordinary release and still remembers the place.
         try event(.flagsChanged, [], 12)
         try event(.flagsChanged, .option, 12.1)
-        guard executions == 1, quick == 1 else { throw NSError(domain: "TileLauncher.Preview", code: 45) }
-        print("HoldMonitor: immediate same-location recovery, no duplicate timer, intervening input cancellation, normal delay and single action release passed.")
+        guard quick == 2 else { throw NSError(domain: "TileLauncher.Preview", code: 45) }
+        print("HoldMonitor: immediate same-location recovery, no duplicate timer, intervening input cancellation, normal delay and release-after-run recovery passed.")
     }
 
     @MainActor private static func verifySurfaceClipping(to directory: URL) throws {

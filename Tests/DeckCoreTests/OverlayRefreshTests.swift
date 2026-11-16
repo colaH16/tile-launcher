@@ -3,11 +3,11 @@ import XCTest
 
 final class OverlayRefreshTests: XCTestCase {
     func testIdleOverlayFollowsContextHeldOrPinned() {
-        XCTAssertTrue(OverlayRefreshPolicy.allows(hasSelection: false, hasPendingAction: false, mouseDown: false))
+        XCTAssertTrue(OverlayRefreshPolicy.allows(showsExecution: false, mouseDown: false))
     }
-    func testSelectionAndMouseGesturesDeferReordering() {
-        for (selected, pending, mouse) in [(true, false, false), (false, true, false), (false, false, true)] {
-            XCTAssertFalse(OverlayRefreshPolicy.allows(hasSelection: selected, hasPendingAction: pending, mouseDown: mouse))
+    func testExecutionFeedbackAndMouseGesturesDeferReordering() {
+        for (execution, mouse) in [(true, false), (false, true), (true, true)] {
+            XCTAssertFalse(OverlayRefreshPolicy.allows(showsExecution: execution, mouseDown: mouse))
         }
     }
 }
